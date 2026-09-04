@@ -1,0 +1,19 @@
+{
+  "name": "@jarvis/inbox",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jarvis/classification": "0.1.0",
+    "@jarvis/core": "0.1.0",
+    "@jarvis/types": "0.1.0"
+  },
+  "devDependencies": {
+    "@jarvis/connectors": "0.1.0"
+  }
+}

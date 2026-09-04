@@ -1,9 +1,9 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-04 — M5 : connecteur Gmail réel, **lecture
-seule** (`gmail.read`), OAuth 2.0 avec renouvellement automatique de l'access
-token. Aucune capacité d'envoi/modification/suppression/réponse. Non branché
-dans `apps/api`._
+_Dernière mise à jour : 2026-09-04 — M6 : premier flux réel bout en bout
+(`@jarvis/inbox`) reliant le connecteur Gmail (lecture seule, M5) au moteur
+de classification (M4.5), sans modifier ni l'un ni l'autre. Non branché dans
+`apps/api`._
 
 ## Vue d'ensemble
 
@@ -17,21 +17,28 @@ JARVIS est un assistant IA personnel organisé en monorepo npm workspaces
 @jarvis/llm             → @anthropic-ai/sdk
 @jarvis/core            → @jarvis/llm (types uniquement), @jarvis/types
 @jarvis/tools           → @jarvis/core, @jarvis/types
-@jarvis/connectors      → @jarvis/core
+@jarvis/connectors      → @jarvis/core, @jarvis/types
 @jarvis/classification  → @jarvis/llm (types uniquement), @jarvis/types
+@jarvis/inbox           → @jarvis/core, @jarvis/classification, @jarvis/types
+                           (+ @jarvis/connectors en devDependency, tests uniquement)
 apps/api                → @jarvis/core, @jarvis/llm, @jarvis/tools, fastify
 apps/desktop            (vide)
 ```
 
-`@jarvis/connectors` ne dépend que de `@jarvis/core` (pour le contrat `Tool`) :
+`@jarvis/connectors` ne dépend que de `@jarvis/core` + `@jarvis/types` :
 `@jarvis/core` ne connaît, et ne connaîtra jamais, Gmail/Discord/etc.
 
 `@jarvis/classification` ne dépend ni de `@jarvis/connectors` ni de
 `@jarvis/core` : uniquement de `@jarvis/types` (pour `EmailMessage`) et des
 **types** de `@jarvis/llm` (`LlmProvider`/`LlmMessage`, `import type` — aucune
-dépendance d'exécution sur `@anthropic-ai/sdk`). Le futur connecteur Gmail
-produira des `EmailMessage` ; le moteur de classification les consomme ;
-aucun des deux ne connaît l'autre.
+dépendance d'exécution sur `@anthropic-ai/sdk`).
+
+`@jarvis/inbox` (M6) est la **couche d'orchestration** qui relie les deux :
+son code livré (`dependencies`) ne connaît **aucun fournisseur** — il
+fonctionne avec n'importe quel `Tool` de lecture déjà enregistré dans un
+`ToolExecutor`. `@jarvis/connectors` n'apparaît qu'en `devDependency`, utilisé
+uniquement par le test d'intégration qui démontre le flux avec le
+`gmailConnector` réel. `ClassificationEngine` n'est ni modifié ni sous-classé.
 
 | Workspace | Rôle | État |
 |---|---|---|
@@ -40,8 +47,9 @@ aucun des deux ne connaît l'autre.
 | `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
 | `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**, lecture seule) | `gmail.read` fonctionnel avec de vrais credentials ; aucune autre capacité Gmail |
-| `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | architecture validée par tests ; **aucun connecteur ni LLM réel branché** |
-| `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs **non branchés** |
+| `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
+| `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule` | premier flux bout en bout validé par tests (Gmail mocké) ; **non branché dans `apps/api`** |
+| `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
 | `apps/desktop` | Client desktop | non commencé (dossier vide) |
 
 ## Ce qui fonctionne
@@ -327,12 +335,78 @@ l'extraction de règles depuis du texte libre).
 - Aucun branchement à `apps/api` ni à un vrai connecteur Gmail/Outlook.
 - Aucune limite de nombre de préférences ni de nettoyage/expiration.
 
-### Prochaine étape prévue (classification)
+### Prochaine étape (classification) — faite en M6
 
-Connecteur Gmail réel : mapper les messages de l'API Gmail vers
-`EmailMessage`, sans toucher à `@jarvis/classification`. Nécessitera de
-trancher au préalable l'authentification OAuth (déjà identifiée comme
-prochaine étape connecteurs, ci-dessus) avant tout branchement.
+Le branchement à un connecteur Gmail réel est fait (voir section suivante,
+`@jarvis/inbox`), **sans aucune modification** de ce package.
+
+## Intégration Gmail ↔ classification (`@jarvis/inbox`, M6)
+
+Package `packages/inbox`. Premier flux réel de bout en bout :
+
+```
+Tool de lecture déjà enregistré (ex. gmail.read)
+      ↓  fetchEmailsViaTool()      — passe strictement par ToolExecutor
+EmailMessage[]
+      ↓  classifyEmails()          — appelle ClassificationEngine.classify(), inchangé
+ClassifiedEmail[]  { email, classification }
+```
+
+- **`fetchEmailsViaTool(executor, { toolName, input? })`** — générique, ne
+  connaît aucun fournisseur. Passe **exclusivement** par `ToolExecutor`
+  (jamais `tool.execute()` directement) : un outil refusé, en attente de
+  confirmation, inconnu, en erreur, ou dont l'entrée est invalide lève
+  `EmailFetchBlockedError` — aucun email n'est renvoyé dans ces cas. Vérifie
+  aussi que la sortie a bien la forme `{ messages: EmailMessage[] }`.
+- **`classifyEmails(engine, emails)`** — appelle `ClassificationEngine.classify`
+  pour chaque email et recompose `{ email, classification }`.
+  `ClassificationEngine` n'est ni modifié, ni sous-classé, ni contourné.
+- **`fetchAndClassifyEmails(executor, engine, options)`** — compose les deux
+  ci-dessus. C'est la fonction qui réalise concrètement
+  `GmailConnector → EmailMessage[] → ClassificationEngine → ClassificationResult[]`,
+  sans jamais mentionner Gmail dans son code.
+- **`ClassifiedEmail { email, classification }`** — le type de restitution
+  pour une future UI : email complet, `label`, `source`, `reason`, et
+  `preferenceId` quand une préférence a tranché. Aucun champ nouveau créé :
+  `EmailMessage` et `ClassificationResult` portent déjà tout le nécessaire,
+  et ni l'un ni l'autre ne peut structurellement contenir un credential.
+
+### Préparation de l'interaction utilisateur (`feedback.ts`)
+
+Contrats fins, sans interface conversationnelle :
+
+- **`recordFeedbackForEmail(engine, batch, emailId, decision)`** — retrouve
+  un email par id dans un lot déjà classifié et appelle
+  `ClassificationEngine.learnFromFeedback` (portée `sender` uniquement,
+  comportement inchangé). Couvre « cet email est important » / « celui-ci
+  n'est pas important ».
+- **`applyUserRule(engine, { attribute, value, decision, reason? })`** —
+  appelle `ClassificationEngine.addExplicitRule`, avec une explication par
+  défaut générée si absente. Couvre « les emails de cette adresse sont
+  toujours importants » (`attribute: 'sender'`) et « les newsletters de ce
+  domaine ne sont pas importantes » (`attribute: 'domain'`). Une future
+  couche NLU n'aura qu'à produire un `UserRuleRequest` — aucun changement
+  requis ici.
+
+### Volontairement repoussé (M6)
+
+- Aucune interface conversationnelle : `feedback.ts` prépare les contrats,
+  ne les branche à rien (pas de parsing de langage naturel).
+- Aucun stockage ni base de données : les `ClassifiedEmail[]` sont des
+  valeurs éphémères, retournées à l'appelant — rien n'est persisté par
+  `@jarvis/inbox` lui-même (au-delà de `InMemoryPreferenceStore`, déjà
+  existant côté `@jarvis/classification`).
+- Non branché dans `apps/api` : aucune route HTTP n'expose ce flux.
+- Aucune pagination/synchronisation incrémentale (pas de curseur, pas de
+  détection de « nouveaux » emails depuis la dernière lecture).
+
+### Prochaine étape prévue (inbox)
+
+Décision à prendre avant d'aller plus loin : faut-il brancher ce flux dans
+`apps/api` (une route HTTP qui déclenche `fetchAndClassifyEmails` et expose
+`ClassifiedEmail[]`), ou d'abord construire l'interface conversationnelle
+(NLU → `UserRuleRequest`/feedback) ? Les deux restent hors scope tant que la
+connexion initiale OAuth (M5, toujours non tranchée) n'est pas résolue.
 
 ## Ce qui n'est PAS fait (volontairement)
 
@@ -348,26 +422,29 @@ prochaine étape connecteurs, ci-dessus) avant tout branchement.
 - Flux de connexion initiale du compte Gmail (consentement OAuth, obtention
   du premier refresh token) et stockage sécurisé du refresh token : seules
   les interfaces sont posées (`RefreshTokenStore`), non implémentées.
-- Aucune extraction NLU de règles depuis du texte libre (voir section
-  classification).
+- Aucune extraction NLU de règles depuis du texte libre — `@jarvis/inbox`
+  prépare les contrats (`recordFeedbackForEmail`, `applyUserRule`) mais ne
+  parse aucun langage naturel.
+- Aucun branchement du flux `@jarvis/inbox` dans `apps/api` : `ToolRegistry`
+  de l'API reste vide de tout outil connecteur.
 - Pas de mémoire persistante, pas de streaming, pas de WebSocket.
 - Pas d'outil filesystem / shell / réseau générique.
 - `apps/desktop` non commencé.
 
-## Vérifications (après M4 + architecture connecteurs + classification + Gmail M5)
+## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6)
 
 - `npm run typecheck` : vert
-- `npm run typecheck --workspaces` : vert (7 workspaces)
-- `npm test` : vert — **121 tests, 15 fichiers** (87 hérités inchangés + 34
-  pour le connecteur Gmail : 13 dans `gmail-message-mapper.test.ts`, 9 dans
-  `gmail-auth.test.ts`, 5 dans `gmail-api-client.test.ts`, 7 dans
-  `gmail-connector.test.ts`)
-- Aucun appel réseau réel dans les tests : `GoogleOAuthAccessTokenProvider` et
-  `GmailApiClient` reçoivent systématiquement un `fetchFn` mocké dans les
-  tests (aucune dépendance vers `undici`/`node-fetch`/`googleapis` — appels
-  HTTP faits via le `fetch` global de Node, injectable).
-- Aucun secret réel : `packages/connectors/.env.example` ne contient que des
-  placeholders.
+- `npm run typecheck --workspaces` : vert (8 workspaces)
+- `npm test` : vert — **144 tests, 19 fichiers** (121 hérités inchangés + 23
+  pour `@jarvis/inbox` : 6 dans `fetch-emails.test.ts`, 2 dans
+  `classify-emails.test.ts`, 6 dans `feedback.test.ts`, 9 dans
+  `gmail-integration.test.ts`)
+- Aucun appel réseau réel dans les tests : `GmailApiClient` (via
+  `gmailConnector`) reçoit systématiquement un `fetchFn` mocké,
+  `ClassificationEngine` n'utilise que `MockLlmProvider` — aucune dépendance
+  vers `undici`/`node-fetch`/`googleapis`/`@anthropic-ai/sdk` chargée à
+  l'exécution des tests d'intégration.
+- Aucun secret réel, aucun nouveau fichier `.env`.
 
 ## Commits clés
 
@@ -380,4 +457,5 @@ prochaine étape connecteurs, ci-dessus) avant tout branchement.
 - `f836375` agent tool execution loop (fin M4)
 - `e059601` architecture connecteurs (`@jarvis/connectors` + `InMemoryConnector`)
 - `d57e202` moteur de classification (`@jarvis/classification` + `EmailMessage`)
-- _(M5 — connecteur Gmail réel, lecture seule : non committé — en attente de revue)_
+- `fd13ffa` connecteur Gmail réel, lecture seule (M5)
+- _(M6 — intégration Gmail ↔ classification, `@jarvis/inbox` : non committé — en attente de revue)_

@@ -34,6 +34,15 @@ export interface ToolInvalidInput {
   readonly reason: string;
 }
 
+/**
+ * L'outil a été exécuté mais a échoué techniquement (exception dans
+ * `execute`). Distinct d'un refus de permission.
+ */
+export interface ToolFailed {
+  readonly status: 'error';
+  readonly reason: string;
+}
+
 /** La politique de permissions interdit l'action ; l'outil n'a pas été exécuté. */
 export interface ToolDenied {
   readonly status: 'denied';
@@ -58,6 +67,7 @@ export type ToolExecutionResult<TOutput = unknown> =
   | ToolExecuted<TOutput>
   | ToolUnknown
   | ToolInvalidInput
+  | ToolFailed
   | ToolDenied
   | ToolAwaitingConfirmation;
 
@@ -93,7 +103,7 @@ export class ToolExecutor {
       return { status: 'invalid_input', reason: validation.error };
     }
 
-    const decision = this.permissions.decide(tool.name);
+    const decision = this.permissions.decide(tool.name, tool.action);
 
     if (decision === 'deny') {
       return {
@@ -114,7 +124,15 @@ export class ToolExecutor {
       };
     }
 
-    const output = await tool.execute(validation.value);
-    return { status: 'executed', decision, output };
+    try {
+      const output = await tool.execute(validation.value);
+      return { status: 'executed', decision, output };
+    } catch (err) {
+      // Erreur *technique* de l'outil — jamais confondue avec un refus de permission.
+      return {
+        status: 'error',
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 }

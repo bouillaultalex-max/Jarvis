@@ -36,6 +36,28 @@ class CountingTool implements Tool<CounterInput, { doubled: number }> {
   }
 }
 
+/** Outil dont l'exécution lève toujours une exception technique. */
+class ThrowingTool implements Tool<{ x: number }, { x: number }> {
+  readonly name = 'test.thrower';
+  readonly description = 'lève toujours';
+  readonly action: ActionLevel = 'execute';
+
+  validateInput(input: unknown): ToolValidationResult<{ x: number }> {
+    if (
+      typeof input === 'object' &&
+      input !== null &&
+      typeof (input as Record<string, unknown>).x === 'number'
+    ) {
+      return valid({ x: (input as { x: number }).x });
+    }
+    return invalid('test.thrower : { x: number } attendu.');
+  }
+
+  async execute(): Promise<{ x: number }> {
+    throw new Error('panne interne simulée');
+  }
+}
+
 function setup(decision: 'allow' | 'deny' | 'require_confirmation', toolName = 'test.counter') {
   const tool = new CountingTool(toolName);
   const registry = new ToolRegistry();
@@ -109,6 +131,33 @@ describe('ToolExecutor', () => {
     const result = await executor.run({ tool: 'outil.absent', input: {} });
 
     expect(result.status).toBe('unknown_tool');
+    expect(tool.executeCount).toBe(0);
+  });
+
+  it('distingue une erreur technique de l’outil d’un refus de permission', async () => {
+    const tool = new ThrowingTool();
+    const registry = new ToolRegistry();
+    registry.register(tool);
+    const permissions = new PermissionManager({ rules: { 'test.thrower': 'allow' } });
+    const executor = new ToolExecutor(registry, permissions);
+
+    const result = await executor.run({ tool: 'test.thrower', input: { x: 1 } });
+
+    expect(result.status).toBe('error');
+    expect(result.status).not.toBe('denied');
+    expect(result).toMatchObject({ reason: expect.stringContaining('panne interne simulée') });
+  });
+
+  it('une confirmation ne peut jamais outrepasser un « deny »', async () => {
+    const { tool, executor } = setup('deny');
+
+    const result = await executor.run({
+      tool: 'test.counter',
+      input: { n: 1 },
+      confirmed: true,
+    });
+
+    expect(result.status).toBe('denied');
     expect(tool.executeCount).toBe(0);
   });
 

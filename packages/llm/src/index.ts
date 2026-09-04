@@ -5,8 +5,28 @@ export interface LlmMessage {
   content: string;
 }
 
+/**
+ * Demande d'exécution d'outil émise par le modèle, sous forme *structurée*
+ * (jamais du JSON fragile encodé dans une chaîne).
+ *
+ * `input` est volontairement `unknown` : c'est l'outil ciblé qui valide sa
+ * propre entrée.
+ */
+export interface LlmToolCall {
+  readonly tool: string;
+  readonly input: unknown;
+}
+
 export interface LlmResponse {
   content: string;
+  /**
+   * Présent lorsque le modèle demande l'exécution d'un outil.
+   *
+   * Aucune implémentation ne le renseigne encore (`AnthropicProvider` renvoie
+   * toujours `undefined`) : le champ prépare le tool-use structuré à venir et
+   * est exploité aujourd'hui uniquement via un provider de test.
+   */
+  toolCall?: LlmToolCall;
 }
 
 export interface LlmProvider {

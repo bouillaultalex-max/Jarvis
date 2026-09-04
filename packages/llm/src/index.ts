@@ -25,27 +25,46 @@ const DEFAULT_MAX_TOKENS = 4096;
  * La clé d'API est lue exclusivement depuis la variable d'environnement
  * `ANTHROPIC_API_KEY` et n'est jamais journalisée ni incluse dans un message
  * d'erreur.
+ *
+ * L'instanciation ne requiert pas la clé : elle n'est vérifiée qu'au premier
+ * appel de {@link AnthropicProvider.chat}. Une application peut donc démarrer
+ * sans clé, et une requête déclenchera alors une erreur explicite mais
+ * contrôlée.
  */
 export class AnthropicProvider implements LlmProvider {
-  private readonly client: Anthropic;
-  private readonly model: string;
-  private readonly maxTokens: number;
+  private client: Anthropic | undefined;
+  private readonly maxTokens: number = DEFAULT_MAX_TOKENS;
 
-  constructor() {
+  /** Modèle courant, relu à chaque appel pour rester configurable via l'env. */
+  private get model(): string {
+    return process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
+  }
+
+  /**
+   * Crée (une seule fois) le client Anthropic à partir de `ANTHROPIC_API_KEY`.
+   *
+   * @throws {Error} si `ANTHROPIC_API_KEY` est absente ou vide.
+   */
+  private resolveClient(): Anthropic {
+    if (this.client) {
+      return this.client;
+    }
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey || apiKey.trim() === '') {
       throw new Error(
         "ANTHROPIC_API_KEY manquante : définissez la variable d'environnement " +
-          'ANTHROPIC_API_KEY avant d\'instancier AnthropicProvider.',
+          "ANTHROPIC_API_KEY avant d'appeler AnthropicProvider.chat().",
       );
     }
 
     this.client = new Anthropic({ apiKey });
-    this.model = process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_MODEL;
-    this.maxTokens = DEFAULT_MAX_TOKENS;
+    return this.client;
   }
 
   async chat(messages: LlmMessage[]): Promise<LlmResponse> {
+    const client = this.resolveClient();
+
     // L'API Anthropic traite le system prompt séparément : on extrait tous les
     // messages `system` et on concatène leur contenu.
     const system = messages
@@ -66,7 +85,7 @@ export class AnthropicProvider implements LlmProvider {
 
     let response: Anthropic.Message;
     try {
-      response = await this.client.messages.create({
+      response = await client.messages.create({
         model: this.model,
         max_tokens: this.maxTokens,
         messages: conversation,

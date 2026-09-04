@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@jarvis/core": "0.1.0",
+    "@jarvis/llm": "0.1.0",
     "@jarvis/tools": "0.1.0",
-    "@jarvis/types": "0.1.0"
+    "@jarvis/types": "0.1.0",
+    "fastify": "^5.0.0"
   }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@jarvis/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@jarvis/core": "0.1.0",
+    "@jarvis/tools": "0.1.0",
+    "@jarvis/types": "0.1.0"
+  }
+}

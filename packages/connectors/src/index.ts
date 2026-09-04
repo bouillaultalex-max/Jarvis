@@ -1,10 +1,33 @@
 export type { Connector } from './connector.js';
 
+export type { Capability } from './capability.js';
+export { describeCapabilities } from './capability.js';
+
+export type { Account, AccountStatus, ResolveAccountRequest } from './account.js';
+export { AccountStore } from './account.js';
+
+export type { SecretStore } from './secret-store.js';
+export { requireSecret } from './secret-store.js';
+
+export { ConnectorRegistry } from './connector-registry.js';
+
+export {
+  UnknownConnectorError,
+  ConnectorUnavailableError,
+  UnknownCapabilityError,
+  UnsupportedCapabilityError,
+  UnknownAccountError,
+  AmbiguousAccountError,
+  SecretNotFoundError,
+} from './errors.js';
+
 export type {
   InMemoryMessage,
   InMemorySentMessage,
 } from './in-memory/in-memory-client.js';
 export { InMemoryMailClient } from './in-memory/in-memory-client.js';
+
+export { InMemorySecretStore } from './in-memory/in-memory-secret-store.js';
 
 export type {
   InMemoryReadInput,

@@ -5,6 +5,16 @@ build/
 .env.*
 !.env.example
 
+# Secrets/credentials qui ne doivent jamais être commités (préventif : M8
+# introduit des credentials OAuth Gmail réels dans les prochains jalons).
+*.pem
+*.key
+credentials.json
+token.json
+client_secret*.json
+oauth*.json
+secrets.*
+
 *.log
 .DS_Store
 .vscode/

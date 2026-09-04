@@ -2,6 +2,11 @@ import type { LlmMessage, LlmProvider } from '@jarvis/llm';
 
 export type { LlmMessage, LlmProvider, LlmResponse } from '@jarvis/llm';
 
+export * from './tool.js';
+export * from './tool-registry.js';
+export * from './permissions.js';
+export * from './tool-executor.js';
+
 /**
  * Moteur d'orchestration d'une conversation.
  *

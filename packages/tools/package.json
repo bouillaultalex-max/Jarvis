@@ -5,9 +5,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@jarvis/core": "0.1.0",
     "@jarvis/types": "0.1.0"
   }
 }

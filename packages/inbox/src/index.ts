@@ -18,3 +18,6 @@ export { MAX_BODY_EXCERPT_CHARS, buildSummaryPrompt, LlmProviderEmailSummarizer 
 
 export type { SummarizeEmailInput, SummarizeEmailOutput } from './summarize-email-tool.js';
 export { createSummarizeEmailTool } from './summarize-email-tool.js';
+
+export type { AttentionSummary } from './triage.js';
+export { summarizeEmailsNeedingAttention } from './triage.js';

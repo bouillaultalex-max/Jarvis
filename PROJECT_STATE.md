@@ -1,9 +1,11 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-04 — M6 : premier flux réel bout en bout
-(`@jarvis/inbox`) reliant le connecteur Gmail (lecture seule, M5) au moteur
-de classification (M4.5), sans modifier ni l'un ni l'autre. Non branché dans
-`apps/api`._
+_Dernière mise à jour : 2026-09-04 — M7 (M7.1–M7.4) : identification des
+emails nécessitant l'attention, résumé LLM (`Tool` `action: 'read'`),
+préparation de réponse Gmail (`gmail.prepare_reply`, `action: 'prepare'`,
+cible toujours dérivée du message réel), et composition
+`summarizeEmailsNeedingAttention`. Toujours aucun `gmail.send`. Non branché
+dans `apps/api`._
 
 ## Vue d'ensemble
 
@@ -19,7 +21,7 @@ JARVIS est un assistant IA personnel organisé en monorepo npm workspaces
 @jarvis/tools           → @jarvis/core, @jarvis/types
 @jarvis/connectors      → @jarvis/core, @jarvis/types
 @jarvis/classification  → @jarvis/llm (types uniquement), @jarvis/types
-@jarvis/inbox           → @jarvis/core, @jarvis/classification, @jarvis/types
+@jarvis/inbox           → @jarvis/core, @jarvis/classification, @jarvis/llm (types uniquement), @jarvis/types
                            (+ @jarvis/connectors en devDependency, tests uniquement)
 apps/api                → @jarvis/core, @jarvis/llm, @jarvis/tools, fastify
 apps/desktop            (vide)
@@ -33,22 +35,25 @@ apps/desktop            (vide)
 **types** de `@jarvis/llm` (`LlmProvider`/`LlmMessage`, `import type` — aucune
 dépendance d'exécution sur `@anthropic-ai/sdk`).
 
-`@jarvis/inbox` (M6) est la **couche d'orchestration** qui relie les deux :
-son code livré (`dependencies`) ne connaît **aucun fournisseur** — il
-fonctionne avec n'importe quel `Tool` de lecture déjà enregistré dans un
-`ToolExecutor`. `@jarvis/connectors` n'apparaît qu'en `devDependency`, utilisé
-uniquement par le test d'intégration qui démontre le flux avec le
-`gmailConnector` réel. `ClassificationEngine` n'est ni modifié ni sous-classé.
+`@jarvis/inbox` (M6, étendu en M7) est la **couche d'orchestration** qui
+relie connecteurs et classification : son code livré (`dependencies`) ne
+connaît **aucun fournisseur** — il fonctionne avec n'importe quel `Tool` de
+lecture déjà enregistré dans un `ToolExecutor`. `@jarvis/connectors`
+n'apparaît qu'en `devDependency`, utilisé uniquement par le test
+d'intégration qui démontre le flux avec le `gmailConnector` réel.
+`@jarvis/llm` n'est importé qu'en `import type` (même garantie que
+`@jarvis/classification` : aucune dépendance d'exécution sur
+`@anthropic-ai/sdk`). `ClassificationEngine` n'est ni modifié ni sous-classé.
 
 | Workspace | Rôle | État |
 |---|---|---|
 | `@jarvis/types` | Types partagés (`JarvisMessage`, `EmailMessage`) | stable, minimal |
 | `@jarvis/llm` | Abstraction LLM + `AnthropicProvider` | fonctionnel ; clé lue en lazy au 1er appel ; `LlmResponse.toolCall?` défini mais jamais émis par `AnthropicProvider` |
-| `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` |
+| `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` ; inchangé depuis M4 |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
-| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**, lecture seule) | `gmail.read` fonctionnel avec de vrais credentials ; aucune autre capacité Gmail |
+| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) | aucune capacité d'écriture (`gmail.send`/`modify`/`delete` inexistants) |
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
-| `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule` | premier flux bout en bout validé par tests (Gmail mocké) ; **non branché dans `apps/api`** |
+| `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
 | `apps/desktop` | Client desktop | non commencé (dossier vide) |
 
@@ -340,9 +345,9 @@ l'extraction de règles depuis du texte libre).
 Le branchement à un connecteur Gmail réel est fait (voir section suivante,
 `@jarvis/inbox`), **sans aucune modification** de ce package.
 
-## Intégration Gmail ↔ classification (`@jarvis/inbox`, M6)
+## Intégration Gmail ↔ classification et triage (`@jarvis/inbox`, M6 + M7)
 
-Package `packages/inbox`. Premier flux réel de bout en bout :
+Package `packages/inbox`. Premier flux réel de bout en bout (M6) :
 
 ```
 Tool de lecture déjà enregistré (ex. gmail.read)
@@ -388,33 +393,100 @@ Contrats fins, sans interface conversationnelle :
   couche NLU n'aura qu'à produire un `UserRuleRequest` — aucun changement
   requis ici.
 
-### Volontairement repoussé (M6)
+### M7.1 — Identifier les emails nécessitant l'attention (`attention.ts`)
+
+- `AttentionPolicy { labels: readonly ClassificationLabel[] }` — défaut :
+  `['important']` uniquement.
+- `needsAttention(classified, policy?)` / `filterEmailsNeedingAttention(batch, policy?)`
+  — fonctions **pures** : aucune E/S, aucun réseau, aucun appel LLM. Ne
+  mutent jamais `batch` ; préservent l'ordre d'origine.
+
+### M7.2 — Résumer les emails importants (`email-summarizer.ts` + `summarize-email-tool.ts`)
+
+- `EmailSummarizer.summarize(email) → EmailSummary | undefined` —
+  `LlmProviderEmailSummarizer` (basée sur `LlmProvider`, `@jarvis/llm`
+  importé en `import type` uniquement) construit un prompt minimal :
+  expéditeur + objet + extrait de corps borné à `MAX_BODY_EXCERPT_CHARS`
+  (500, même logique et même valeur que `@jarvis/classification`, définie
+  indépendamment). **`recipients` et `threadId` explicitement exclus.**
+- `createSummarizeEmailTool(summarizer): Tool<SummarizeEmailInput, SummarizeEmailOutput>`
+  — `name: 'email.summarize'`, **`action: 'read'`** : aucun effet de bord,
+  aucune connexion Gmail, aucun appel à `GmailApiClient`. N'appelle que le
+  `EmailSummarizer` injecté. Passe par `ToolExecutor` comme tout `Tool`
+  (allow/deny/require_confirmation testés). Une réponse LLM inexploitable ou
+  une exception du provider → jamais un faux résumé (`undefined` côté
+  `EmailSummarizer`, `status: 'error'` côté `ToolExecutor`).
+
+### M7.3 — Préparer une réponse Gmail (`gmail.prepare_reply`, `@jarvis/connectors`)
+
+Deuxième `Tool` du `gmailConnector` (`capabilities: ['gmail.read', 'gmail.prepare_reply']`) :
+
+- `GmailPrepareReplyInput { messageId, body }` → `GmailDraftReply { to, subject, threadId?, body }`.
+- **`action: 'prepare'`**, aucun effet de bord côté Gmail : `execute()`
+  appelle `client.getMessage(messageId)` (lecture seule, méthode déjà
+  existante depuis M5, aucune nouvelle méthode sur `GmailApiClient`) et
+  dérive `to`/`subject`/`threadId` du message **réellement lu**. Seul `body`
+  vient de l'appelant. `validateInput` ne retient que `{messageId, body}` :
+  toute autre clé de l'entrée brute (un `to` fourni par le modèle, par
+  exemple) est structurellement ignorée — testé explicitement (« aucune
+  cible de réponse fournie par l'appelant ne remplace celle du message
+  réel »).
+- `gmail.read` **inchangé** (aucune modification de `createGmailReadTool`).
+  Permissions indépendantes entre `gmail.read` et `gmail.prepare_reply`
+  (testé dans les deux sens). Une confirmation sur `gmail.prepare_reply` ne
+  débloque jamais un autre nom d'outil (testé avec un `gmail.send`
+  hypothétique, toujours `unknown_tool`).
+- Toujours aucun `gmail.send`, `gmail.modify` ni `gmail.delete`.
+
+### M7.4 — Composition attention + résumé (`triage.ts`)
+
+```
+ClassifiedEmail[] → filterEmailsNeedingAttention (M7.1) → EmailSummarizer (M7.2)
+```
+
+- `AttentionSummary { classified: ClassifiedEmail, summary: string | undefined }`
+- `summarizeEmailsNeedingAttention(batch, summarizer, policy?)` — compose
+  M7.1 + M7.2, sans toucher à `ClassificationEngine`, `ToolExecutor` ni
+  `PermissionManager`. **Seuls** les emails retenus par la politique
+  d'attention (par défaut : `important`) sont transmis au `summarizer` : un
+  email `not_important` ou `uncertain` n'atteint jamais le LLM — vérifié
+  explicitement par comptage des appels d'un `MockLlmProvider`
+  (`llm.calls.length` égal au nombre d'emails retenus, jamais à la taille du
+  lot). Préserve l'ordre ; ne mute ni le lot, ni les `ClassifiedEmail`.
+
+### Volontairement repoussé (M6 + M7)
 
 - Aucune interface conversationnelle : `feedback.ts` prépare les contrats,
   ne les branche à rien (pas de parsing de langage naturel).
-- Aucun stockage ni base de données : les `ClassifiedEmail[]` sont des
-  valeurs éphémères, retournées à l'appelant — rien n'est persisté par
-  `@jarvis/inbox` lui-même (au-delà de `InMemoryPreferenceStore`, déjà
+- Aucun stockage ni base de données : les `ClassifiedEmail[]`/`AttentionSummary[]`
+  sont des valeurs éphémères, retournées à l'appelant — rien n'est persisté
+  par `@jarvis/inbox` lui-même (au-delà de `InMemoryPreferenceStore`, déjà
   existant côté `@jarvis/classification`).
 - Non branché dans `apps/api` : aucune route HTTP n'expose ce flux.
 - Aucune pagination/synchronisation incrémentale (pas de curseur, pas de
   détection de « nouveaux » emails depuis la dernière lecture).
+- Aucun `gmail.send` : l'envoi reste un jalon séparé, après feu vert
+  explicite (M8, non commencé).
+- Aucune génération automatique du corps d'une réponse par LLM :
+  `gmail.prepare_reply` structure un corps déjà fourni, il ne le rédige pas.
 
 ### Prochaine étape prévue (inbox)
 
 Décision à prendre avant d'aller plus loin : faut-il brancher ce flux dans
-`apps/api` (une route HTTP qui déclenche `fetchAndClassifyEmails` et expose
-`ClassifiedEmail[]`), ou d'abord construire l'interface conversationnelle
-(NLU → `UserRuleRequest`/feedback) ? Les deux restent hors scope tant que la
-connexion initiale OAuth (M5, toujours non tranchée) n'est pas résolue.
+`apps/api` (une route HTTP qui déclenche `fetchAndClassifyEmails`/
+`summarizeEmailsNeedingAttention` et expose leurs résultats), ou d'abord
+construire l'interface conversationnelle (NLU → `UserRuleRequest`/feedback) ?
+Les deux restent hors scope tant que la connexion initiale OAuth (M5,
+toujours non tranchée) n'est pas résolue. `gmail.send` reste un jalon séparé
+nécessitant un feu vert explicite.
 
 ## Ce qui n'est PAS fait (volontairement)
 
 - Discord, Calendar, Outlook, ou tout autre fournisseur réel : seul Gmail a
-  un connecteur réel, et uniquement en lecture.
-- `gmail.send`, `gmail.modify`, `gmail.delete`, `gmail.prepare_reply` :
-  aucune de ces capacités n'existe (ni `Tool`, ni méthode sur
-  `GmailApiClient`).
+  un connecteur réel.
+- `gmail.send`, `gmail.modify`, `gmail.delete` : aucune de ces capacités
+  n'existe (ni `Tool`, ni méthode sur `GmailApiClient`). `gmail.prepare_reply`
+  existe depuis M7.3 (`action: 'prepare'`, aucun effet de bord).
 - Pas de tool-use Anthropic réel (`AnthropicProvider` n'émet pas de `toolCall`).
 - Connecteurs non branchés dans `apps/api` (`ToolRegistry` de l'API toujours
   vide d'outil connecteur) — `@jarvis/classification` n'a donc jamais reçu
@@ -431,19 +503,22 @@ connexion initiale OAuth (M5, toujours non tranchée) n'est pas résolue.
 - Pas d'outil filesystem / shell / réseau générique.
 - `apps/desktop` non commencé.
 
-## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6)
+## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7)
 
 - `npm run typecheck` : vert
 - `npm run typecheck --workspaces` : vert (8 workspaces)
-- `npm test` : vert — **144 tests, 19 fichiers** (121 hérités inchangés + 23
-  pour `@jarvis/inbox` : 6 dans `fetch-emails.test.ts`, 2 dans
-  `classify-emails.test.ts`, 6 dans `feedback.test.ts`, 9 dans
-  `gmail-integration.test.ts`)
+- `npm test` : vert — **184 tests, 23 fichiers**, dont pour `@jarvis/inbox` :
+  6 (`fetch-emails.test.ts`), 2 (`classify-emails.test.ts`), 6
+  (`feedback.test.ts`), 9 (`gmail-integration.test.ts`), 9 (`attention.test.ts`,
+  M7.1), 8 (`email-summarizer.test.ts`, M7.2), 9
+  (`summarize-email-tool.test.ts`, M7.2), 7 (`triage.test.ts`, M7.4) ; et pour
+  `@jarvis/connectors`, `gmail-connector.test.ts` étendu à 14 tests (M7.3).
 - Aucun appel réseau réel dans les tests : `GmailApiClient` (via
   `gmailConnector`) reçoit systématiquement un `fetchFn` mocké,
-  `ClassificationEngine` n'utilise que `MockLlmProvider` — aucune dépendance
-  vers `undici`/`node-fetch`/`googleapis`/`@anthropic-ai/sdk` chargée à
-  l'exécution des tests d'intégration.
+  `ClassificationEngine` et `LlmProviderEmailSummarizer` n'utilisent que
+  `MockLlmProvider` — aucune dépendance vers
+  `undici`/`node-fetch`/`googleapis`/`@anthropic-ai/sdk` chargée à
+  l'exécution des tests.
 - Aucun secret réel, aucun nouveau fichier `.env`.
 
 ## Commits clés
@@ -458,4 +533,6 @@ connexion initiale OAuth (M5, toujours non tranchée) n'est pas résolue.
 - `e059601` architecture connecteurs (`@jarvis/connectors` + `InMemoryConnector`)
 - `d57e202` moteur de classification (`@jarvis/classification` + `EmailMessage`)
 - `fd13ffa` connecteur Gmail réel, lecture seule (M5)
-- _(M6 — intégration Gmail ↔ classification, `@jarvis/inbox` : non committé — en attente de revue)_
+- `b5d82df` intégration Gmail ↔ classification, `@jarvis/inbox` (M6)
+- `84e2955` triage, résumés, préparation de réponse Gmail (M7.1 + M7.2 + M7.3)
+- _(M7.4 — composition `summarizeEmailsNeedingAttention` (`triage.ts`) : non committé — en attente de revue)_

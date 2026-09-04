@@ -1,16 +1,53 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-04 — M7 (M7.1–M7.4) : identification des
-emails nécessitant l'attention, résumé LLM (`Tool` `action: 'read'`),
-préparation de réponse Gmail (`gmail.prepare_reply`, `action: 'prepare'`,
-cible toujours dérivée du message réel), et composition
-`summarizeEmailsNeedingAttention`. Toujours aucun `gmail.send`. Non branché
-dans `apps/api`._
+_Dernière mise à jour : 2026-09-04 — M7 (M7.1–M7.4) committé et terminé :
+identification des emails nécessitant l'attention, résumé LLM (`Tool`
+`action: 'read'`), préparation de réponse Gmail (`gmail.prepare_reply`,
+`action: 'prepare'`, cible toujours dérivée du message réel), et
+composition `summarizeEmailsNeedingAttention`. Toujours aucun `gmail.send`.
+Non branché dans `apps/api`.
+Depuis, une **fondation architecturale transversale** — `Connector
+Architecture Foundation` (commit `8506792`, voir « Functional milestones
+vs Architectural foundations » ci-dessous) — a été ajoutée : elle ne
+constitue PAS un nouveau jalon fonctionnel et ne remplace pas le M5 Gmail
+historique (`fd13ffa`)._
 
 ## Vue d'ensemble
 
 JARVIS est un assistant IA personnel organisé en monorepo npm workspaces
 (TypeScript strict, exécution via `tsx`, tests via Vitest).
+
+## Functional milestones vs Architectural foundations
+
+Deux catégories d'entrées cohabitent dans ce document et dans l'historique
+Git — ne pas les confondre :
+
+- **Functional milestones** (`M4`, `M5`, `M6`, `M7.1`–`M7.4`, `M8`…) :
+  livrent une capacité utilisateur visible (lire Gmail, classer un email,
+  préparer une réponse, envoyer un email…). Numérotés séquentiellement,
+  chacun correspond à un ou plusieurs commits précis. C'est la chronologie
+  de référence, détaillée en fin de document (« Commits clés »).
+- **Architectural foundations** : refactorent ou généralisent une brique
+  déjà existante **sans livrer de nouvelle capacité utilisateur**. Elles ne
+  portent pas de numéro de jalon fonctionnel — leur donner un `Mx` créerait
+  une collision avec la chronologie ci-dessus. Elles sont documentées par
+  leur libellé et le commit qui les introduit.
+
+  - `Connector Architecture Foundation` (alias technique `M5.ARCH` —
+    volontairement hors de la suite `M4…M8` pour éviter toute confusion
+    avec le M5 fonctionnel `fd13ffa`) : commit `8506792`. Généralise
+    l'architecture connecteurs posée en amont de M5 (`Connector<TClient>`,
+    déjà existant) avec `ConnectorRegistry`, `AccountStore` (multi-compte
+    par provider) et `SecretStore`/`InMemorySecretStore`. Voir
+    `docs/connectors-architecture.md` et la section dédiée plus bas. Ne
+    modifie ni `gmailConnector`, ni `inMemoryConnector`, ni
+    `PermissionManager`/`ToolExecutor` : additive, se situe
+    chronologiquement entre M7.4 et le prochain jalon fonctionnel (M8),
+    sans en faire partie.
+
+En résumé : si une entrée de ce document ne livre aucune nouvelle capacité
+utilisateur observable, elle appartient à la seconde catégorie — même si
+elle est substantielle en volume de code ou en tests.
 
 ## Workspaces & dépendances
 
@@ -51,7 +88,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/llm` | Abstraction LLM + `AnthropicProvider` | fonctionnel ; clé lue en lazy au 1er appel ; `LlmResponse.toolCall?` défini mais jamais émis par `AnthropicProvider` |
 | `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` ; inchangé depuis M4 |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
-| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) | aucune capacité d'écriture (`gmail.send`/`modify`/`delete` inexistants) |
+| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) ; + fondation `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` (`Connector Architecture Foundation`, hors jalon fonctionnel) | aucune capacité d'écriture (`gmail.send`/`modify`/`delete` inexistants) ; `gmailConnector` n'utilise pas encore `ConnectorRegistry`/`AccountStore`/`SecretStore` |
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
@@ -197,6 +234,54 @@ contient que des placeholders (`GMAIL_CLIENT_ID=your-gmail-oauth-client-id`,
 etc.), couvert par `.gitignore` (`.env` / `.env.*` ignorés, `.env.example`
 explicitement autorisé).
 
+### Fondation architecturale : ConnectorRegistry / AccountStore / SecretStore (`Connector Architecture Foundation`, commit `8506792`)
+
+**Ceci n'est pas un jalon fonctionnel.** Ne livre aucune nouvelle capacité
+utilisateur (pas de nouveau `Tool`, aucun connecteur réel supplémentaire) —
+généralise, pour un futur `CalendarConnector`/`DriveConnector`/
+`SlackConnector`/`GitHubConnector`, ce que `gmailConnector` fait déjà
+manuellement. `gmailConnector` et `inMemoryConnector` ne sont pas modifiés
+et n'utilisent pas encore ces abstractions.
+
+- **`ConnectorRegistry`** (`connector-registry.ts`) — enregistrement/lookup
+  de `Connector` par id, symétrique à `ToolRegistry`. Aucune logique
+  métier spécifique à un provider.
+- **`AccountStore`** (`account.ts`) — un utilisateur peut avoir plusieurs
+  comptes pour un même provider (ex. Google perso + pro).
+  `resolve({ provider, accountId? })` est le seul point de sélection d'un
+  compte : `AmbiguousAccountError` si plusieurs comptes existent et
+  qu'aucun `accountId` n'est fourni — **jamais** de sélection implicite.
+- **`SecretStore`** (`secret-store.ts`) — interface indépendante du
+  mécanisme de stockage ; **`InMemorySecretStore`** est la seule
+  implémentation fournie, **dev/test uniquement**, jamais utilisable en
+  production (stockage non chiffré, non persistant, champ JS réellement
+  privé `#secrets` pour qu'aucune valeur ne fuite via
+  `JSON.stringify`/`console.log`).
+- **`Capability`** (`capability.ts`) — description déclarative (id,
+  connectorId, action, description) dérivée des `Tool` réels d'un
+  connecteur via `describeCapabilities()`. **Ne décide jamais d'une
+  autorisation** : `action` n'est qu'une recopie de `Tool.action`. Seul
+  `PermissionManager` autorise ou refuse — vérifié explicitement par
+  `security.test.ts`.
+- **Erreurs métier typées** (`errors.ts`) : `UnknownConnectorError`,
+  `ConnectorUnavailableError`, `UnknownCapabilityError`,
+  `UnsupportedCapabilityError`, `UnknownAccountError`,
+  `AmbiguousAccountError`, `SecretNotFoundError` — jamais de secret dans un
+  message. Un refus de permission reste représenté par
+  `ToolExecutionResult` côté `@jarvis/core`, jamais dupliqué ici.
+
+Documentation détaillée : `docs/connectors-architecture.md`. Tests :
+`connector-registry.test.ts` (9), `account.test.ts` (10),
+`capability.test.ts` (5), `in-memory-secret-store.test.ts` (7),
+`security.test.ts` (10) — 41 tests, tous dans `packages/connectors/src/`.
+
+Ne résout **aucune** des décisions encore ouvertes listées dans
+« Prochaine étape prévue (connecteurs) » ci-dessous (flux de connexion
+OAuth initiale, stockage sécurisé de production du refresh token, modèle
+de confirmation UI pour `gmail.send`) : `InMemorySecretStore` n'est pas un
+stockage de production, et rien ne branche encore `gmailConnector` sur
+`ConnectorRegistry`/`AccountStore`/`SecretStore`.
+
 ### Limites connues (héritées de M4, inchangées)
 
 - Le résultat d'outil est réinjecté au LLM en **texte** (`chat(messages)` n'a pas
@@ -234,6 +319,10 @@ initiale du compte (desktop vs. serveur), stockage sécurisé du refresh token
 (où, comment chiffré), et modèle de confirmation utilisateur pour de
 futures actions `execute` réelles (UI de confirmation via `apps/api` ou
 `apps/desktop`) — avant tout `gmail.send`.
+
+Ces décisions restent entières après `Connector Architecture Foundation`
+(`8506792`) : `SecretStore`/`AccountStore` posent l'abstraction, pas la
+réponse à ces questions (voir section dédiée ci-dessus).
 
 ## Moteur de classification d'emails (`@jarvis/classification`)
 
@@ -503,25 +592,37 @@ nécessitant un feu vert explicite.
 - Pas d'outil filesystem / shell / réseau générique.
 - `apps/desktop` non commencé.
 
-## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7)
+## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7 + Connector Architecture Foundation)
 
 - `npm run typecheck` : vert
 - `npm run typecheck --workspaces` : vert (8 workspaces)
-- `npm test` : vert — **184 tests, 23 fichiers**, dont pour `@jarvis/inbox` :
-  6 (`fetch-emails.test.ts`), 2 (`classify-emails.test.ts`), 6
-  (`feedback.test.ts`), 9 (`gmail-integration.test.ts`), 9 (`attention.test.ts`,
-  M7.1), 8 (`email-summarizer.test.ts`, M7.2), 9
-  (`summarize-email-tool.test.ts`, M7.2), 7 (`triage.test.ts`, M7.4) ; et pour
-  `@jarvis/connectors`, `gmail-connector.test.ts` étendu à 14 tests (M7.3).
+- `npm test` : vert — **225 tests, 28 fichiers** (184 issus des jalons
+  fonctionnels M4–M7.4 + 41 nouveaux, tous dans `@jarvis/connectors`,
+  ajoutés par `Connector Architecture Foundation`, `8506792` :
+  `connector-registry.test.ts` (9), `account.test.ts` (10),
+  `capability.test.ts` (5), `in-memory-secret-store.test.ts` (7),
+  `security.test.ts` (10)). Détail des jalons fonctionnels, pour
+  `@jarvis/inbox` : 6 (`fetch-emails.test.ts`), 2
+  (`classify-emails.test.ts`), 6 (`feedback.test.ts`), 9
+  (`gmail-integration.test.ts`), 9 (`attention.test.ts`, M7.1), 8
+  (`email-summarizer.test.ts`, M7.2), 9 (`summarize-email-tool.test.ts`,
+  M7.2), 7 (`triage.test.ts`, M7.4) ; et pour `@jarvis/connectors`,
+  `gmail-connector.test.ts` étendu à 14 tests (M7.3).
+- `npm run lint` : aucun workspace ne définit de script `lint` (aucune
+  config ESLint dans le dépôt) — préexistant, non lié à `8506792`, à lire
+  comme N/A plutôt que comme un échec.
 - Aucun appel réseau réel dans les tests : `GmailApiClient` (via
   `gmailConnector`) reçoit systématiquement un `fetchFn` mocké,
   `ClassificationEngine` et `LlmProviderEmailSummarizer` n'utilisent que
   `MockLlmProvider` — aucune dépendance vers
   `undici`/`node-fetch`/`googleapis`/`@anthropic-ai/sdk` chargée à
-  l'exécution des tests.
+  l'exécution des tests. `InMemorySecretStore` (nouveau) ne dépend
+  d'aucun mécanisme externe.
 - Aucun secret réel, aucun nouveau fichier `.env`.
 
 ## Commits clés
+
+Jalons fonctionnels (`M4` → `M8`, chronologie de référence) :
 
 - `9d4021f` scaffold monorepo workspaces
 - `2b4db31` TypeScript monorepo foundations
@@ -530,9 +631,18 @@ nécessitant un feu vert explicite.
 - `0716411` HTTP chat API
 - `3bde930` tool contract, registry, permissions, executor
 - `f836375` agent tool execution loop (fin M4)
-- `e059601` architecture connecteurs (`@jarvis/connectors` + `InMemoryConnector`)
+- `e059601` architecture connecteurs (`@jarvis/connectors` + `InMemoryConnector`) — antérieur à M5, pose le contrat `Connector<TClient>`
 - `d57e202` moteur de classification (`@jarvis/classification` + `EmailMessage`)
-- `fd13ffa` connecteur Gmail réel, lecture seule (M5)
-- `b5d82df` intégration Gmail ↔ classification, `@jarvis/inbox` (M6)
-- `84e2955` triage, résumés, préparation de réponse Gmail (M7.1 + M7.2 + M7.3)
-- _(M7.4 — composition `summarizeEmailsNeedingAttention` (`triage.ts`) : non committé — en attente de revue)_
+- `fd13ffa` connecteur Gmail réel, lecture seule — **M5**
+- `b5d82df` intégration Gmail ↔ classification, `@jarvis/inbox` — **M6**
+- `84e2955` triage, résumés, préparation de réponse Gmail — **M7.1 + M7.2 + M7.3**
+- `938d71c` composition `summarizeEmailsNeedingAttention` (`triage.ts`) — **M7.4**, committé et terminé
+- **M8** (Gmail send) : pas encore commencé — voir « Prochaine étape prévue (connecteurs) » ci-dessus et `MASTER_BACKLOG.md`
+
+Fondations architecturales (hors numérotation fonctionnelle — voir
+« Functional milestones vs Architectural foundations » en tête de
+document) :
+
+- `8506792` **Connector Architecture Foundation** — `ConnectorRegistry`,
+  `AccountStore`, `SecretStore`/`InMemorySecretStore`, `Capability`. Ne
+  remplace pas et ne renumérote pas le M5 fonctionnel (`fd13ffa`).

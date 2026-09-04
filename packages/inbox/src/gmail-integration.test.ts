@@ -198,10 +198,13 @@ describe('Flux réel : GmailConnector → EmailMessage[] → ClassificationEngin
     expect(JSON.stringify(results)).not.toContain(FAKE_TOKEN_MARKER);
   });
 
-  it('Gmail reste strictement read-only : aucune capacité d’envoi n’existe dans le pipeline', async () => {
+  it('Gmail n’expose aucune capacité d’écriture (send/modify/delete) dans le pipeline', async () => {
     const { executor, registry } = buildGmailToolExecutor([]);
 
-    for (const forbidden of ['gmail.send', 'gmail.modify', 'gmail.delete', 'gmail.prepare_reply']) {
+    // gmail.prepare_reply (M7.3) est une capacité de lecture/préparation légitime, sans
+    // effet de bord : elle n'est pas listée ici. Seules les capacités d'écriture réelle
+    // restent absentes.
+    for (const forbidden of ['gmail.send', 'gmail.modify', 'gmail.delete']) {
       expect(registry.has(forbidden)).toBe(false);
     }
     const outcome = await executor.run({

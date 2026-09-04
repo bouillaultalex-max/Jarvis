@@ -34,5 +34,10 @@ export { GmailApiClient } from './gmail/gmail-api-client.js';
 
 export { mapGmailMessageToEmailMessage } from './gmail/gmail-message-mapper.js';
 
-export type { GmailReadInput, GmailReadOutput } from './gmail/gmail-connector.js';
+export type {
+  GmailReadInput,
+  GmailReadOutput,
+  GmailPrepareReplyInput,
+  GmailDraftReply,
+} from './gmail/gmail-connector.js';
 export { gmailConnector } from './gmail/gmail-connector.js';

@@ -6,9 +6,12 @@ import { GmailApiClient } from './gmail-api-client.js';
 import { mapGmailMessageToEmailMessage } from './gmail-message-mapper.js';
 
 /**
- * Connecteur Gmail — **lecture seule** pour ce jalon (M5). Ne fournit qu'un
- * seul `Tool`, `gmail.read` (`action: 'read'`). Aucun `gmail.send`,
- * `gmail.modify`, `gmail.delete` ni `gmail.prepare_reply` : ces capacités
+ * Connecteur Gmail. Deux `Tool` :
+ *
+ *   gmail.read          (action: 'read')    — inchangé depuis M5.
+ *   gmail.prepare_reply (action: 'prepare') — M7.3, aucun effet de bord.
+ *
+ * Aucun `gmail.send`, `gmail.modify` ni `gmail.delete` : ces capacités
  * n'existent pas — ni comme `Tool`, ni comme méthode sur `GmailApiClient`.
  */
 
@@ -61,12 +64,71 @@ function createGmailReadTool(client: GmailApiClient): Tool<GmailReadInput, Gmail
   };
 }
 
+export interface GmailPrepareReplyInput {
+  readonly messageId: string;
+  readonly body: string;
+}
+export interface GmailDraftReply {
+  readonly to: string;
+  readonly subject: string;
+  readonly threadId?: string;
+  readonly body: string;
+}
+
+/**
+ * Prépare un brouillon de réponse — **aucun effet de bord** : aucune
+ * écriture Gmail, aucun brouillon distant créé, aucun envoi. Le seul appel
+ * réseau effectué est une **lecture** (`client.getMessage`, déjà existante,
+ * inchangée).
+ *
+ * `to`, `subject` et `threadId` sont **toujours** dérivés du message Gmail
+ * réellement lu — jamais de l'entrée fournie par l'appelant (le modèle).
+ * `validateInput` n'accepte que `{ messageId, body }` : toute autre clé
+ * présente dans l'entrée brute (ex. un `to` fourni par le modèle) est
+ * structurellement ignorée, jamais transmise à `execute`.
+ */
+function createGmailPrepareReplyTool(client: GmailApiClient): Tool<GmailPrepareReplyInput, GmailDraftReply> {
+  return {
+    name: 'gmail.prepare_reply',
+    description:
+      "Prépare un brouillon de réponse à un email Gmail déjà lu, sans l'envoyer (aucun effet de bord).",
+    action: 'prepare',
+
+    validateInput(input: unknown): ToolValidationResult<GmailPrepareReplyInput> {
+      if (typeof input !== 'object' || input === null) {
+        return invalid('gmail.prepare_reply : objet attendu.');
+      }
+      const { messageId, body } = input as Record<string, unknown>;
+      if (typeof messageId !== 'string' || messageId.length === 0) {
+        return invalid('gmail.prepare_reply : « messageId » requis.');
+      }
+      if (typeof body !== 'string' || body.length === 0) {
+        return invalid('gmail.prepare_reply : « body » requis.');
+      }
+      // Aucune autre clé de `input` (ex. « to », « subject », « threadId »)
+      // n'est reprise : seules `messageId` et `body` composent la valeur validée.
+      return valid({ messageId, body });
+    },
+
+    async execute(input: GmailPrepareReplyInput): Promise<GmailDraftReply> {
+      const raw = await client.getMessage(input.messageId);
+      const original = mapGmailMessageToEmailMessage(raw);
+      return {
+        to: original.sender,
+        subject: `Re: ${original.subject}`,
+        threadId: original.threadId,
+        body: input.body,
+      };
+    },
+  };
+}
+
 export const gmailConnector: Connector<GmailApiClient> = {
   id: 'gmail',
-  name: 'Connecteur Gmail (lecture seule)',
-  capabilities: ['gmail.read'],
+  name: 'Connecteur Gmail (lecture seule + préparation de réponse)',
+  capabilities: ['gmail.read', 'gmail.prepare_reply'],
 
   createTools(client: GmailApiClient): readonly Tool[] {
-    return [createGmailReadTool(client)];
+    return [createGmailReadTool(client), createGmailPrepareReplyTool(client)];
   },
 };

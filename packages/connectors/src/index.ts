@@ -15,3 +15,24 @@ export type {
   InMemorySendOutput,
 } from './in-memory/in-memory-connector.js';
 export { inMemoryConnector } from './in-memory/in-memory-connector.js';
+
+export type {
+  GmailCredentials,
+  AccessTokenProvider,
+  RefreshTokenStore,
+  GoogleOAuthAccessTokenProviderOptions,
+} from './gmail/gmail-auth.js';
+export { GoogleOAuthAccessTokenProvider, loadGmailCredentialsFromEnv } from './gmail/gmail-auth.js';
+
+export type {
+  GmailApiClientOptions,
+  GmailRawHeader,
+  GmailRawMessage,
+  GmailRawMessagePart,
+} from './gmail/gmail-api-client.js';
+export { GmailApiClient } from './gmail/gmail-api-client.js';
+
+export { mapGmailMessageToEmailMessage } from './gmail/gmail-message-mapper.js';
+
+export type { GmailReadInput, GmailReadOutput } from './gmail/gmail-connector.js';
+export { gmailConnector } from './gmail/gmail-connector.js';

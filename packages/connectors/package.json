@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@jarvis/core": "0.1.0"
+    "@jarvis/core": "0.1.0",
+    "@jarvis/types": "0.1.0"
   }
 }

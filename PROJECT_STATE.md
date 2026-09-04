@@ -1,9 +1,9 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-04 — après M4 + architecture connecteurs :
-moteur de classification d'emails (package `@jarvis/classification`),
-indépendant de tout fournisseur. Sans intégration réelle (Gmail/Discord/OAuth)
-ni branchement API._
+_Dernière mise à jour : 2026-09-04 — M5 : connecteur Gmail réel, **lecture
+seule** (`gmail.read`), OAuth 2.0 avec renouvellement automatique de l'access
+token. Aucune capacité d'envoi/modification/suppression/réponse. Non branché
+dans `apps/api`._
 
 ## Vue d'ensemble
 
@@ -39,7 +39,7 @@ aucun des deux ne connaît l'autre.
 | `@jarvis/llm` | Abstraction LLM + `AnthropicProvider` | fonctionnel ; clé lue en lazy au 1er appel ; `LlmResponse.toolCall?` défini mais jamais émis par `AnthropicProvider` |
 | `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
-| `@jarvis/connectors` | Contrat `Connector` + connecteur fake `InMemoryConnector` | architecture validée par tests ; **aucun connecteur réel** (pas de Gmail/Discord/OAuth) |
+| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**, lecture seule) | `gmail.read` fonctionnel avec de vrais credentials ; aucune autre capacité Gmail |
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | architecture validée par tests ; **aucun connecteur ni LLM réel branché** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs **non branchés** |
 | `apps/desktop` | Client desktop | non commencé (dossier vide) |
@@ -131,6 +131,59 @@ Cela démontre bout en bout, sans rien de réel à connecter : l'injection d'un
 client authentifié, la lecture, la préparation, l'exécution, le passage par
 `PermissionManager`/`ToolExecutor`, et l'absence de fuite de credential.
 
+### Connecteur réel : `gmailConnector` (M5 — lecture seule)
+
+`packages/connectors/src/gmail/` — premier connecteur **réel** (OAuth 2.0
+Google, appels HTTP effectifs en production), mais strictement limité à la
+lecture pour ce jalon :
+
+```
+Google OAuth credentials → GmailApiClient (Gmail API) → GmailRawMessage
+                                                              ↓  mapGmailMessageToEmailMessage (frontière stricte)
+                                                          EmailMessage → ClassificationEngine (déjà existant, non modifié)
+```
+
+- **`gmail-auth.ts`** — couche d'authentification, séparée du client Gmail :
+  - `GmailCredentials { clientId, clientSecret, refreshToken }` — jamais
+    manipulé par `GmailApiClient`, un `Tool` ou un connecteur.
+  - `AccessTokenProvider` : interface dont dépend `GmailApiClient` (« fournis
+    un access token », sans savoir comment).
+  - `GoogleOAuthAccessTokenProvider` : implémentation **réelle** — échange le
+    refresh token contre un access token via l'endpoint OAuth de Google,
+    cache le résultat avec marge de sécurité, **renouvelle automatiquement**
+    à expiration, et `revoke()` (déconnexion réelle). Appels HTTP via un
+    `fetchFn` **injectable** (tests : mock, zéro réseau réel).
+  - `RefreshTokenStore` : interface posée pour un futur stockage sécurisé du
+    refresh token — **non implémentée** à ce stade.
+  - `loadGmailCredentialsFromEnv()` : lit `GMAIL_CLIENT_ID` /
+    `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` (voir
+    `packages/connectors/.env.example`, placeholders uniquement) ; erreur
+    explicite si absent, ne cite jamais de valeur.
+- **`gmail-api-client.ts`** — `GmailApiClient` : le `TClient` reçu par
+  `gmailConnector.createTools(client)`. Seulement `listMessageIds()` et
+  `getMessage()` — **aucune méthode d'écriture n'existe sur la classe** (pas
+  une question de permission : la capacité n'existe pas). Manipule
+  exclusivement des types `GmailRaw*` (forme brute Gmail), qui ne sortent
+  jamais de ce module.
+- **`gmail-message-mapper.ts`** — `mapGmailMessageToEmailMessage(raw)` :
+  fonction pure, **frontière stricte** entre l'API Gmail et le domaine
+  JARVIS. Extrait expéditeur/destinataires depuis les en-têtes `From`/`To`,
+  décode le corps `text/plain` (recherche récursive dans les parties
+  `multipart`, `''` si seul du HTML est disponible — jamais de HTML brut en
+  guise de corps), convertit `internalDate` en ISO 8601. Au-delà de cette
+  fonction, plus aucun objet brut Gmail ne remonte.
+- **`gmail-connector.ts`** — `gmailConnector: Connector<GmailApiClient>` :
+  `capabilities: ['gmail.read']`, un seul `Tool` (`action: 'read'`). Pas de
+  `gmail.send`, `gmail.modify`, `gmail.delete` ni `gmail.prepare_reply` — ni
+  comme `Tool`, ni comme méthode sur `GmailApiClient`.
+- **`ClassificationEngine` non modifié** : consomme l'`EmailMessage` produit
+  par le mapper exactement comme n'importe quel autre `EmailMessage`.
+
+Aucun secret réel dans le dépôt : `packages/connectors/.env.example` ne
+contient que des placeholders (`GMAIL_CLIENT_ID=your-gmail-oauth-client-id`,
+etc.), couvert par `.gitignore` (`.env` / `.env.*` ignorés, `.env.example`
+explicitement autorisé).
+
 ### Limites connues (héritées de M4, inchangées)
 
 - Le résultat d'outil est réinjecté au LLM en **texte** (`chat(messages)` n'a pas
@@ -139,24 +192,35 @@ client authentifié, la lecture, la préparation, l'exécution, le passage par
   rappelle le même outil confirmé plusieurs fois dans un tour, chaque appel passe.
 - `apps/api` n'expose pas encore outils / confirmations via HTTP.
 
-### Volontairement repoussé (décisions à trancher plus tard, hors scope de cette session)
+### Volontairement repoussé (décisions à trancher plus tard)
 
-- **Aucun connecteur réel** : pas de Gmail, Discord, Calendar, ni aucun appel
-  réseau ou OAuth. `InMemoryConnector` est purement local.
-- **Aucune gestion de credentials réelle** : pas de stockage de token, pas de
-  flux OAuth, pas de rafraîchissement. `TClient` reste un type générique
-  injecté par l'appelant.
+- **Discord/Calendar/autres fournisseurs** : `InMemoryConnector` reste le
+  seul exemple non-Gmail.
+- **Toute capacité Gmail au-delà de la lecture** : pas de `gmail.send`, pas
+  de `gmail.modify`, pas de `gmail.delete`, pas de `gmail.prepare_reply`.
+  Volontaire pour ce jalon (M5 = lecture seule) — un futur jalon pourra
+  ajouter `gmail.prepare_reply` (action `prepare`) puis, avec un modèle de
+  confirmation explicite, `gmail.send` (action `execute`).
+- **Connexion initiale du compte** (flux de consentement OAuth interactif,
+  obtention du tout premier refresh token) : non implémentée. `gmailConnector`
+  suppose un `refreshToken` déjà obtenu, fourni via `GmailCredentials`.
+- **Stockage sécurisé du refresh token** : seule l'interface
+  `RefreshTokenStore` est posée ; aucune implémentation (fichier chiffré,
+  trousseau OS…) n'existe. Le refresh token transite tel quel, en mémoire,
+  via `GmailCredentials`.
 - **`apps/connectors` non branché dans `apps/api`** : le `ToolRegistry` de
-  `apps/api` reste vide de tout outil connecteur pour l'instant, pour éviter
-  une intégration précipitée avant que l'authentification réelle existe.
+  `apps/api` reste vide de tout outil connecteur pour l'instant — décision
+  explicitement repoussée par consigne de ce jalon.
+- **`apps/desktop`** : aucun flux de connexion Gmail dans une UI — hors
+  scope tant que la connexion initiale (ci-dessus) n'est pas tranchée.
 
 ### Prochaine étape prévue (connecteurs)
 
-Authentification OAuth réelle, en commençant probablement par Gmail — avec
-une décision explicite à prendre au préalable sur : stockage sécurisé des
-tokens (où, comment chiffré), flux OAuth (desktop vs. serveur), et modèle de
-confirmation utilisateur pour les actions `execute` réelles (UI de
-confirmation via `apps/api` ou `apps/desktop`).
+Décision à prendre avant d'aller plus loin sur Gmail : flux de connexion
+initiale du compte (desktop vs. serveur), stockage sécurisé du refresh token
+(où, comment chiffré), et modèle de confirmation utilisateur pour de
+futures actions `execute` réelles (UI de confirmation via `apps/api` ou
+`apps/desktop`) — avant tout `gmail.send`.
 
 ## Moteur de classification d'emails (`@jarvis/classification`)
 
@@ -272,31 +336,38 @@ prochaine étape connecteurs, ci-dessus) avant tout branchement.
 
 ## Ce qui n'est PAS fait (volontairement)
 
-- Aucune intégration externe réelle (Gmail, Discord, Calendar, OAuth…).
+- Discord, Calendar, Outlook, ou tout autre fournisseur réel : seul Gmail a
+  un connecteur réel, et uniquement en lecture.
+- `gmail.send`, `gmail.modify`, `gmail.delete`, `gmail.prepare_reply` :
+  aucune de ces capacités n'existe (ni `Tool`, ni méthode sur
+  `GmailApiClient`).
 - Pas de tool-use Anthropic réel (`AnthropicProvider` n'émet pas de `toolCall`).
-- `@jarvis/connectors` existe mais ne contient qu'un connecteur **fake**
-  (`InMemoryConnector`) ; aucune fausse API externe simulée, aucune
-  simulation de flux OAuth.
 - Connecteurs non branchés dans `apps/api` (`ToolRegistry` de l'API toujours
-  vide d'outil connecteur).
-- Aucun connecteur Gmail/Outlook réel ; `@jarvis/classification` n'a jamais
-  vu de vrai `EmailMessage` (seulement des emails fictifs, en test).
+  vide d'outil connecteur) — `@jarvis/classification` n'a donc jamais reçu
+  de vrai `EmailMessage` en dehors des tests.
+- Flux de connexion initiale du compte Gmail (consentement OAuth, obtention
+  du premier refresh token) et stockage sécurisé du refresh token : seules
+  les interfaces sont posées (`RefreshTokenStore`), non implémentées.
 - Aucune extraction NLU de règles depuis du texte libre (voir section
-  classification ci-dessus).
+  classification).
 - Pas de mémoire persistante, pas de streaming, pas de WebSocket.
-- Pas d'outil filesystem / shell / réseau.
+- Pas d'outil filesystem / shell / réseau générique.
 - `apps/desktop` non commencé.
 
-## Vérifications (après M4 + architecture connecteurs + moteur de classification)
+## Vérifications (après M4 + architecture connecteurs + classification + Gmail M5)
 
 - `npm run typecheck` : vert
 - `npm run typecheck --workspaces` : vert (7 workspaces)
-- `npm test` : vert — **87 tests, 11 fichiers** (70 hérités inchangés + 17 pour
-  `@jarvis/classification` : 7 dans `preference-matcher.test.ts`, 10 dans
-  `classification-engine.test.ts`)
-- Aucun appel réseau / clé API dans les tests. `@jarvis/classification`
-  n'importe `@jarvis/llm` qu'en `import type` (aucun chargement runtime de
-  `@anthropic-ai/sdk`) ; les tests LLM utilisent uniquement `MockLlmProvider`.
+- `npm test` : vert — **121 tests, 15 fichiers** (87 hérités inchangés + 34
+  pour le connecteur Gmail : 13 dans `gmail-message-mapper.test.ts`, 9 dans
+  `gmail-auth.test.ts`, 5 dans `gmail-api-client.test.ts`, 7 dans
+  `gmail-connector.test.ts`)
+- Aucun appel réseau réel dans les tests : `GoogleOAuthAccessTokenProvider` et
+  `GmailApiClient` reçoivent systématiquement un `fetchFn` mocké dans les
+  tests (aucune dépendance vers `undici`/`node-fetch`/`googleapis` — appels
+  HTTP faits via le `fetch` global de Node, injectable).
+- Aucun secret réel : `packages/connectors/.env.example` ne contient que des
+  placeholders.
 
 ## Commits clés
 
@@ -308,4 +379,5 @@ prochaine étape connecteurs, ci-dessus) avant tout branchement.
 - `3bde930` tool contract, registry, permissions, executor
 - `f836375` agent tool execution loop (fin M4)
 - `e059601` architecture connecteurs (`@jarvis/connectors` + `InMemoryConnector`)
-- _(moteur de classification `@jarvis/classification` + `EmailMessage` : non committé — en attente de revue)_
+- `d57e202` moteur de classification (`@jarvis/classification` + `EmailMessage`)
+- _(M5 — connecteur Gmail réel, lecture seule : non committé — en attente de revue)_

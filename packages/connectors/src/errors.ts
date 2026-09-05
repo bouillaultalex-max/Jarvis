@@ -108,3 +108,37 @@ export class SecretNotFoundError extends Error {
     this.name = 'SecretNotFoundError';
   }
 }
+
+/**
+ * Cause de corruption d'un fichier `FileAccountStore` — jamais le contenu
+ * brut du fichier, uniquement une catégorie.
+ *
+ * - `empty_file` : le fichier existe mais est vide (0 octet). Traité comme
+ *   une anomalie, pas comme un store vide — voir {@link AccountStoreCorruptedError}.
+ * - `invalid_json` : le contenu n'est pas un JSON syntaxiquement valide.
+ * - `unknown_version` : le champ `version` ne correspond à aucune version
+ *   connue ; aucune tentative de migration automatique n'est faite.
+ * - `invalid_structure` : JSON valide mais qui ne respecte pas la forme
+ *   attendue (racine, liste `accounts`, ou un compte dont un champ requis
+ *   est absent/mal typé).
+ */
+export type AccountStoreCorruptionReason =
+  | 'empty_file'
+  | 'invalid_json'
+  | 'unknown_version'
+  | 'invalid_structure';
+
+/**
+ * Le fichier persistant d'un `FileAccountStore` ne peut pas être lu en
+ * confiance. Ne contient jamais le contenu du fichier ni une quelconque
+ * valeur qu'il porterait — seulement une catégorie (`reason`) et le chemin
+ * du fichier concerné (un chemin de fichier n'est pas un secret).
+ */
+export class AccountStoreCorruptedError extends Error {
+  readonly code = 'account_store_corrupted' as const;
+
+  constructor(readonly reason: AccountStoreCorruptionReason, readonly filePath: string) {
+    super(`Fichier de comptes corrompu ou invalide (${reason}) : « ${filePath} ».`);
+    this.name = 'AccountStoreCorruptedError';
+  }
+}

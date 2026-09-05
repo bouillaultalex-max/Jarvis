@@ -3,14 +3,15 @@ export type { Connector } from './connector.js';
 export type { Capability } from './capability.js';
 export { describeCapabilities } from './capability.js';
 
-export type { Account, AccountStatus, ResolveAccountRequest } from './account.js';
-export { AccountStore } from './account.js';
+export type { Account, AccountStatus, AccountStore, ResolveAccountRequest } from './account.js';
+export { resolveAccount } from './account.js';
 
 export type { SecretStore } from './secret-store.js';
 export { requireSecret } from './secret-store.js';
 
 export { ConnectorRegistry } from './connector-registry.js';
 
+export type { AccountStoreCorruptionReason } from './errors.js';
 export {
   UnknownConnectorError,
   ConnectorUnavailableError,
@@ -19,6 +20,7 @@ export {
   UnknownAccountError,
   AmbiguousAccountError,
   SecretNotFoundError,
+  AccountStoreCorruptedError,
 } from './errors.js';
 
 export type {
@@ -28,6 +30,46 @@ export type {
 export { InMemoryMailClient } from './in-memory/in-memory-client.js';
 
 export { InMemorySecretStore } from './in-memory/in-memory-secret-store.js';
+
+export { InMemoryAccountStore } from './in-memory/in-memory-account-store.js';
+
+export type { FileAccountStoreOptions } from './file/file-account-store.js';
+export { FileAccountStore } from './file/file-account-store.js';
+
+export type {
+  ConfirmationPayload,
+  ConfirmationFailureReason,
+  ConfirmationVerifyResult,
+  ConfirmationTicket,
+  ConfirmationServiceOptions,
+} from './confirmation/confirmation-service.js';
+export {
+  ConfirmationService,
+  describeConfirmationFailure,
+  canonicalStringify,
+  computeFingerprint,
+} from './confirmation/confirmation-service.js';
+
+export type { TextPreview } from './confirmation/text-preview.js';
+export { MAX_SUMMARY_FIELD_VALUE_CHARS, buildTextPreview } from './confirmation/text-preview.js';
+
+export type {
+  ConfirmationAccountView,
+  ConfirmationSummaryField,
+  ConfirmationInputSummary,
+  ConfirmationRequest,
+  BuildConfirmationRequestOptions,
+} from './confirmation/confirmation-request.js';
+export { buildConfirmationRequest } from './confirmation/confirmation-request.js';
+
+export type {
+  ProposeConfirmationOptions,
+  ProposeConfirmationResult,
+  ConfirmationFailed,
+  ConfirmAndExecuteResult,
+  ConfirmAndExecuteOptions,
+} from './confirmation/confirmation-flow.js';
+export { proposeConfirmation, confirmAndExecute } from './confirmation/confirmation-flow.js';
 
 export type {
   InMemoryReadInput,

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { AccountStore, type Account } from './account.js';
+import { resolveAccount, type Account } from './account.js';
 import { AmbiguousAccountError, UnknownAccountError } from './errors.js';
+import { InMemoryAccountStore } from './in-memory/in-memory-account-store.js';
 
 function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'provider' | 'accountIdentifier'>): Account {
   return {
@@ -14,100 +15,110 @@ function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'provide
   };
 }
 
-describe('AccountStore', () => {
-  it('permet plusieurs comptes pour un même provider (ex. Google perso + pro)', () => {
-    const store = new AccountStore();
+describe('InMemoryAccountStore', () => {
+  it('permet plusieurs comptes pour un même provider (ex. Google perso + pro)', async () => {
+    const store = new InMemoryAccountStore();
     const personal = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
     const work = makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' });
 
-    store.register(personal);
-    store.register(work);
+    await store.register(personal);
+    await store.register(work);
 
-    expect(store.listByProvider('google')).toEqual([personal, work]);
+    await expect(store.listByProvider('google')).resolves.toEqual([personal, work]);
   });
 
-  it('lookup par accountId', () => {
-    const store = new AccountStore();
+  it('lookup par accountId', async () => {
+    const store = new InMemoryAccountStore();
     const account = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
-    store.register(account);
+    await store.register(account);
 
-    expect(store.get('acc-1')).toBe(account);
-    expect(store.has('acc-1')).toBe(true);
+    await expect(store.get('acc-1')).resolves.toBe(account);
+    await expect(store.has('acc-1')).resolves.toBe(true);
   });
 
-  it('compte inexistant : get() lève UnknownAccountError, has() renvoie false', () => {
-    const store = new AccountStore();
+  it('compte inexistant : get() lève UnknownAccountError, has() renvoie false', async () => {
+    const store = new InMemoryAccountStore();
 
-    expect(store.has('acc-missing')).toBe(false);
-    expect(() => store.get('acc-missing')).toThrowError(UnknownAccountError);
+    await expect(store.has('acc-missing')).resolves.toBe(false);
+    await expect(store.get('acc-missing')).rejects.toThrowError(UnknownAccountError);
   });
 
-  describe('resolve()', () => {
-    it('un seul compte pour le provider, sans accountId : le résout automatiquement', () => {
-      const store = new AccountStore();
-      const account = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
-      store.register(account);
+  it('list() énumère tous les comptes enregistrés', async () => {
+    const store = new InMemoryAccountStore();
+    const personal = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
+    await store.register(personal);
 
-      expect(store.resolve({ provider: 'google' })).toBe(account);
-    });
+    await expect(store.list()).resolves.toEqual([personal]);
+  });
+});
 
-    it('accountId fourni : retourne exactement ce compte', () => {
-      const store = new AccountStore();
-      const personal = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
-      const work = makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' });
-      store.register(personal);
-      store.register(work);
+describe('resolveAccount()', () => {
+  it('un seul compte pour le provider, sans accountId : le résout automatiquement', async () => {
+    const store = new InMemoryAccountStore();
+    const account = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
+    await store.register(account);
 
-      expect(store.resolve({ provider: 'google', accountId: 'acc-2' })).toBe(work);
-    });
+    await expect(resolveAccount(store, { provider: 'google' })).resolves.toBe(account);
+  });
 
-    it('aucun compte pour ce provider : lève UnknownAccountError', () => {
-      const store = new AccountStore();
-      expect(() => store.resolve({ provider: 'google' })).toThrowError(UnknownAccountError);
-    });
+  it('accountId fourni : retourne exactement ce compte', async () => {
+    const store = new InMemoryAccountStore();
+    const personal = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
+    const work = makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' });
+    await store.register(personal);
+    await store.register(work);
 
-    it('accountId fourni mais inexistant : lève UnknownAccountError', () => {
-      const store = new AccountStore();
-      store.register(makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' }));
+    await expect(resolveAccount(store, { provider: 'google', accountId: 'acc-2' })).resolves.toBe(work);
+  });
 
-      expect(() => store.resolve({ provider: 'google', accountId: 'does-not-exist' })).toThrowError(
-        UnknownAccountError,
-      );
-    });
+  it('aucun compte pour ce provider : lève UnknownAccountError', async () => {
+    const store = new InMemoryAccountStore();
+    await expect(resolveAccount(store, { provider: 'google' })).rejects.toThrowError(UnknownAccountError);
+  });
 
-    it('accountId appartenant à un autre provider : traité comme inconnu pour CE provider (pas de fuite cross-provider)', () => {
-      const store = new AccountStore();
-      store.register(makeAccount({ id: 'acc-1', provider: 'slack', accountIdentifier: 'team-x' }));
+  it('accountId fourni mais inexistant : lève UnknownAccountError', async () => {
+    const store = new InMemoryAccountStore();
+    await store.register(makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' }));
 
-      expect(() => store.resolve({ provider: 'google', accountId: 'acc-1' })).toThrowError(UnknownAccountError);
-    });
+    await expect(resolveAccount(store, { provider: 'google', accountId: 'does-not-exist' })).rejects.toThrowError(
+      UnknownAccountError,
+    );
+  });
 
-    it('ambiguïté de compte : plusieurs comptes existent, aucun accountId fourni → AmbiguousAccountError, jamais une sélection implicite', () => {
-      const store = new AccountStore();
-      const personal = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
-      const work = makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' });
-      store.register(personal);
-      store.register(work);
+  it('accountId appartenant à un autre provider : traité comme inconnu pour CE provider (pas de fuite cross-provider)', async () => {
+    const store = new InMemoryAccountStore();
+    await store.register(makeAccount({ id: 'acc-1', provider: 'slack', accountIdentifier: 'team-x' }));
 
-      let thrown: unknown;
-      try {
-        store.resolve({ provider: 'google' });
-      } catch (err) {
-        thrown = err;
-      }
+    await expect(resolveAccount(store, { provider: 'google', accountId: 'acc-1' })).rejects.toThrowError(
+      UnknownAccountError,
+    );
+  });
 
-      expect(thrown).toBeInstanceOf(AmbiguousAccountError);
-      expect([...(thrown as AmbiguousAccountError).candidateAccountIds].sort()).toEqual(['acc-1', 'acc-2']);
-    });
+  it('ambiguïté de compte : plusieurs comptes existent, aucun accountId fourni → AmbiguousAccountError, jamais une sélection implicite', async () => {
+    const store = new InMemoryAccountStore();
+    const personal = makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' });
+    const work = makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' });
+    await store.register(personal);
+    await store.register(work);
 
-    it('ambiguïté : appeler resolve() plusieurs fois de suite ne finit jamais par choisir un compte au hasard', () => {
-      const store = new AccountStore();
-      store.register(makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' }));
-      store.register(makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' }));
+    let thrown: unknown;
+    try {
+      await resolveAccount(store, { provider: 'google' });
+    } catch (err) {
+      thrown = err;
+    }
 
-      for (let i = 0; i < 5; i++) {
-        expect(() => store.resolve({ provider: 'google' })).toThrowError(AmbiguousAccountError);
-      }
-    });
+    expect(thrown).toBeInstanceOf(AmbiguousAccountError);
+    expect([...(thrown as AmbiguousAccountError).candidateAccountIds].sort()).toEqual(['acc-1', 'acc-2']);
+  });
+
+  it('ambiguïté : appeler resolveAccount() plusieurs fois de suite ne finit jamais par choisir un compte au hasard', async () => {
+    const store = new InMemoryAccountStore();
+    await store.register(makeAccount({ id: 'acc-1', provider: 'google', accountIdentifier: 'perso@example.test' }));
+    await store.register(makeAccount({ id: 'acc-2', provider: 'google', accountIdentifier: 'pro@example.test' }));
+
+    for (let i = 0; i < 5; i++) {
+      await expect(resolveAccount(store, { provider: 'google' })).rejects.toThrowError(AmbiguousAccountError);
+    }
   });
 });

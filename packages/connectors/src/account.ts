@@ -34,74 +34,67 @@ export interface ResolveAccountRequest {
 }
 
 /**
- * Registre des comptes connectés. Responsabilité unique : enregistrer et
- * résoudre des `Account` — ne prend aucune décision de permission
- * (`PermissionManager`) ni de secret (`SecretStore`).
+ * Stockage de comptes connectés. Responsabilité unique : enregistrer et
+ * retrouver des `Account` — ne prend aucune décision de permission
+ * (`PermissionManager`) ni de secret (`SecretStore`), et ne décide jamais
+ * lui-même quel compte utiliser pour une opération ambiguë (voir
+ * {@link resolveAccount}, volontairement séparée : la logique de
+ * résolution est identique quel que soit le backend, elle ne doit pas
+ * être ré-implémentée par chaque implémentation).
+ *
+ * Toutes les opérations sont `Promise`-based : un backend de production
+ * (fichier, futur stockage distant…) fait nécessairement de l'E/S, et
+ * l'interface doit rester honnête à ce sujet même quand une implémentation
+ * donnée (ex. {@link ../in-memory/in-memory-account-store.js}) peut se
+ * permettre d'être synchrone en interne.
  */
-export class AccountStore {
-  private readonly accounts = new Map<string, Account>();
-
-  register(account: Account): void {
-    this.accounts.set(account.id, account);
-  }
-
-  has(accountId: string): boolean {
-    return this.accounts.has(accountId);
-  }
+export interface AccountStore {
+  register(account: Account): Promise<void>;
+  has(accountId: string): Promise<boolean>;
 
   /**
    * Lookup direct par id.
    *
    * @throws {UnknownAccountError} si aucun compte ne porte cet id.
    */
-  get(accountId: string): Account {
-    const account = this.accounts.get(accountId);
-    if (account === undefined) {
-      throw new UnknownAccountError(accountId);
+  get(accountId: string): Promise<Account>;
+
+  listByProvider(provider: string): Promise<Account[]>;
+  list(): Promise<Account[]>;
+}
+
+/**
+ * Résout le compte à utiliser pour une opération donnée, pour n'importe
+ * quelle implémentation d'{@link AccountStore}. C'est le seul point de
+ * sélection d'un compte : il ne choisit **jamais** silencieusement un
+ * compte parmi plusieurs.
+ *
+ * - `accountId` fourni : retourne ce compte précis (doit exister et
+ *   appartenir à `provider`), sinon `UnknownAccountError`.
+ * - `accountId` absent et un seul compte pour ce provider : le retourne.
+ * - `accountId` absent et aucun compte pour ce provider : `UnknownAccountError`.
+ * - `accountId` absent et plusieurs comptes pour ce provider : `AmbiguousAccountError`.
+ */
+export async function resolveAccount(store: AccountStore, request: ResolveAccountRequest): Promise<Account> {
+  const { provider, accountId } = request;
+
+  if (accountId !== undefined) {
+    const found = (await store.has(accountId)) ? await store.get(accountId) : undefined;
+    if (found === undefined || found.provider !== provider) {
+      throw new UnknownAccountError(accountId, provider);
     }
-    return account;
+    return found;
   }
 
-  listByProvider(provider: string): Account[] {
-    return [...this.accounts.values()].filter((account) => account.provider === provider);
+  const candidates = await store.listByProvider(provider);
+  if (candidates.length === 0) {
+    throw new UnknownAccountError(undefined, provider);
   }
-
-  list(): Account[] {
-    return [...this.accounts.values()];
+  if (candidates.length > 1) {
+    throw new AmbiguousAccountError(
+      provider,
+      candidates.map((account) => account.id),
+    );
   }
-
-  /**
-   * Résout le compte à utiliser pour une opération donnée. C'est le seul
-   * point de sélection d'un compte : il ne choisit **jamais** silencieusement
-   * un compte parmi plusieurs.
-   *
-   * - `accountId` fourni : retourne ce compte précis (doit exister et
-   *   appartenir à `provider`), sinon `UnknownAccountError`.
-   * - `accountId` absent et un seul compte pour ce provider : le retourne.
-   * - `accountId` absent et aucun compte pour ce provider : `UnknownAccountError`.
-   * - `accountId` absent et plusieurs comptes pour ce provider : `AmbiguousAccountError`.
-   */
-  resolve(request: ResolveAccountRequest): Account {
-    const { provider, accountId } = request;
-
-    if (accountId !== undefined) {
-      const account = this.accounts.get(accountId);
-      if (account === undefined || account.provider !== provider) {
-        throw new UnknownAccountError(accountId, provider);
-      }
-      return account;
-    }
-
-    const candidates = this.listByProvider(provider);
-    if (candidates.length === 0) {
-      throw new UnknownAccountError(undefined, provider);
-    }
-    if (candidates.length > 1) {
-      throw new AmbiguousAccountError(
-        provider,
-        candidates.map((account) => account.id),
-      );
-    }
-    return candidates[0]!;
-  }
+  return candidates[0]!;
 }

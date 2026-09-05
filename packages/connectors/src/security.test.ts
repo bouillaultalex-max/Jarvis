@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { PermissionManager, ToolExecutor, ToolRegistry } from '@jarvis/core';
 
-import { AccountStore, type Account } from './account.js';
+import { resolveAccount, type Account } from './account.js';
 import { ConnectorRegistry } from './connector-registry.js';
 import { AmbiguousAccountError, SecretNotFoundError, UnknownConnectorError } from './errors.js';
+import { InMemoryAccountStore } from './in-memory/in-memory-account-store.js';
 import { InMemoryMailClient } from './in-memory/in-memory-client.js';
 import { inMemoryConnector } from './in-memory/in-memory-connector.js';
 import { InMemorySecretStore } from './in-memory/in-memory-secret-store.js';
@@ -102,14 +103,14 @@ describe('Sécurité — aucun contournement de PermissionManager', () => {
     const connectorRegistry = new ConnectorRegistry();
     connectorRegistry.register(inMemoryConnector);
 
-    const accountStore = new AccountStore();
-    accountStore.register(
+    const accountStore = new InMemoryAccountStore();
+    await accountStore.register(
       makeAccount({ id: 'acc-1', provider: 'inmemory', accountIdentifier: 'demo@example.test' }),
     );
 
     // Résolution connector + compte : n'implique ni n'autorise rien.
     const connector = connectorRegistry.get('inmemory');
-    const account = accountStore.resolve({ provider: 'inmemory' });
+    const account = await resolveAccount(accountStore, { provider: 'inmemory' });
     expect(account.id).toBe('acc-1');
 
     const client = new InMemoryMailClient();
@@ -154,28 +155,28 @@ describe('Sécurité — aucun contournement de PermissionManager', () => {
     expect(confirmed.status).toBe('executed');
   });
 
-  it('résoudre un connector/compte inexistant échoue proprement (erreurs typées) sans jamais atteindre ToolExecutor', () => {
+  it('résoudre un connector/compte inexistant échoue proprement (erreurs typées) sans jamais atteindre ToolExecutor', async () => {
     const connectorRegistry = new ConnectorRegistry();
-    const accountStore = new AccountStore();
+    const accountStore = new InMemoryAccountStore();
 
     expect(() => connectorRegistry.get('discord')).toThrowError(UnknownConnectorError);
-    expect(() => accountStore.resolve({ provider: 'discord' })).toThrowError();
+    await expect(resolveAccount(accountStore, { provider: 'discord' })).rejects.toThrowError();
   });
 });
 
 describe('Sécurité — ambiguïté de compte : jamais de sélection implicite', () => {
   it('deux comptes pour le même provider, aucun accountId : AmbiguousAccountError, aucune action ne peut être lancée par erreur', async () => {
-    const accountStore = new AccountStore();
-    accountStore.register(makeAccount({ id: 'acc-perso', provider: 'inmemory', accountIdentifier: 'perso@example.test' }));
-    accountStore.register(makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }));
+    const accountStore = new InMemoryAccountStore();
+    await accountStore.register(makeAccount({ id: 'acc-perso', provider: 'inmemory', accountIdentifier: 'perso@example.test' }));
+    await accountStore.register(makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }));
 
-    expect(() => accountStore.resolve({ provider: 'inmemory' })).toThrowError(AmbiguousAccountError);
+    await expect(resolveAccount(accountStore, { provider: 'inmemory' })).rejects.toThrowError(AmbiguousAccountError);
 
     // Simule l'appelant (ex. un Tool ou une route API) qui doit gérer
     // l'échec explicitement plutôt que de continuer avec un compte par défaut.
     let selectedAccountId: string | undefined;
     try {
-      const account = accountStore.resolve({ provider: 'inmemory' });
+      const account = await resolveAccount(accountStore, { provider: 'inmemory' });
       selectedAccountId = account.id;
     } catch {
       selectedAccountId = undefined;
@@ -183,12 +184,12 @@ describe('Sécurité — ambiguïté de compte : jamais de sélection implicite'
     expect(selectedAccountId).toBeUndefined();
   });
 
-  it('fournir explicitement accountId lève l’ambiguïté et sélectionne le bon compte', () => {
-    const accountStore = new AccountStore();
-    accountStore.register(makeAccount({ id: 'acc-perso', provider: 'inmemory', accountIdentifier: 'perso@example.test' }));
-    accountStore.register(makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }));
+  it('fournir explicitement accountId lève l’ambiguïté et sélectionne le bon compte', async () => {
+    const accountStore = new InMemoryAccountStore();
+    await accountStore.register(makeAccount({ id: 'acc-perso', provider: 'inmemory', accountIdentifier: 'perso@example.test' }));
+    await accountStore.register(makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }));
 
-    const resolved = accountStore.resolve({ provider: 'inmemory', accountId: 'acc-pro' });
+    const resolved = await resolveAccount(accountStore, { provider: 'inmemory', accountId: 'acc-pro' });
 
     expect(resolved.id).toBe('acc-pro');
   });

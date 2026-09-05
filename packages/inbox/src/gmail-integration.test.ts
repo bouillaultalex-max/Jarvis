@@ -198,17 +198,17 @@ describe('Flux réel : GmailConnector → EmailMessage[] → ClassificationEngin
     expect(JSON.stringify(results)).not.toContain(FAKE_TOKEN_MARKER);
   });
 
-  it('Gmail n’expose aucune capacité d’écriture (send/modify/delete) dans le pipeline', async () => {
+  it('Gmail n’expose aucune capacité de modification ou de suppression dans le pipeline (gmail.send existe désormais depuis M8-A6)', async () => {
     const { executor, registry } = buildGmailToolExecutor([]);
 
     // gmail.prepare_reply (M7.3) est une capacité de lecture/préparation légitime, sans
-    // effet de bord : elle n'est pas listée ici. Seules les capacités d'écriture réelle
-    // restent absentes.
-    for (const forbidden of ['gmail.send', 'gmail.modify', 'gmail.delete']) {
+    // effet de bord : elle n'est pas listée ici. gmail.send (M8-A6) existe désormais
+    // réellement — seules gmail.modify/gmail.delete restent absentes.
+    for (const forbidden of ['gmail.modify', 'gmail.delete']) {
       expect(registry.has(forbidden)).toBe(false);
     }
     const outcome = await executor.run({
-      tool: 'gmail.send',
+      tool: 'gmail.modify',
       input: { to: 'x@example.test', subject: 's', body: 'b' },
     });
     expect(outcome.status).toBe('unknown_tool');

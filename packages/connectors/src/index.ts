@@ -94,6 +94,8 @@ export type {
   GmailRawHeader,
   GmailRawMessage,
   GmailRawMessagePart,
+  GmailSendMessageInput,
+  GmailSendMessageResult,
 } from './gmail/gmail-api-client.js';
 export { GmailApiClient } from './gmail/gmail-api-client.js';
 
@@ -104,5 +106,7 @@ export type {
   GmailReadOutput,
   GmailPrepareReplyInput,
   GmailDraftReply,
+  GmailSendInput,
+  GmailSendOutput,
 } from './gmail/gmail-connector.js';
 export { gmailConnector } from './gmail/gmail-connector.js';

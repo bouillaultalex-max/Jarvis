@@ -2,17 +2,18 @@ import { type Tool, type ToolValidationResult, invalid, valid } from '@jarvis/co
 import type { EmailMessage } from '@jarvis/types';
 
 import type { Connector } from '../connector.js';
-import { GmailApiClient } from './gmail-api-client.js';
+import { GmailApiClient, type GmailSendMessageInput, type GmailSendMessageResult } from './gmail-api-client.js';
 import { mapGmailMessageToEmailMessage } from './gmail-message-mapper.js';
 
 /**
- * Connecteur Gmail. Deux `Tool` :
+ * Connecteur Gmail. Trois `Tool` :
  *
  *   gmail.read          (action: 'read')    — inchangé depuis M5.
  *   gmail.prepare_reply (action: 'prepare') — M7.3, aucun effet de bord.
+ *   gmail.send          (action: 'execute') — M8-A6, effet de bord réel.
  *
- * Aucun `gmail.send`, `gmail.modify` ni `gmail.delete` : ces capacités
- * n'existent pas — ni comme `Tool`, ni comme méthode sur `GmailApiClient`.
+ * Aucun `gmail.modify` ni `gmail.delete` : ces capacités n'existent pas —
+ * ni comme `Tool`, ni comme méthode sur `GmailApiClient`.
  */
 
 export interface GmailReadInput {
@@ -123,12 +124,73 @@ function createGmailPrepareReplyTool(client: GmailApiClient): Tool<GmailPrepareR
   };
 }
 
+/**
+ * Entrée/sortie identiques à celles de `GmailApiClient.sendMessage` :
+ * aucune transformation n'a lieu entre le `Tool` et le client (contrairement
+ * à `gmail.read`/`gmail.prepare_reply`, qui passent par
+ * `mapGmailMessageToEmailMessage`) — les alias évitent de dupliquer les
+ * mêmes champs sous un second nom de type.
+ */
+export type GmailSendInput = GmailSendMessageInput;
+export type GmailSendOutput = GmailSendMessageResult;
+
+/** Seules clés acceptées en entrée — toute autre clé fait échouer la validation (jamais ignorée en silence). */
+const ALLOWED_SEND_INPUT_KEYS = new Set(['to', 'subject', 'body', 'threadId']);
+
+/**
+ * Envoie réellement un email — **seule** capacité `execute` de ce
+ * connecteur : effet de bord réel et irréversible côté Gmail. Contrairement
+ * à `gmail.prepare_reply`, une clé inconnue dans l'entrée brute fait
+ * **échouer** la validation plutôt que d'être silencieusement ignorée : un
+ * envoi réel ne doit jamais accepter tacitement un champ non prévu par ce
+ * contrat.
+ */
+function createGmailSendTool(client: GmailApiClient): Tool<GmailSendInput, GmailSendOutput> {
+  return {
+    name: 'gmail.send',
+    description: 'Envoie réellement un email via Gmail (action irréversible, effet de bord réel).',
+    action: 'execute',
+
+    validateInput(input: unknown): ToolValidationResult<GmailSendInput> {
+      if (typeof input !== 'object' || input === null) {
+        return invalid('gmail.send : objet attendu.');
+      }
+      const record = input as Record<string, unknown>;
+
+      const unknownKeys = Object.keys(record).filter((key) => !ALLOWED_SEND_INPUT_KEYS.has(key));
+      if (unknownKeys.length > 0) {
+        return invalid(`gmail.send : propriété(s) inconnue(s) : ${unknownKeys.join(', ')}.`);
+      }
+
+      const { to, subject, body, threadId } = record;
+      if (typeof to !== 'string' || to.length === 0) {
+        return invalid('gmail.send : « to » requis.');
+      }
+      if (typeof subject !== 'string') {
+        return invalid('gmail.send : « subject » doit être une chaîne.');
+      }
+      if (typeof body !== 'string') {
+        return invalid('gmail.send : « body » doit être une chaîne.');
+      }
+      if (threadId !== undefined && typeof threadId !== 'string') {
+        return invalid('gmail.send : « threadId » doit être une chaîne.');
+      }
+
+      return valid({ to, subject, body, ...(threadId !== undefined ? { threadId } : {}) });
+    },
+
+    async execute(input: GmailSendInput): Promise<GmailSendOutput> {
+      return client.sendMessage(input);
+    },
+  };
+}
+
 export const gmailConnector: Connector<GmailApiClient> = {
   id: 'gmail',
-  name: 'Connecteur Gmail (lecture seule + préparation de réponse)',
-  capabilities: ['gmail.read', 'gmail.prepare_reply'],
+  name: 'Connecteur Gmail (lecture, préparation de réponse et envoi)',
+  capabilities: ['gmail.read', 'gmail.prepare_reply', 'gmail.send'],
 
   createTools(client: GmailApiClient): readonly Tool[] {
-    return [createGmailReadTool(client), createGmailPrepareReplyTool(client)];
+    return [createGmailReadTool(client), createGmailPrepareReplyTool(client), createGmailSendTool(client)];
   },
 };

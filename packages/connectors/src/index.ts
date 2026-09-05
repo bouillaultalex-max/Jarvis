@@ -36,6 +36,9 @@ export { InMemoryAccountStore } from './in-memory/in-memory-account-store.js';
 export type { FileAccountStoreOptions } from './file/file-account-store.js';
 export { FileAccountStore } from './file/file-account-store.js';
 
+export type { OsCredentialSecretStoreOptions } from './os/os-credential-secret-store.js';
+export { OsCredentialSecretStore } from './os/os-credential-secret-store.js';
+
 export type {
   ConfirmationPayload,
   ConfirmationFailureReason,

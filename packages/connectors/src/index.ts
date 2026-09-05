@@ -123,8 +123,10 @@ export type {
   GmailOAuthResult,
   ConnectGmailAccountOptions,
   ConnectGmailAccountOutcome,
+  DisconnectGmailAccountOptions,
+  DisconnectGmailAccountOutcome,
 } from './gmail/gmail-connection.js';
-export { connectGmailAccount } from './gmail/gmail-connection.js';
+export { connectGmailAccount, disconnectGmailAccount } from './gmail/gmail-connection.js';
 
 export type { ResolveGmailApiClientOptions } from './gmail/gmail-client-resolver.js';
 export { resolveGmailApiClient } from './gmail/gmail-client-resolver.js';

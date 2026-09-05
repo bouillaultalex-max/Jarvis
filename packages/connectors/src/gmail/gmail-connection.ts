@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Account, AccountStore } from '../account.js';
+import type { ConfirmationService } from '../confirmation/confirmation-service.js';
 import type { SecretStore } from '../secret-store.js';
 import { gmailRefreshTokenSecretKey } from './gmail-auth.js';
 
@@ -157,6 +158,96 @@ export async function connectGmailAccount(options: ConnectGmailAccountOptions): 
 
   return {
     status: 'connected',
+    accountId: account.id,
+    provider: 'gmail',
+    accountIdentifier: account.accountIdentifier,
+  };
+}
+
+export interface DisconnectGmailAccountOptions {
+  readonly accountId: string;
+  readonly accountStore: AccountStore;
+  readonly secretStore: SecretStore;
+  readonly confirmationService: ConfirmationService;
+  /** Horloge injectable pour `updatedAt` déterministe en test. Défaut : `Date.now`. */
+  readonly now?: () => number;
+}
+
+/** Résultat public d'une déconnexion — ne contient jamais le refresh token ni aucun credential. */
+export interface DisconnectGmailAccountOutcome {
+  readonly status: 'disconnected';
+  readonly accountId: string;
+  readonly provider: 'gmail';
+  readonly accountIdentifier: string;
+}
+
+/**
+ * Déconnecte un compte Gmail — miroir de {@link connectGmailAccount} pour
+ * l'autre bout du cycle de vie. Strictement local et transport-agnostique :
+ * ne fait **aucun** appel réseau, n'appelle jamais
+ * `GoogleOAuthAccessTokenProvider.revoke()` (révocation réelle côté Google —
+ * volontairement hors scope tant que le transport OAuth n'est pas tranché,
+ * voir l'analyse M8-A7). Ne supprime jamais l'`Account` du store : seul son
+ * `status` passe à `'disconnected'` (valeur d'`AccountStatus` posée dès
+ * M8-A1 mais jusqu'ici jamais atteinte par aucun code).
+ *
+ * Idempotent : déconnecter un compte déjà `'disconnected'` répète
+ * simplement les mêmes opérations (chacune déjà idempotente —
+ * `ConfirmationService.revokeForAccount`/`SecretStore.delete` ne lèvent
+ * jamais si rien n'est en attente/présent), sans erreur ni cas particulier.
+ *
+ * **Ordre des opérations et limite transactionnelle** — même discipline que
+ * {@link connectGmailAccount} (`AccountStore`/`SecretStore` restent deux
+ * stores indépendants, aucune transaction commune simulée) :
+ *
+ *   1. `revokeForAccount()` en premier — purement protecteur : ne peut
+ *      jamais rendre l'état moins sûr, quel que soit ce qui suit.
+ *   2. `accountStore.register()` (statut → `'disconnected'`) **avant**
+ *      `secretStore.delete()` : si l'écriture de l'`Account` échoue, rien
+ *      n'a menti — le compte reste `'connected'` et son secret est
+ *      toujours présent, cohérent avec la réalité. L'ordre inverse serait
+ *      pire : un secret supprimé pendant qu'`Account` affiche encore
+ *      `'connected'` recréerait exactement le risque déjà documenté côté
+ *      connexion (un compte qui semble utilisable mais ne l'est pas, et
+ *      qui pourrait fausser une future résolution automatique à candidat
+ *      unique).
+ *   3. `secretStore.delete()` en dernier : si cette étape échoue après que
+ *      le compte a déjà basculé à `'disconnected'`, le signal côté
+ *      `Account` reste correct — seul un secret orphelin persiste, un
+ *      compromis déjà accepté côté connexion pour la même raison.
+ *
+ * @throws {UnknownAccountError} si `accountId` ne correspond à aucun
+ *   compte — propagée telle quelle depuis `AccountStore.get()`, jamais
+ *   ré-écrite ici.
+ * @throws {Error} si le compte trouvé n'est pas un compte Gmail — même
+ *   convention que {@link resolveGmailCredentials} (`gmail-auth.ts`),
+ *   message sans aucune valeur sensible.
+ */
+export async function disconnectGmailAccount(
+  options: DisconnectGmailAccountOptions,
+): Promise<DisconnectGmailAccountOutcome> {
+  const { accountId, accountStore, secretStore, confirmationService } = options;
+  const now = options.now ?? Date.now;
+
+  const account = await accountStore.get(accountId);
+  if (account.provider !== 'gmail') {
+    throw new Error(
+      `disconnectGmailAccount : le compte « ${account.id} » n'est pas un compte Gmail (provider « ${account.provider} »).`,
+    );
+  }
+
+  await confirmationService.revokeForAccount(account.id);
+
+  const disconnectedAccount: Account = {
+    ...account,
+    status: 'disconnected',
+    updatedAt: new Date(now()).toISOString(),
+  };
+  await accountStore.register(disconnectedAccount);
+  await secretStore.delete(gmailRefreshTokenSecretKey(account.id));
+
+  return {
+    status: 'disconnected',
     accountId: account.id,
     provider: 'gmail',
     accountIdentifier: account.accountIdentifier,

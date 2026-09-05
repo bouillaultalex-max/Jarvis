@@ -74,6 +74,22 @@ describe('GmailApiClient — aucun appel réseau réel (fetchFn mocké)', () => 
     expect((client as unknown as Record<string, unknown>).modify).toBeUndefined();
     expect((client as unknown as Record<string, unknown>).delete).toBeUndefined();
   });
+
+  it('sécurité (M8-A10) : JSON.stringify/Object.keys/String() n’exposent jamais l’AccessTokenProvider capturé', () => {
+    const marker = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
+    const client = new GmailApiClient({ accessTokenProvider: new FakeAccessTokenProvider(marker) });
+
+    // #accessTokenProvider est un vrai champ JS privé (M8-A10) : un
+    // GmailApiClient peut désormais être un résultat public
+    // (`resolveGmailApiClient`), donc aucune des trois voies usuelles de
+    // sérialisation/introspection ne doit exposer l'AccessTokenProvider
+    // capturé (et, par transitivité, tout secret qu'il porterait).
+    expect(JSON.stringify(client)).not.toContain(marker);
+    // apiBaseUrl/fetchFn restent des champs TypeScript-private ordinaires (non
+    // sensibles) : seul #accessTokenProvider doit être absent de l'énumération.
+    expect(Object.keys(client)).not.toContain('accessTokenProvider');
+    expect(String(client)).not.toContain(marker);
+  });
 });
 
 function decodeBase64Url(value: string): string {

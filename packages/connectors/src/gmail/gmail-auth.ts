@@ -83,7 +83,15 @@ function describeError(err: unknown): string {
  * messages d'erreur.
  */
 export class GoogleOAuthAccessTokenProvider implements AccessTokenProvider {
-  private readonly credentials: GmailCredentials;
+  /**
+   * Champ JS réellement privé (pas seulement `private` TypeScript, qui n'est
+   * qu'une vérification à la compilation) — M8-A10 : cette instance est
+   * capturée par un `GmailApiClient` qui peut désormais être un résultat
+   * public (`resolveGmailApiClient`), donc `JSON.stringify`/`Object.keys`/
+   * `String` sur le provider lui-même ne doivent jamais exposer
+   * `clientSecret` ni `refreshToken`.
+   */
+  readonly #credentials: GmailCredentials;
   private readonly tokenEndpoint: string;
   private readonly revokeEndpoint: string;
   private readonly fetchFn: typeof fetch;
@@ -91,7 +99,7 @@ export class GoogleOAuthAccessTokenProvider implements AccessTokenProvider {
   private cached: CachedToken | undefined;
 
   constructor(options: GoogleOAuthAccessTokenProviderOptions) {
-    this.credentials = options.credentials;
+    this.#credentials = options.credentials;
     this.tokenEndpoint = options.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT;
     this.revokeEndpoint = options.revokeEndpoint ?? DEFAULT_REVOKE_ENDPOINT;
     this.fetchFn = options.fetchFn ?? fetch;
@@ -104,9 +112,9 @@ export class GoogleOAuthAccessTokenProvider implements AccessTokenProvider {
     }
 
     const body = new URLSearchParams({
-      client_id: this.credentials.clientId,
-      client_secret: this.credentials.clientSecret,
-      refresh_token: this.credentials.refreshToken,
+      client_id: this.#credentials.clientId,
+      client_secret: this.#credentials.clientSecret,
+      refresh_token: this.#credentials.refreshToken,
       grant_type: 'refresh_token',
     });
 
@@ -145,7 +153,7 @@ export class GoogleOAuthAccessTokenProvider implements AccessTokenProvider {
   async revoke(): Promise<void> {
     this.cached = undefined;
 
-    const body = new URLSearchParams({ token: this.credentials.refreshToken });
+    const body = new URLSearchParams({ token: this.#credentials.refreshToken });
     let response: Response;
     try {
       response = await this.fetchFn(this.revokeEndpoint, {

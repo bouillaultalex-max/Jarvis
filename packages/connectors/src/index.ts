@@ -125,3 +125,6 @@ export type {
   ConnectGmailAccountOutcome,
 } from './gmail/gmail-connection.js';
 export { connectGmailAccount } from './gmail/gmail-connection.js';
+
+export type { ResolveGmailApiClientOptions } from './gmail/gmail-client-resolver.js';
+export { resolveGmailApiClient } from './gmail/gmail-client-resolver.js';

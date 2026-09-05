@@ -87,12 +87,20 @@ function buildMimeMessage(input: GmailSendMessageInput): string {
  * capacité n'existe tout simplement pas sur cet objet.
  */
 export class GmailApiClient {
-  private readonly accessTokenProvider: AccessTokenProvider;
+  /**
+   * Champ JS réellement privé (pas seulement `private` TypeScript, qui n'est
+   * qu'une vérification à la compilation) — M8-A10 : un `GmailApiClient` peut
+   * désormais être le résultat public d'une résolution (`resolveGmailApiClient`),
+   * donc `JSON.stringify`/`Object.keys`/`String` sur l'instance ne doivent
+   * jamais exposer l'`AccessTokenProvider` qu'il capture (et, par transitivité,
+   * le refresh token qu'il porte).
+   */
+  readonly #accessTokenProvider: AccessTokenProvider;
   private readonly apiBaseUrl: string;
   private readonly fetchFn: typeof fetch;
 
   constructor(options: GmailApiClientOptions) {
-    this.accessTokenProvider = options.accessTokenProvider;
+    this.#accessTokenProvider = options.accessTokenProvider;
     this.apiBaseUrl = options.apiBaseUrl ?? DEFAULT_API_BASE_URL;
     this.fetchFn = options.fetchFn ?? fetch;
   }
@@ -100,7 +108,7 @@ export class GmailApiClient {
   private async authorizedGet(path: string): Promise<unknown> {
     // Une authentification absente/invalide échoue ici et se propage telle
     // quelle : aucun résultat partiel, aucun repli silencieux.
-    const accessToken = await this.accessTokenProvider.getAccessToken();
+    const accessToken = await this.#accessTokenProvider.getAccessToken();
 
     let response: Response;
     try {
@@ -142,7 +150,7 @@ export class GmailApiClient {
    * jamais l'access token, y compris en cas d'échec.
    */
   async sendMessage(input: GmailSendMessageInput): Promise<GmailSendMessageResult> {
-    const accessToken = await this.accessTokenProvider.getAccessToken();
+    const accessToken = await this.#accessTokenProvider.getAccessToken();
 
     const body: Record<string, unknown> = { raw: encodeBase64Url(buildMimeMessage(input)) };
     if (input.threadId !== undefined) {

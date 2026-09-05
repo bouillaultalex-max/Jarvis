@@ -119,6 +119,26 @@ describe('GoogleOAuthAccessTokenProvider — aucun appel réseau réel (fetchFn 
     expect(String(fetchFn.mock.calls[1]?.[0])).toBe('https://oauth2.googleapis.com/revoke');
     expect(tokenAfterRevoke).toBe('access-token-2');
   });
+
+  it('sécurité (M8-A10) : JSON.stringify/Object.keys/String() n’exposent jamais clientSecret ni refreshToken', async () => {
+    const marker = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
+    const credentials: GmailCredentials = {
+      clientId: 'app-client-id',
+      clientSecret: 'FAKE_CLIENT_SECRET_SHOULD_NEVER_LEAK',
+      refreshToken: marker,
+    };
+    const provider = new GoogleOAuthAccessTokenProvider({ credentials });
+
+    // #credentials est un vrai champ JS privé (M8-A10) : invisible aux trois
+    // voies usuelles de sérialisation/introspection, avant même tout appel réseau.
+    expect(JSON.stringify(provider)).not.toContain(marker);
+    expect(JSON.stringify(provider)).not.toContain(credentials.clientSecret);
+    // tokenEndpoint/revokeEndpoint/fetchFn/now/cached restent des champs
+    // TypeScript-private ordinaires (non sensibles) : seul #credentials doit
+    // être absent de l'énumération.
+    expect(Object.keys(provider)).not.toContain('credentials');
+    expect(String(provider)).not.toContain(marker);
+  });
 });
 
 describe('loadGmailCredentialsFromEnv', () => {

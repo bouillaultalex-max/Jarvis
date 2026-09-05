@@ -130,3 +130,10 @@ export { connectGmailAccount, disconnectGmailAccount } from './gmail/gmail-conne
 
 export type { ResolveGmailApiClientOptions } from './gmail/gmail-client-resolver.js';
 export { resolveGmailApiClient } from './gmail/gmail-client-resolver.js';
+
+export type {
+  GmailOAuthFlowOptions,
+  GmailOAuthCallbackParams,
+  CompleteGmailOAuthOptions,
+} from './gmail/gmail-oauth-flow.js';
+export { GmailOAuthFlow } from './gmail/gmail-oauth-flow.js';

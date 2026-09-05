@@ -1,0 +1,13 @@
+{
+  "name": "@jarvis/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jarvis/connectors": "0.1.0"
+  }
+}

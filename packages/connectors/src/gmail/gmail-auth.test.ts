@@ -238,6 +238,60 @@ describe('resolveGmailCredentials — M8-A8', () => {
     expect(getSpy).not.toHaveBeenCalled();
   });
 
+  it('status "connected" : résolution toujours fonctionnelle (comportement inchangé)', async () => {
+    const account = makeAccount({ id: 'acc-1', status: 'connected' });
+    const secretStore = new InMemorySecretStore();
+    await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), 'refresh-token-acc-1');
+
+    const credentials = await resolveGmailCredentials({ account, secretStore, appCredentials: APP_CREDENTIALS });
+
+    expect(credentials.refreshToken).toBe('refresh-token-acc-1');
+  });
+
+  it('status "disconnected" : refusé, aucun secret lu (M8-A14)', async () => {
+    const account = makeAccount({ id: 'acc-1', status: 'disconnected' });
+    const secretStore = new InMemorySecretStore();
+    const getSpy = vi.spyOn(secretStore, 'get');
+    await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), 'refresh-token-acc-1');
+
+    await expect(
+      resolveGmailCredentials({ account, secretStore, appCredentials: APP_CREDENTIALS }),
+    ).rejects.toThrow(/n'est pas connecté/);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('status "error" : refusé, aucun secret lu (M8-A14)', async () => {
+    const account = makeAccount({ id: 'acc-1', status: 'error' });
+    const secretStore = new InMemorySecretStore();
+    const getSpy = vi.spyOn(secretStore, 'get');
+    await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), 'refresh-token-acc-1');
+
+    await expect(
+      resolveGmailCredentials({ account, secretStore, appCredentials: APP_CREDENTIALS }),
+    ).rejects.toThrow(/n'est pas connecté/);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('scénario M8-A13 : compte "disconnected" avec un refresh token orphelin encore présent → refusé avant lecture du secret', async () => {
+    const marker = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
+    // Simule exactement le scénario d'échec partiel documenté dans
+    // disconnectGmailAccount (M8-A13) : le statut a basculé à "disconnected"
+    // mais le secret n'a, pour une raison quelconque, pas encore été supprimé.
+    const account = makeAccount({ id: 'acc-1', status: 'disconnected' });
+    const secretStore = new InMemorySecretStore();
+    const getSpy = vi.spyOn(secretStore, 'get');
+    await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), marker);
+
+    try {
+      await resolveGmailCredentials({ account, secretStore, appCredentials: APP_CREDENTIALS });
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).not.toContain(marker);
+    }
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
   it('cross-account isolation : chaque compte ne récupère que son propre refresh token, jamais mélangés', async () => {
     const accountA = makeAccount({ id: 'acc-A' });
     const accountB = makeAccount({ id: 'acc-B' });

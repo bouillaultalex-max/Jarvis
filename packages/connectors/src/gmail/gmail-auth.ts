@@ -230,14 +230,22 @@ export interface ResolveGmailCredentialsOptions {
  * `loadGmailCredentialsFromEnv` le fait pour le cas mono-compte. Ne
  * journalise jamais sa valeur.
  *
- * `account.status` n'est délibérément pas vérifié ici : il est purement
- * informatif (voir sa documentation dans `account.ts`) et ne conditionne
- * aucune décision — la seule autorité qui décide si une action Gmail peut
- * s'exécuter reste `PermissionManager`, en aval.
+ * `account.status` **est** vérifié ici depuis M8-A14 : seul `'connected'`
+ * autorise la résolution. Ce n'était pas le cas avant M8-A13 — `status`
+ * était alors purement informatif, car `'disconnected'` était
+ * structurellement inatteignable. Depuis que `disconnectGmailAccount`
+ * (M8-A13) peut réellement produire ce statut — y compris, dans un
+ * scénario d'échec partiel déjà documenté là-bas, en laissant un refresh
+ * token orphelin encore présent dans `SecretStore` — ne pas vérifier
+ * `status` ici permettrait de construire un client Gmail pleinement
+ * fonctionnel pour un compte que l'`Account` affiche pourtant comme
+ * déconnecté. Ce contrôle reste une simple précondition sur l'objet
+ * `Account` fourni : il ne remplace ni n'imite `PermissionManager`, seule
+ * autorité qui décide si une action Gmail peut s'exécuter, en aval.
  *
- * @throws {Error} si `account.provider` n'est pas `'gmail'`, ou si
- *   `account.id` est vide — dans les deux cas, message sans aucune valeur
- *   sensible.
+ * @throws {Error} si `account.provider` n'est pas `'gmail'`, si
+ *   `account.id` est vide, ou si `account.status` n'est pas `'connected'`
+ *   — dans tous les cas, message sans aucune valeur sensible.
  * @throws {SecretNotFoundError} si aucun refresh token n'est stocké pour ce
  *   compte précis — jamais de repli sur un autre compte, jamais de secret
  *   créé automatiquement (voir {@link requireSecret}).
@@ -252,6 +260,11 @@ export async function resolveGmailCredentials(options: ResolveGmailCredentialsOp
   }
   if (account.id.length === 0) {
     throw new Error('resolveGmailCredentials : « account.id » est requis.');
+  }
+  if (account.status !== 'connected') {
+    throw new Error(
+      `resolveGmailCredentials : le compte « ${account.id} » n'est pas connecté (status « ${account.status} »).`,
+    );
   }
 
   const refreshToken = await requireSecret(secretStore, gmailRefreshTokenSecretKey(account.id));

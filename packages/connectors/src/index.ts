@@ -83,11 +83,18 @@ export { inMemoryConnector } from './in-memory/in-memory-connector.js';
 
 export type {
   GmailCredentials,
+  GmailAppCredentials,
   AccessTokenProvider,
   RefreshTokenStore,
   GoogleOAuthAccessTokenProviderOptions,
+  ResolveGmailCredentialsOptions,
 } from './gmail/gmail-auth.js';
-export { GoogleOAuthAccessTokenProvider, loadGmailCredentialsFromEnv } from './gmail/gmail-auth.js';
+export {
+  GoogleOAuthAccessTokenProvider,
+  loadGmailCredentialsFromEnv,
+  gmailRefreshTokenSecretKey,
+  resolveGmailCredentials,
+} from './gmail/gmail-auth.js';
 
 export type {
   GmailApiClientOptions,
@@ -110,3 +117,11 @@ export type {
   GmailSendOutput,
 } from './gmail/gmail-connector.js';
 export { gmailConnector } from './gmail/gmail-connector.js';
+
+export type {
+  GmailOAuthIdentity,
+  GmailOAuthResult,
+  ConnectGmailAccountOptions,
+  ConnectGmailAccountOutcome,
+} from './gmail/gmail-connection.js';
+export { connectGmailAccount } from './gmail/gmail-connection.js';

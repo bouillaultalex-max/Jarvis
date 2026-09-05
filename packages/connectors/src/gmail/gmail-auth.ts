@@ -1,3 +1,7 @@
+import type { Account } from '../account.js';
+import type { SecretStore } from '../secret-store.js';
+import { requireSecret } from '../secret-store.js';
+
 /**
  * Couche d'authentification Gmail — entièrement séparée du client Gmail et
  * des `Tool`. Ni `GmailApiClient`, ni `gmailConnector`, ni aucun `Tool` ne
@@ -11,6 +15,16 @@ export interface GmailCredentials {
   readonly clientSecret: string;
   readonly refreshToken: string;
 }
+
+/**
+ * Credentials au niveau **application** : `clientId`/`clientSecret`
+ * identifient l'enregistrement OAuth de JARVIS auprès de Google — un seul
+ * enregistrement sert tous les comptes Gmail connectés, ce n'est jamais une
+ * donnée par compte (voir {@link resolveGmailCredentials}). Dérivé de
+ * `GmailCredentials` (sans dupliquer les champs) plutôt que redéfini de
+ * zéro.
+ */
+export type GmailAppCredentials = Omit<GmailCredentials, 'refreshToken'>;
 
 /**
  * Abstraction dont dépend le client Gmail. Le renouvellement (refresh token
@@ -173,4 +187,70 @@ export function loadGmailCredentialsFromEnv(
   }
 
   return { clientId, clientSecret, refreshToken };
+}
+
+/**
+ * Clé `SecretStore` du refresh token d'un compte Gmail — **seul** endroit du
+ * dépôt qui construit cette chaîne (M8-A8) : tout code qui a besoin de lire
+ * ou d'écrire ce secret doit appeler cette fonction plutôt que de recopier
+ * le format littéralement, pour qu'une éventuelle évolution de convention
+ * n'ait qu'un seul endroit à changer.
+ */
+export function gmailRefreshTokenSecretKey(accountId: string): string {
+  return `gmail.${accountId}.refreshToken`;
+}
+
+export interface ResolveGmailCredentialsOptions {
+  /** Compte Gmail déjà résolu (ex. via `resolveAccount`) — jamais choisi implicitement ici. */
+  readonly account: Account;
+  readonly secretStore: SecretStore;
+  /** Config d'application (voir {@link GmailAppCredentials}) — pas une donnée du compte. */
+  readonly appCredentials: GmailAppCredentials;
+}
+
+/**
+ * Assemble les {@link GmailCredentials} nécessaires à
+ * {@link GoogleOAuthAccessTokenProvider} à partir d'un `Account` déjà résolu
+ * et d'un `SecretStore` — sans jamais faire transiter le refresh token par
+ * `Account` (qui ne le porte structurellement pas) ni par un second
+ * mécanisme de stockage (`SecretStore` reste la seule autorité).
+ *
+ * Ne modifie jamais `account` (aucune mutation, aucune écriture dans
+ * `AccountStore`) et ne persiste le refresh token nulle part ailleurs — il
+ * est uniquement lu depuis `secretStore` puis renvoyé dans la structure déjà
+ * consommée par le mécanisme OAuth existant, exactement comme
+ * `loadGmailCredentialsFromEnv` le fait pour le cas mono-compte. Ne
+ * journalise jamais sa valeur.
+ *
+ * `account.status` n'est délibérément pas vérifié ici : il est purement
+ * informatif (voir sa documentation dans `account.ts`) et ne conditionne
+ * aucune décision — la seule autorité qui décide si une action Gmail peut
+ * s'exécuter reste `PermissionManager`, en aval.
+ *
+ * @throws {Error} si `account.provider` n'est pas `'gmail'`, ou si
+ *   `account.id` est vide — dans les deux cas, message sans aucune valeur
+ *   sensible.
+ * @throws {SecretNotFoundError} si aucun refresh token n'est stocké pour ce
+ *   compte précis — jamais de repli sur un autre compte, jamais de secret
+ *   créé automatiquement (voir {@link requireSecret}).
+ */
+export async function resolveGmailCredentials(options: ResolveGmailCredentialsOptions): Promise<GmailCredentials> {
+  const { account, secretStore, appCredentials } = options;
+
+  if (account.provider !== 'gmail') {
+    throw new Error(
+      `resolveGmailCredentials : le compte « ${account.id} » n'est pas un compte Gmail (provider « ${account.provider} »).`,
+    );
+  }
+  if (account.id.length === 0) {
+    throw new Error('resolveGmailCredentials : « account.id » est requis.');
+  }
+
+  const refreshToken = await requireSecret(secretStore, gmailRefreshTokenSecretKey(account.id));
+
+  return {
+    clientId: appCredentials.clientId,
+    clientSecret: appCredentials.clientSecret,
+    refreshToken,
+  };
 }

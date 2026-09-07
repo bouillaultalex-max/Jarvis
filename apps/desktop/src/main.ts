@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import {
   type Account,
   type AccountStore,
+  type ConfirmationRequest,
+  type ConnectGmailAccountOutcome,
   type GmailAppCredentials,
+  type GmailSendInput,
+  type PermissionManager,
   type SecretStore,
   connectGmailAccount,
   FileAccountStore,
@@ -17,10 +21,14 @@ import {
 } from '@jarvis/connectors';
 
 import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js';
+import { parseGmailSendArgs } from './gmail-send-args.js';
+import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
+import { createTerminalConfirm } from './terminal-confirm.js';
 
 /**
  * Orchestration desktop du flux Gmail — M8-B2 (OAuth réel) + M8-B3
- * (persistance réelle + détection « déjà connecté »).
+ * (persistance réelle + détection « déjà connecté ») + M8-B5 (sous-commande
+ * `send` : envoi Gmail confirmé réellement accessible).
  *
  * `FileAccountStore`/`OsCredentialSecretStore` : implémentations réelles
  * réutilisées telles quelles (`@jarvis/connectors`) — aucune nouvelle
@@ -28,6 +36,12 @@ import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js'
  * survivent désormais à l'arrêt du process, contrairement à M8-B2
  * (`InMemoryAccountStore`/`InMemorySecretStore`, volontairement limité à
  * l'intérieur d'un seul run).
+ *
+ * M8-B5 ne fait que **câbler** `runGmailSend` (M8-B4, inchangé) à un point
+ * d'entrée : `resolveAccount`/`ToolExecutor`/`PermissionManager`/
+ * `ConfirmationService` restent les seuls points de contrôle, jamais
+ * contournés. Aucun secret n'est journalisé ; le résultat de `runGmailSend`
+ * n'est jamais sérialisé tel quel (voir {@link describeSendResult}).
  */
 
 function defaultAccountsFilePath(): string {
@@ -112,39 +126,235 @@ export async function resolveExistingGmailConnection(
   }
 }
 
-async function main(): Promise<void> {
+/** Dépendances desktop injectables — permet aux tests d'utiliser des stores en mémoire. */
+export interface DesktopDeps {
+  readonly accountStore: AccountStore;
+  readonly secretStore: SecretStore;
+  readonly appCredentials: GmailAppCredentials;
+  /** Transmis tel quel à `resolveAccount()` (via `resolveExistingGmailConnection`) — jamais de sélection implicite. */
+  readonly accountId?: string;
+  /**
+   * Injecté par les tests uniquement (transmis à `runGmailSend` → l'échange
+   * OAuth et l'appel Gmail `send`). Absent en production ⇒ `fetch` global.
+   */
+  readonly fetchFn?: typeof fetch;
+  /**
+   * Injecté par les tests uniquement (transmis à `runGmailSend`). Absent en
+   * production ⇒ `runGmailSend` applique sa politique par défaut
+   * (`gmail.send` ⇒ `require_confirmation`). Ne contourne jamais
+   * `PermissionManager` — le fournit.
+   */
+  readonly permissionManager?: PermissionManager;
+}
+
+/**
+ * Effectue le consentement OAuth réel puis `connectGmailAccount`. Seam
+ * injectable : les tests fournissent un faux `connect` (aucun navigateur,
+ * aucun `GmailOAuthFlow` rejoué) — même compromis que M8-B3.
+ */
+export type ConnectGmailFn = (
+  deps: DesktopDeps,
+  write: (line: string) => void,
+) => Promise<ConnectGmailAccountOutcome>;
+
+function defaultDesktopDeps(): DesktopDeps {
   const clientId = process.env.GMAIL_CLIENT_ID;
   const clientSecret = process.env.GMAIL_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     throw new Error(
-      'GMAIL_CLIENT_ID et GMAIL_CLIENT_SECRET sont requis (variables d’environnement) pour lancer la connexion Gmail.',
+      'GMAIL_CLIENT_ID et GMAIL_CLIENT_SECRET sont requis (variables d’environnement) pour le flux Gmail.',
     );
   }
-  const appCredentials: GmailAppCredentials = { clientId, clientSecret };
+  return {
+    accountStore: new FileAccountStore({ filePath: defaultAccountsFilePath() }),
+    secretStore: new OsCredentialSecretStore(),
+    appCredentials: { clientId, clientSecret },
+    ...(process.env.GMAIL_ACCOUNT_ID !== undefined ? { accountId: process.env.GMAIL_ACCOUNT_ID } : {}),
+  };
+}
 
-  const accountStore = new FileAccountStore({ filePath: defaultAccountsFilePath() });
-  const secretStore = new OsCredentialSecretStore();
-  const accountId = process.env.GMAIL_ACCOUNT_ID;
-
-  const existingAccount = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials, accountId });
-  if (existingAccount !== undefined) {
-    console.log(
-      `Compte Gmail déjà connecté : ${existingAccount.accountIdentifier} (accountId=${existingAccount.id}) — aucun nouveau consentement OAuth nécessaire.`,
-    );
-    return;
-  }
-
+const runOAuthConnect: ConnectGmailFn = async (deps, write) => {
+  const { clientId, clientSecret } = deps.appCredentials;
   const callbackServer = await startGmailOAuthCallbackServer();
   const flow = new GmailOAuthFlow({ clientId, redirectUri: callbackServer.redirectUri });
 
-  console.log('Ouverture du navigateur système pour connecter un compte Gmail…');
+  write('Ouverture du navigateur système pour connecter un compte Gmail…');
   openSystemBrowser(flow.authorizationUrl);
 
   const callback = await callbackServer.result;
   const result = await flow.completeWithCallback(callback, { clientSecret });
 
-  const outcome = await connectGmailAccount({ result, accountStore, secretStore });
-  console.log('Résultat de la connexion Gmail :', outcome);
+  return connectGmailAccount({ result, accountStore: deps.accountStore, secretStore: deps.secretStore });
+};
+
+/** Ligne d'affichage d'un `ConnectGmailAccountOutcome` — jamais l'objet brut, jamais de secret. */
+function describeConnectOutcome(outcome: ConnectGmailAccountOutcome): string {
+  switch (outcome.status) {
+    case 'connected':
+      return `connecté — ${outcome.accountIdentifier} (accountId=${outcome.accountId})`;
+    case 'cancelled':
+      return 'annulé par l’utilisateur';
+    case 'error':
+      return `erreur — ${outcome.reason}`;
+    case 'rejected':
+      return `refusé — ${outcome.reason}`;
+  }
+}
+
+/**
+ * Ligne d'affichage d'un `RunGmailSendResult` — **jamais** `console.log(result)`
+ * (défense en profondeur : le résultat ne doit être ni sérialisé tel quel, ni
+ * exposer un `reason` non maîtrisé). Seul l'`id` Gmail public est affiché en
+ * cas de succès.
+ */
+function describeSendResult(result: RunGmailSendResult): string {
+  switch (result.status) {
+    case 'executed': {
+      const output = result.output as { readonly id?: unknown };
+      const id = typeof output?.id === 'string' ? output.id : '?';
+      return `Email envoyé (id Gmail : ${id}).`;
+    }
+    case 'confirmation_declined':
+      return 'Envoi annulé : confirmation refusée.';
+    case 'confirmation_required':
+      return 'Envoi refusé : gmail.send exige une confirmation explicite (politique « allow » non acceptée).';
+    case 'denied':
+      return 'Envoi refusé par la politique de permissions.';
+    case 'confirmation_failed':
+      return 'Envoi échoué : confirmation invalide ou expirée.';
+    case 'awaiting_confirmation':
+      return 'Envoi interrompu : confirmation non traitée.';
+    case 'error':
+    case 'invalid_input':
+    case 'unknown_tool':
+      return `Envoi échoué (${result.status}).`;
+    default: {
+      const exhaustive: never = result;
+      return `Envoi échoué (${(exhaustive as { readonly status: string }).status}).`;
+    }
+  }
+}
+
+/**
+ * Flux `connect` — comportement M8-B2/B3 inchangé : détecte un compte déjà
+ * exploitable, sinon lance le consentement OAuth.
+ */
+export async function runConnectFlow(
+  deps: DesktopDeps,
+  write: (line: string) => void = console.log,
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<void> {
+  const existing = await resolveExistingGmailConnection({
+    accountStore: deps.accountStore,
+    secretStore: deps.secretStore,
+    appCredentials: deps.appCredentials,
+    ...(deps.accountId !== undefined ? { accountId: deps.accountId } : {}),
+  });
+  if (existing !== undefined) {
+    write(
+      `Compte Gmail déjà connecté : ${existing.accountIdentifier} (accountId=${existing.id}) — aucun nouveau consentement OAuth nécessaire.`,
+    );
+    return;
+  }
+  const outcome = await connect(deps, write);
+  write(`Résultat de la connexion Gmail : ${describeConnectOutcome(outcome)}`);
+}
+
+/**
+ * Renvoie un compte Gmail exploitable : celui déjà connecté (aucun nouvel
+ * OAuth), ou celui obtenu via le consentement OAuth. `resolveAccount()` reste
+ * l'unique point de sélection — `AmbiguousAccountError` (plusieurs comptes
+ * sans `GMAIL_ACCOUNT_ID`) se propage telle quelle, jamais de « prendre le
+ * premier ».
+ */
+export async function resolveOrConnectGmailAccount(
+  deps: DesktopDeps,
+  write: (line: string) => void,
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<Account> {
+  const existing = await resolveExistingGmailConnection({
+    accountStore: deps.accountStore,
+    secretStore: deps.secretStore,
+    appCredentials: deps.appCredentials,
+    ...(deps.accountId !== undefined ? { accountId: deps.accountId } : {}),
+  });
+  if (existing !== undefined) {
+    return existing;
+  }
+  const outcome = await connect(deps, write);
+  if (outcome.status !== 'connected') {
+    throw new Error(`Connexion Gmail non aboutie (${describeConnectOutcome(outcome)}).`);
+  }
+  return deps.accountStore.get(outcome.accountId);
+}
+
+/**
+ * Flux `send` — M8-B5. Câble `runGmailSend` (M8-B4, inchangé) : le compte est
+ * résolu (ou connecté), puis l'envoi passe **obligatoirement** par
+ * `proposeConfirmation → confirm() → confirmAndExecute`. Le `confirm` réel est
+ * `createTerminalConfirm`. Renvoie le `RunGmailSendResult` pour les tests ;
+ * n'affiche qu'une ligne humaine, jamais l'objet.
+ */
+export async function runSendFlow(
+  deps: DesktopDeps,
+  input: GmailSendInput,
+  confirm: (request: ConfirmationRequest) => boolean | Promise<boolean>,
+  write: (line: string) => void = console.log,
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<RunGmailSendResult> {
+  const account = await resolveOrConnectGmailAccount(deps, write, connect);
+  const result = await runGmailSend({
+    accountStore: deps.accountStore,
+    secretStore: deps.secretStore,
+    appCredentials: deps.appCredentials,
+    accountId: account.id,
+    input,
+    confirm,
+    ...(deps.fetchFn !== undefined ? { fetchFn: deps.fetchFn } : {}),
+    ...(deps.permissionManager !== undefined ? { permissionManager: deps.permissionManager } : {}),
+  });
+  write(describeSendResult(result));
+  return result;
+}
+
+export interface DesktopIo {
+  readonly input?: NodeJS.ReadableStream;
+  readonly output?: NodeJS.WritableStream;
+}
+
+/** Dispatch de la ligne de commande : `connect` (défaut) | `send`. */
+export async function dispatch(
+  argv: readonly string[],
+  deps: DesktopDeps,
+  io: DesktopIo = {},
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<void> {
+  const output = io.output ?? process.stdout;
+  const write = (line: string): void => {
+    output.write(`${line}\n`);
+  };
+  const command = argv[0];
+
+  if (command === 'send') {
+    const input = parseGmailSendArgs(argv.slice(1));
+    const confirm = createTerminalConfirm({
+      ...(io.input !== undefined ? { input: io.input } : {}),
+      output,
+    });
+    await runSendFlow(deps, input, confirm, write, connect);
+    return;
+  }
+
+  if (command === undefined || command === 'connect') {
+    await runConnectFlow(deps, write, connect);
+    return;
+  }
+
+  throw new Error('Commande inconnue (attendu : connect | send).');
+}
+
+async function main(): Promise<void> {
+  await dispatch(process.argv.slice(2), defaultDesktopDeps());
 }
 
 // Garde d'entrée : ce module est importé directement par ses tests (pour

@@ -1,5 +1,21 @@
 export type { Connector } from './connector.js';
 
+/**
+ * Primitives d'exécution de `@jarvis/core` re-exportées — M8-B4.
+ *
+ * `@jarvis/connectors` dépend déjà de `@jarvis/core` et expose déjà
+ * `ToolExecutor` dans sa surface publique (via `ProposeConfirmationOptions`).
+ * Un consommateur qui doit *piloter* les `Tool` d'un connecteur (construire
+ * un `ToolRegistry`, un `ToolExecutor`, appliquer une politique via
+ * `PermissionManager`) a besoin de ces trois classes ; `apps/desktop` ne
+ * déclare que `@jarvis/connectors` comme dépendance. Re-export minimal, sans
+ * nouvelle arête dans le graphe de dépendances ni changement de
+ * comportement — `PermissionManager`/`ToolExecutor` restent les seuls points
+ * de contrôle, inchangés.
+ */
+export { ToolRegistry, ToolExecutor, PermissionManager } from '@jarvis/core';
+export type { ToolExecutionResult, ToolRequest, PermissionDecision, PermissionPolicy } from '@jarvis/core';
+
 export type { Capability } from './capability.js';
 export { describeCapabilities } from './capability.js';
 
@@ -110,6 +126,8 @@ export type {
 export { GmailApiClient } from './gmail/gmail-api-client.js';
 
 export { mapGmailMessageToEmailMessage } from './gmail/gmail-message-mapper.js';
+
+export { buildGmailSendConfirmationSummary } from './gmail/gmail-send-confirmation-summary.js';
 
 export type {
   GmailReadInput,

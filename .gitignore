@@ -18,3 +18,27 @@ secrets.*
 *.log
 .DS_Store
 .vscode/
+
+# Ruflo local secrets and runtime data
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+.claude-flow/neural/
+.claude-flow/metrics/
+
+# Ruflo / AgentDB / RuVector — local databases (never commit)
+.swarm/
+ruvector.db
+*.db
+*.db-shm
+*.db-wal
+
+# Ruflo — machine-specific paths and mutable runtime state (regenerated locally)
+.claude-flow/daemon.pid
+.claude-flow/daemon-state.json
+.claude-flow/memory-package.json
+.claude-flow/harness-active-policy.json
+.claude-flow/policy/state.json
+.claude-flow/security/audit-status.json

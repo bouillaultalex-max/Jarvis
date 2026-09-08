@@ -5,7 +5,7 @@ Backlog minimal, dérivé strictement de l'état réel du dépôt (voir
 ici n'est inventée : chaque entrée correspond à un commit existant ou à
 une décision explicitement ouverte dans `PROJECT_STATE.md`.
 
-Voir aussi `MASTER_ROADMAP.md` pour la vue synthétique DONE / NEXT / LATER.
+Voir aussi `MASTER_ROADMAP.md` pour la vue synthétique DONE / LATER.
 
 ## Jalons fonctionnels terminés
 
@@ -31,6 +31,25 @@ Voir aussi `MASTER_ROADMAP.md` pour la vue synthétique DONE / NEXT / LATER.
 
   Détail : `PROJECT_STATE.md` → « Envoi Gmail confirmé (M8) »,
   `docs/adr/0001` à `0005`.
+
+## Surface CLI desktop post-M8 (hors numérotation de jalon)
+
+Exposition en ligne de commande de capacités **déjà écrites et testées** dans
+`@jarvis/connectors` / `@jarvis/inbox`. Ne constituent pas de nouveaux jalons
+fonctionnels : aucune nouvelle brique de bibliothèque, seulement du câblage
+CLI réutilisant le noyau M8.
+
+- **`disconnect`** — câblage CLI de `disconnectGmailAccount()` (révocation
+  OAuth réelle + statut de compte). (`cc2e8a4`)
+- **`read`** — câblage CLI du Tool `gmail.read` (lecture seule, `--maxResults`
+  transmis tel quel). (`9c24cb7`)
+- **`inbox`** — câblage CLI de `fetchAndClassifyEmails` (`@jarvis/inbox`) :
+  lit puis classe (`important` / `not_important` / `uncertain`). S'arrête
+  **volontairement** à la classification — résumé, triage et feedback restent
+  hors périmètre. (`996d716`)
+
+`apps/desktop` expose donc cinq commandes : `connect` / `read` / `inbox` /
+`send` / `disconnect`.
 
 ## Fondations architecturales terminées
 
@@ -62,7 +81,7 @@ générique). Ils sont désormais tous résolus et implémentés par M8 :
    politique `'allow'` sur `gmail.send` reste refusée sans confirmation
    explicite.
 4. **Desktop ou serveur pour le flux de connexion** — **tranché : desktop**
-   (`apps/desktop`, CLI `connect`/`send`).
+   (`apps/desktop`, CLI `connect` / `read` / `inbox` / `send` / `disconnect`).
 
 ## Décisions d'architecture — résolues par M8
 
@@ -87,9 +106,14 @@ générique). Ils sont désormais tous résolus et implémentés par M8 :
   connecteurs n'existe encore, même en ébauche.
 
 Ces pistes sont mentionnées dans `PROJECT_STATE.md` comme décisions
-ouvertes ; aucune n'est priorisée par rapport aux autres à ce stade.
+ouvertes ; aucune n'est priorisée par rapport aux autres à ce stade. La
+surface CLI desktop post-M8 (ci-dessus) est déjà livrée et ne préempte
+aucune de ces pistes.
 
-Capacité déjà écrite mais non exposée, à noter pour mémoire (ne constitue
-pas une piste priorisée) : `disconnectGmailAccount()` existe dans
-`@jarvis/connectors`, testée, mais n'est câblée dans aucune commande CLI
-`apps/desktop`.
+Capacités de bibliothèque encore **non exposées** à l'utilisateur, à noter
+pour mémoire (ne constituent pas des pistes priorisées) : le Tool
+`gmail.prepare_reply` (`@jarvis/connectors`, M7.3) et les fonctions
+`summarizeEmailsNeedingAttention` / `recordFeedbackForEmail` / `applyUserRule`
+(`@jarvis/inbox`, M7) — testées, mais câblées dans aucune commande CLI
+`apps/desktop` ni route `apps/api`. (`disconnectGmailAccount()` figurait ici
+jusqu'à `cc2e8a4` ; elle est désormais câblée via la commande `disconnect`.)

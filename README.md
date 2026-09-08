@@ -14,7 +14,7 @@ Assistant IA personnel — monorepo npm workspaces (TypeScript strict, Node 24, 
 
 ```
 apps/api          Serveur HTTP Fastify
-apps/desktop       Client desktop (terminal)
+apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect)
 packages/types      Types partagés
 packages/llm        Abstraction LLM (Anthropic)
 packages/core       AgentLoop, Tool, PermissionManager, ToolExecutor

@@ -19,6 +19,18 @@ Cette page ne fait que positionner chaque élément dans le temps.
   - M8-B5 — câblage CLI desktop `connect`/`send` (`309bbfb`)
   - M8-B6 — couverture des erreurs réseau/provider post-confirmation (`2faf205`)
 
+**Surface CLI desktop post-M8** (hors numérotation fonctionnelle — exposition
+CLI de briques déjà existantes, aucun nouveau jalon)
+- `apps/desktop` expose désormais cinq commandes :
+  `connect` / `read` / `inbox` / `send` / `disconnect`.
+- `disconnect` — câblage CLI de `disconnectGmailAccount()` (`cc2e8a4`).
+- `read` — câblage CLI du Tool `gmail.read` (`9c24cb7`).
+- `inbox` — câblage CLI de `fetchAndClassifyEmails` (`@jarvis/inbox`) ;
+  s'arrête volontairement à la classification (`996d716`).
+- Toutes réutilisent le noyau M8 (`resolveAccount` → `resolveGmailApiClient`
+  → `gmailConnector.createTools()` → `ToolRegistry`/`PermissionManager`/
+  `ToolExecutor`), sans le modifier.
+
 **Fondation architecturale** (hors numérotation fonctionnelle)
 - Connector Architecture Foundation — `ConnectorRegistry`, `AccountStore`,
   `SecretStore`, `Capability` (`8506792`)
@@ -26,7 +38,7 @@ Cette page ne fait que positionner chaque élément dans le temps.
 Détail complet de M8 (contexte, invariants, tests) : `PROJECT_STATE.md` →
 « Envoi Gmail confirmé (M8) » et `docs/adr/0001` à `0005`.
 
-508 tests / 47 fichiers au total (`npm test`).
+530 tests / 50 fichiers au total (`npm test`).
 
 ## LATER
 

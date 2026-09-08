@@ -6,8 +6,16 @@ sous-jalons M8-B2 à M8-B6 : OAuth Google Authorization Code + PKCE
 boucle d'envoi confirmée (`a811027`), câblage CLI desktop `connect`/`send`
 (`309bbfb`), couverture des erreurs réseau/provider post-confirmation
 (`2faf205`). Voir section dédiée ci-dessous. `apps/api` reste non branché
-(aucun outil connecteur dans son `ToolRegistry`).
-Entre M7.4 et M8, une **fondation architecturale transversale** —
+(aucun outil connecteur dans son `ToolRegistry`)._
+
+_Après M8, **surface CLI desktop post-M8** (hors numérotation de jalon —
+exposition CLI de briques déjà existantes) : commande `disconnect`
+(`cc2e8a4`), commande `read` (`9c24cb7`), commande `inbox` (`996d716`,
+`fetchAndClassifyEmails`, s'arrête à la classification). `apps/desktop`
+expose donc cinq commandes : `connect` / `read` / `inbox` / `send` /
+`disconnect`. `apps/api` toujours non branché._
+
+_Entre M7.4 et M8, une **fondation architecturale transversale** —
 `Connector Architecture Foundation` (commit `8506792`, voir « Functional
 milestones vs Architectural foundations » ci-dessous) — a été ajoutée :
 elle ne constitue PAS un nouveau jalon fonctionnel et ne remplace pas le M5
@@ -93,7 +101,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
-| `apps/desktop` | Client CLI (`connect`, `send`) | fonctionnel — connexion OAuth PKCE, persistance via trousseau OS, envoi Gmail confirmé (M8-B2→B6) |
+| `apps/desktop` | Client CLI (`connect`, `read`, `inbox`, `send`, `disconnect`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`) |
 
 ## Ce qui fonctionne
 
@@ -205,7 +213,11 @@ Google OAuth credentials → GmailApiClient (Gmail API) → GmailRawMessage
     à expiration, et `revoke()` (déconnexion réelle). Appels HTTP via un
     `fetchFn` **injectable** (tests : mock, zéro réseau réel).
   - `RefreshTokenStore` : interface posée pour un futur stockage sécurisé du
-    refresh token — **non implémentée** à ce stade.
+    refresh token — **non implémentée**, et **supplantée en pratique** par
+    `SecretStore` / `OsCredentialSecretStore` (M8-B3), qui assurent ce rôle
+    en production. Placeholder obsolescent conservé (aucune suppression de
+    code) ; `resolveGmailCredentials` n'en dépend pas
+    (`gmail-auth.test.ts` le prouve explicitement).
   - `loadGmailCredentialsFromEnv()` : lit `GMAIL_CLIENT_ID` /
     `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` (voir
     `packages/connectors/.env.example`, placeholders uniquement) ; erreur
@@ -319,20 +331,57 @@ obligatoire.
   `apps/desktop/src/{main,gmail-send-args,terminal-confirm}.ts`) :
   sous-commandes `connect` et `send` de `apps/desktop`, confirmation au
   terminal (`createTerminalConfirm`), OAuth non relancé si un compte est
-  déjà connecté.
+  déjà connecté. (Les commandes `read`, `inbox` et `disconnect` ont été
+  ajoutées **après** M8 — voir « Surface CLI desktop post-M8 » ci-dessous.)
 - **M8-B6 — Couverture des erreurs post-confirmation** (`2faf205`,
   `gmail-send.test.ts`, `main-send.test.ts`) : preuve par test que
   `runGmailSend` renvoie `status: 'error'` (jamais un faux succès) si le
   refresh token est rejeté (`invalid_grant`) ou si l'API Gmail refuse
   l'envoi, jusqu'au message affiché par la CLI.
 
-**508 tests / 47 fichiers** au total (voir « Vérifications » ci-dessous).
+**530 tests / 50 fichiers** au total (voir « Vérifications » ci-dessous).
 Décisions architecturales de M8 formalisées dans `docs/adr/0001` à `0005`.
 
 `disconnectGmailAccount()` (`packages/connectors/src/gmail/gmail-connection.ts`)
-existe et est testée, mais n'est **pas câblée** dans `apps/desktop` (`dispatch()`
-n'expose que `connect`/`send`) — capacité de bibliothèque non encore
-exposée à l'utilisateur, pas un jalon en cours.
+existe, est testée, et **est câblée** dans `apps/desktop` depuis `cc2e8a4`
+(`dispatch()` → `runDisconnectFlow` → `disconnectGmailAccount`, révocation
+OAuth réelle) — voir « Surface CLI desktop post-M8 » ci-dessous. Aucun
+numéro de jalon ne lui est attribué : c'est une exposition CLI d'une brique
+existante, pas un jalon fonctionnel.
+
+### Surface CLI desktop post-M8 (`cc2e8a4`, `9c24cb7`, `996d716`)
+
+Trois commits postérieurs à M8 étendent la CLI `apps/desktop` (fichier
+`apps/desktop/src/main.ts`, `dispatch()`) **sans ajouter aucune brique de
+bibliothèque** : ils câblent des capacités déjà écrites et testées dans
+`@jarvis/connectors` / `@jarvis/inbox`, en réutilisant tel quel le noyau de
+confiance M8 (`resolveAccount`/`resolveOrConnectGmailAccount` →
+`resolveGmailApiClient` → `gmailConnector.createTools()` →
+`ToolRegistry`/`PermissionManager`/`ToolExecutor`). **Ce ne sont pas de
+nouveaux jalons fonctionnels** — aucun numéro `M8-B7`/`M9`/`OUT-07`.
+
+- **`disconnect`** (`cc2e8a4`) — câblage de `disconnectGmailAccount()` :
+  révocation OAuth réelle côté Google + passage du compte à `disconnected`.
+  `resolveAccount()` reste l'unique point de sélection ; aucune confirmation
+  interactive (`disconnectGmailAccount` n'est pas un `Tool` `execute`).
+- **`read`** (`9c24cb7`) — câblage du Tool `gmail.read` (`action: 'read'`,
+  lecture seule). `--maxResults` transmis tel quel au Tool (jamais réécrit
+  par la CLI). Affiche uniquement expéditeur + objet, jamais le corps.
+- **`inbox`** (`996d716`) — câblage de `fetchAndClassifyEmails`
+  (`@jarvis/inbox`) : lit via `gmail.read` (strictement par `ToolExecutor`)
+  puis classe chaque email (`important` / `not_important` / `uncertain`) via
+  `ClassificationEngine`. LLM branché uniquement si `ANTHROPIC_API_KEY` est
+  présente ; sans clé ou sur erreur LLM, repli contrôlé vers `uncertain`.
+  Affiche uniquement expéditeur, objet, libellé, raison, provenance.
+  **`inbox` s'arrête volontairement à la classification** : le résumé
+  (`email.summarize` / `summarizeEmailsNeedingAttention`), le triage
+  (`filterEmailsNeedingAttention`) et le feedback (`recordFeedbackForEmail` /
+  `applyUserRule`) **restent hors de son périmètre actuel**. Aucune
+  persistance de préférences introduite (`InMemoryPreferenceStore`, toujours
+  vide en production).
+
+`apps/desktop` expose donc cinq commandes : `connect` / `read` / `inbox` /
+`send` / `disconnect`.
 
 ### Limites connues (héritées de M4, inchangées)
 
@@ -357,7 +406,8 @@ exposée à l'utilisateur, pas un jalon en cours.
   le `ToolRegistry` de `apps/api` reste vide de tout outil connecteur ;
   seul `apps/desktop` consomme `@jarvis/connectors` à ce stade.
 - **`apps/desktop`** : ~~aucun flux de connexion Gmail~~ **résolu par
-  M8-B2/B5** (`connect`/`send` en CLI).
+  M8-B2/B5** (`connect`/`send` en CLI ; étendu depuis à
+  `read`/`inbox`/`disconnect` — voir « Surface CLI desktop post-M8 »).
 
 ### Prochaine étape prévue (connecteurs)
 
@@ -604,12 +654,24 @@ ClassifiedEmail[] → filterEmailsNeedingAttention (M7.1) → EmailSummarizer (M
 
 ### Prochaine étape prévue (inbox)
 
-La connexion initiale OAuth et `gmail.send` sont désormais résolus (M8, voir
-ci-dessus). Décision toujours ouverte, non tranchée à ce stade : faut-il
-brancher ce flux dans `apps/api` (une route HTTP qui déclenche
-`fetchAndClassifyEmails`/`summarizeEmailsNeedingAttention` et expose leurs
-résultats), ou d'abord construire l'interface conversationnelle (NLU →
-`UserRuleRequest`/feedback) ?
+La connexion initiale OAuth et `gmail.send` sont résolus (M8). Depuis,
+`fetchAndClassifyEmails` (`@jarvis/inbox`) est **exposé par la CLI desktop**
+via la commande `inbox` (`996d716`) — mais limité à la classification
+(résumé, triage et feedback restent non exposés, voir « Surface CLI desktop
+post-M8 »).
+
+Décision **toujours ouverte, non tranchée à ce stade** — plusieurs
+directions possibles, aucune priorisée ici :
+- étendre la surface CLI desktop (résumé/triage via
+  `summarizeEmailsNeedingAttention`, feedback via
+  `recordFeedbackForEmail`/`applyUserRule`, ou le Tool `gmail.prepare_reply`
+  encore non câblé) ;
+- brancher `@jarvis/inbox` dans `apps/api` via une route HTTP qui déclenche
+  `fetchAndClassifyEmails`/`summarizeEmailsNeedingAttention` ;
+- construire l'interface conversationnelle (NLU → `UserRuleRequest`/feedback) ;
+- une autre architecture.
+
+Ce document ne tranche aucune de ces directions.
 
 ## Ce qui n'est PAS fait (volontairement)
 
@@ -620,30 +682,36 @@ résultats), ou d'abord construire l'interface conversationnelle (NLU →
   existent tous les deux.
 - Pas de tool-use Anthropic réel (`AnthropicProvider` n'émet pas de `toolCall`).
 - Connecteurs non branchés dans `apps/api` (`ToolRegistry` de l'API toujours
-  vide d'outil connecteur) — `@jarvis/classification` n'a donc jamais reçu
-  de vrai `EmailMessage` en dehors des tests. `apps/desktop`, lui, consomme
-  `@jarvis/connectors` directement (M8).
-- `disconnectGmailAccount()` existe (`@jarvis/connectors`) mais n'est pas
-  câblée dans une commande CLI `apps/desktop` (seuls `connect`/`send` le
-  sont).
+  vide d'outil connecteur). `apps/desktop`, lui, consomme `@jarvis/connectors`
+  directement (M8) **et** `@jarvis/inbox` / `@jarvis/classification` via la
+  commande `inbox` (`996d716`) — `@jarvis/classification` reçoit donc de vrais
+  `EmailMessage` hors tests dès qu'un compte Gmail réel est connecté en CLI.
+- `gmail.prepare_reply` (Tool `@jarvis/connectors`, M7.3) existe et est testé
+  mais n'est câblé dans **aucune** commande CLI `apps/desktop` ni route
+  `apps/api`. (`disconnectGmailAccount()` figurait ici jusqu'à `cc2e8a4` ;
+  elle est désormais câblée via la commande `disconnect`.)
 - Aucune extraction NLU de règles depuis du texte libre — `@jarvis/inbox`
   prépare les contrats (`recordFeedbackForEmail`, `applyUserRule`) mais ne
-  parse aucun langage naturel.
+  parse aucun langage naturel, et ils ne sont câblés dans aucune commande CLI.
 - Aucun branchement du flux `@jarvis/inbox` dans `apps/api` : `ToolRegistry`
-  de l'API reste vide de tout outil connecteur.
+  de l'API reste vide de tout outil connecteur. (La commande CLI `inbox` de
+  `apps/desktop`, elle, câble `fetchAndClassifyEmails` — mais s'arrête à la
+  classification : ni résumé, ni triage, ni feedback.)
 - Pas de mémoire persistante, pas de streaming, pas de WebSocket.
 - Pas d'outil filesystem / shell / réseau générique.
 
-## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7 + Connector Architecture Foundation + M8)
+## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7 + Connector Architecture Foundation + M8 + surface CLI desktop post-M8)
 
 - `npm run typecheck` : vert
-- `npm test` : vert — **508 tests, 47 fichiers** au total. Détail non
+- `npm test` : vert — **530 tests, 50 fichiers** au total. Détail non
   exhaustif : 225 tests / 28 fichiers à l'issue de `Connector Architecture
   Foundation` (`8506792`, voir historique ci-dessous pour le détail par
-  fichier) ; le reste ajouté par M8 (OAuth PKCE, `OsCredentialSecretStore`,
+  fichier) ; puis M8 (OAuth PKCE, `OsCredentialSecretStore`,
   `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute`,
   `gmail.send`, câblage CLI `apps/desktop`, et la couverture d'erreurs
-  post-confirmation de M8-B6 dans `gmail-send.test.ts`/`main-send.test.ts`).
+  post-confirmation de M8-B6 dans `gmail-send.test.ts`/`main-send.test.ts`) ;
+  puis la surface CLI desktop post-M8 (`main.test.ts` pour `disconnect`,
+  `main-read.test.ts`, `main-inbox.test.ts`, `inbox-view.test.ts`).
 - `npm run lint` : vert — `eslint .` (flat config ESLint 9, voir
   `eslint.config.js` à la racine), y compris les règles de frontières
   entre workspaces.
@@ -679,6 +747,14 @@ Jalons fonctionnels (`M4` → `M8`, chronologie de référence) :
   - `a811027` boucle d'envoi Gmail confirmée — **M8-B4**
   - `309bbfb` câblage CLI desktop `connect`/`send` — **M8-B5**
   - `2faf205` couverture des erreurs post-confirmation — **M8-B6**
+
+Surface CLI desktop post-M8 (hors numérotation fonctionnelle — exposition CLI
+de briques existantes, aucun numéro `M8-B7`/`M9`/`OUT-07`) :
+
+- `cc2e8a4` commande `disconnect` — câblage CLI de `disconnectGmailAccount()`
+- `9c24cb7` commande `read` — câblage CLI du Tool `gmail.read`
+- `996d716` commande `inbox` — câblage CLI de `fetchAndClassifyEmails`
+  (`@jarvis/inbox`), s'arrête à la classification
 
 Fondations architecturales (hors numérotation fonctionnelle — voir
 « Functional milestones vs Architectural foundations » en tête de

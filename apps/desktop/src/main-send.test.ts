@@ -12,7 +12,13 @@ import {
 } from '@jarvis/connectors';
 import { describe, expect, it, vi } from 'vitest';
 
-import { dispatch, resolveOrConnectGmailAccount, runConnectFlow, runSendFlow, type DesktopDeps } from './main.js';
+import {
+  dispatch,
+  resolveOrConnectGmailAccount,
+  runConnectFlow,
+  runSendFlow,
+  type DesktopDeps,
+} from './main.js';
 
 /**
  * M8-B5 — câblage de `runGmailSend` dans `apps/desktop` (sous-commande `send`).
@@ -27,12 +33,25 @@ import { dispatch, resolveOrConnectGmailAccount, runConnectFlow, runSendFlow, ty
  * Toutes les valeurs (adresses, contenu, tokens) sont artificielles.
  */
 
-const APP_CREDENTIALS: GmailAppCredentials = { clientId: 'app-client-id', clientSecret: 'FAKE-APP-CLIENT-SECRET' };
-const SEND_ARGS = ['--to', 'dest@example.test', '--subject', 'Salut', '--body', 'Ceci est un test'] as const;
+const APP_CREDENTIALS: GmailAppCredentials = {
+  clientId: 'app-client-id',
+  clientSecret: 'FAKE-APP-CLIENT-SECRET',
+};
+const SEND_ARGS = [
+  '--to',
+  'dest@example.test',
+  '--subject',
+  'Salut',
+  '--body',
+  'Ceci est un test',
+] as const;
 const LEAK_MARKER = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
 
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 function buildFakeGmail(accessTokenByRefreshToken: ReadonlyMap<string, string>) {
@@ -75,9 +94,11 @@ function collectingOutput(): { output: Writable; readText: () => string } {
   return { output, readText: () => text };
 }
 
-async function connectedStores(
-  refreshToken = 'refresh-token-1',
-): Promise<{ accountStore: InMemoryAccountStore; secretStore: InMemorySecretStore; accountId: string }> {
+async function connectedStores(refreshToken = 'refresh-token-1'): Promise<{
+  accountStore: InMemoryAccountStore;
+  secretStore: InMemorySecretStore;
+  accountId: string;
+}> {
   const accountStore = new InMemoryAccountStore();
   const secretStore = new InMemorySecretStore();
   const outcome = await connectGmailAccount({
@@ -97,11 +118,23 @@ const forbiddenConnect = vi.fn(async (): Promise<ConnectGmailAccountOutcome> => 
 describe('M8-B5 — sous-commande send (câblage)', () => {
   it('compte connecté + confirmation « y » → gmail.send exécuté une fois, ligne de succès, OAuth non relancé', async () => {
     const { accountStore, secretStore } = await connectedStores('refresh-token-1');
-    const { fetchFn, sendCalls, tokenExchanges } = buildFakeGmail(new Map([['refresh-token-1', 'access-token-1']]));
+    const { fetchFn, sendCalls, tokenExchanges } = buildFakeGmail(
+      new Map([['refresh-token-1', 'access-token-1']]),
+    );
     const { output, readText } = collectingOutput();
-    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS, fetchFn };
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+    };
 
-    await dispatch(['send', ...SEND_ARGS], deps, { input: Readable.from(['y\n']), output }, forbiddenConnect);
+    await dispatch(
+      ['send', ...SEND_ARGS],
+      deps,
+      { input: Readable.from(['y\n']), output },
+      forbiddenConnect,
+    );
 
     expect(sendCalls).toHaveLength(1);
     expect(sendCalls[0]).toContain('To: dest@example.test');
@@ -114,9 +147,19 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
     const { accountStore, secretStore } = await connectedStores();
     const { fetchFn, sendCalls } = buildFakeGmail(new Map([['refresh-token-1', 'access-token-1']]));
     const { output, readText } = collectingOutput();
-    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS, fetchFn };
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+    };
 
-    await dispatch(['send', ...SEND_ARGS], deps, { input: Readable.from(['n\n']), output }, forbiddenConnect);
+    await dispatch(
+      ['send', ...SEND_ARGS],
+      deps,
+      { input: Readable.from(['n\n']), output },
+      forbiddenConnect,
+    );
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(sendCalls).toHaveLength(0);
@@ -139,7 +182,13 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
     const write = (line: string): void => {
       output.write(`${line}\n`);
     };
-    const result = await runSendFlow(deps, { to: 'dest@example.test', subject: 's', body: 'b' }, confirm, write, forbiddenConnect);
+    const result = await runSendFlow(
+      deps,
+      { to: 'dest@example.test', subject: 's', body: 'b' },
+      confirm,
+      write,
+      forbiddenConnect,
+    );
 
     expect(result.status).toBe('denied');
     expect(confirm).not.toHaveBeenCalled();
@@ -151,7 +200,9 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
   it('aucun compte + pas de GMAIL_ACCOUNT_ID → OAuth déclenché dans la même invocation, puis envoi', async () => {
     const accountStore = new InMemoryAccountStore();
     const secretStore = new InMemorySecretStore();
-    const { fetchFn, sendCalls } = buildFakeGmail(new Map([['refresh-token-new', 'access-token-new']]));
+    const { fetchFn, sendCalls } = buildFakeGmail(
+      new Map([['refresh-token-new', 'access-token-new']]),
+    );
     const { output, readText } = collectingOutput();
 
     const connect = vi.fn(async (deps: DesktopDeps): Promise<ConnectGmailAccountOutcome> => {
@@ -162,8 +213,18 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
       });
     });
 
-    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS, fetchFn };
-    await dispatch(['send', ...SEND_ARGS], deps, { input: Readable.from(['oui\n']), output }, connect);
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+    };
+    await dispatch(
+      ['send', ...SEND_ARGS],
+      deps,
+      { input: Readable.from(['oui\n']), output },
+      connect,
+    );
 
     expect(connect).toHaveBeenCalledTimes(1);
     expect(sendCalls).toHaveLength(1);
@@ -173,10 +234,23 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
   it('plusieurs comptes sans GMAIL_ACCOUNT_ID → AmbiguousAccountError propagée, OAuth non relancé, aucun appel Gmail', async () => {
     const accountStore = new InMemoryAccountStore();
     const secretStore = new InMemorySecretStore();
-    await connectGmailAccount({ result: successResult('a@example.test', 'rt-A'), accountStore, secretStore });
-    await connectGmailAccount({ result: successResult('b@example.test', 'rt-B'), accountStore, secretStore });
+    await connectGmailAccount({
+      result: successResult('a@example.test', 'rt-A'),
+      accountStore,
+      secretStore,
+    });
+    await connectGmailAccount({
+      result: successResult('b@example.test', 'rt-B'),
+      accountStore,
+      secretStore,
+    });
     const { fetchFn } = buildFakeGmail(new Map());
-    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS, fetchFn };
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+    };
 
     await expect(
       resolveOrConnectGmailAccount(deps, () => undefined, forbiddenConnect),
@@ -188,10 +262,20 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
   it('GMAIL_ACCOUNT_ID explicite → ce compte est utilisé, jamais un autre', async () => {
     const accountStore = new InMemoryAccountStore();
     const secretStore = new InMemorySecretStore();
-    const a = await connectGmailAccount({ result: successResult('a@example.test', 'rt-A'), accountStore, secretStore });
-    const b = await connectGmailAccount({ result: successResult('b@example.test', 'rt-B'), accountStore, secretStore });
+    const a = await connectGmailAccount({
+      result: successResult('a@example.test', 'rt-A'),
+      accountStore,
+      secretStore,
+    });
+    const b = await connectGmailAccount({
+      result: successResult('b@example.test', 'rt-B'),
+      accountStore,
+      secretStore,
+    });
     if (a.status !== 'connected' || b.status !== 'connected') throw new Error('unreachable');
-    const { fetchFn, sendCalls, tokenExchanges } = buildFakeGmail(new Map([['rt-B', 'access-token-B']]));
+    const { fetchFn, sendCalls, tokenExchanges } = buildFakeGmail(
+      new Map([['rt-B', 'access-token-B']]),
+    );
     const { output } = collectingOutput();
 
     const deps: DesktopDeps = {
@@ -201,7 +285,12 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
       fetchFn,
       accountId: b.accountId,
     };
-    await dispatch(['send', ...SEND_ARGS], deps, { input: Readable.from(['y\n']), output }, forbiddenConnect);
+    await dispatch(
+      ['send', ...SEND_ARGS],
+      deps,
+      { input: Readable.from(['y\n']), output },
+      forbiddenConnect,
+    );
 
     expect(tokenExchanges).toEqual(['rt-B']);
     expect(tokenExchanges).not.toContain('rt-A');
@@ -224,9 +313,15 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
     const accountStore = new InMemoryAccountStore();
     const secretStore = new InMemorySecretStore();
     const { output, readText } = collectingOutput();
-    const connect = vi.fn(async (): Promise<ConnectGmailAccountOutcome> => ({ status: 'cancelled' }));
+    const connect = vi.fn(async (): Promise<ConnectGmailAccountOutcome> => ({
+      status: 'cancelled',
+    }));
 
-    await runConnectFlow({ accountStore, secretStore, appCredentials: APP_CREDENTIALS }, (l) => output.write(`${l}\n`), connect);
+    await runConnectFlow(
+      { accountStore, secretStore, appCredentials: APP_CREDENTIALS },
+      (l) => output.write(`${l}\n`),
+      connect,
+    );
 
     expect(connect).toHaveBeenCalledTimes(1);
     expect(readText()).toContain('annulé par l’utilisateur');
@@ -238,21 +333,36 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
     const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS };
     const { output } = collectingOutput();
 
-    await expect(dispatch(['bogus-cmd'], deps, { output }, forbiddenConnect)).rejects.toThrowError(/Commande inconnue/);
-    await expect(dispatch(['bogus-cmd'], deps, { output }, forbiddenConnect)).rejects.not.toThrowError(/bogus-cmd/);
+    await expect(dispatch(['bogus-cmd'], deps, { output }, forbiddenConnect)).rejects.toThrowError(
+      /Commande inconnue/,
+    );
+    await expect(
+      dispatch(['bogus-cmd'], deps, { output }, forbiddenConnect),
+    ).rejects.not.toThrowError(/bogus-cmd/);
   });
 
   it('sécurité : le marqueur de refresh token n’apparaît ni dans la sortie terminal ni dans le résultat', async () => {
     const { accountStore, secretStore } = await connectedStores(LEAK_MARKER);
     const { fetchFn } = buildFakeGmail(new Map([[LEAK_MARKER, 'access-token-secure']]));
     const { output, readText } = collectingOutput();
-    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS, fetchFn };
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+    };
 
     const write = (line: string): void => {
       output.write(`${line}\n`);
     };
     const confirm = createAcceptingConfirm();
-    const result = await runSendFlow(deps, { to: 'dest@example.test', subject: 's', body: 'b' }, confirm, write, forbiddenConnect);
+    const result = await runSendFlow(
+      deps,
+      { to: 'dest@example.test', subject: 's', body: 'b' },
+      confirm,
+      write,
+      forbiddenConnect,
+    );
 
     expect(result.status).toBe('executed');
     expect(readText()).not.toContain(LEAK_MARKER);
@@ -263,7 +373,12 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
     const { accountStore, secretStore } = await connectedStores(LEAK_MARKER);
     const { fetchFn } = buildFakeGmail(new Map([[LEAK_MARKER, 'access-token-secure']]));
     const { output, readText } = collectingOutput();
-    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS, fetchFn };
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+    };
 
     const write = (line: string): void => {
       output.write(`${line}\n`);
@@ -279,6 +394,39 @@ describe('M8-B5 — sous-commande send (câblage)', () => {
     expect(result.status).toBe('confirmation_declined');
     expect(readText()).not.toContain(LEAK_MARKER);
     expect(JSON.stringify(result)).not.toContain(LEAK_MARKER);
+  });
+
+  it('M8-B6 — l’API Gmail refuse l’envoi (HTTP 500) après confirmation → ligne d’échec, jamais un faux succès', async () => {
+    const { accountStore, secretStore } = await connectedStores('refresh-token-1');
+    const failingFetchFn = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        if (url === 'https://oauth2.googleapis.com/token') {
+          return jsonResponse(200, { access_token: 'access-token-1', expires_in: 3600 });
+        }
+        if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+          return jsonResponse(500, { error: 'internal_error' });
+        }
+        return jsonResponse(500, { error: `URL inattendue : ${url}` });
+      },
+    );
+    const { output, readText } = collectingOutput();
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn: failingFetchFn,
+    };
+
+    await dispatch(
+      ['send', ...SEND_ARGS],
+      deps,
+      { input: Readable.from(['y\n']), output },
+      forbiddenConnect,
+    );
+
+    expect(readText()).toContain('Envoi échoué (error).');
+    expect(readText()).not.toContain('Email envoyé');
   });
 });
 

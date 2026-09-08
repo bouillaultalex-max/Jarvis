@@ -31,12 +31,18 @@ import { runGmailSend } from './gmail-send.js';
  * strictement artificielles.
  */
 
-const APP_CREDENTIALS: GmailAppCredentials = { clientId: 'app-client-id', clientSecret: 'FAKE-APP-CLIENT-SECRET' };
+const APP_CREDENTIALS: GmailAppCredentials = {
+  clientId: 'app-client-id',
+  clientSecret: 'FAKE-APP-CLIENT-SECRET',
+};
 const SEND_INPUT = { to: 'dest@example.test', subject: 'Salut', body: 'Ceci est un test' } as const;
 const LEAK_MARKER = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
 
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 interface SendCall {
@@ -67,7 +73,9 @@ function buildFakeGmail(accessTokenByRefreshToken: ReadonlyMap<string, string>) 
     }
 
     if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
-      const authorization = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? '');
+      const authorization = String(
+        (init?.headers as Record<string, string> | undefined)?.Authorization ?? '',
+      );
       const body = JSON.parse(String(init?.body)) as { raw: string; threadId?: string };
       sendCalls.push({
         authorization,
@@ -107,10 +115,15 @@ interface ConnectedFixture {
   readonly tokenExchanges: readonly string[];
 }
 
-async function connectedFixture(refreshToken = 'refresh-token-1', accessToken = 'access-token-1'): Promise<ConnectedFixture> {
+async function connectedFixture(
+  refreshToken = 'refresh-token-1',
+  accessToken = 'access-token-1',
+): Promise<ConnectedFixture> {
   const accountStore = new InMemoryAccountStore();
   const secretStore = new InMemorySecretStore();
-  const { fetchFn, sendCalls, tokenExchanges } = buildFakeGmail(new Map([[refreshToken, accessToken]]));
+  const { fetchFn, sendCalls, tokenExchanges } = buildFakeGmail(
+    new Map([[refreshToken, accessToken]]),
+  );
 
   const connected = await connectGmailAccount({
     result: successResult('alice@example.test', refreshToken),
@@ -119,7 +132,14 @@ async function connectedFixture(refreshToken = 'refresh-token-1', accessToken = 
   });
   if (connected.status !== 'connected') throw new Error('unreachable');
 
-  return { accountStore, secretStore, accountId: connected.accountId, fetchFn, sendCalls, tokenExchanges };
+  return {
+    accountStore,
+    secretStore,
+    accountId: connected.accountId,
+    fetchFn,
+    sendCalls,
+    tokenExchanges,
+  };
 }
 
 describe('runGmailSend — M8-B4', () => {
@@ -136,7 +156,10 @@ describe('runGmailSend — M8-B4', () => {
         fetchFn: fx.fetchFn,
       });
 
-      expect(result).toMatchObject({ status: 'executed', output: { id: 'sent-1', threadId: 'thread-xyz' } });
+      expect(result).toMatchObject({
+        status: 'executed',
+        output: { id: 'sent-1', threadId: 'thread-xyz' },
+      });
       expect(fx.sendCalls).toHaveLength(1);
       expect(fx.sendCalls[0]!.authorization).toBe('Bearer access-token-1');
       expect(fx.tokenExchanges).toEqual(['refresh-token-1']);
@@ -318,7 +341,10 @@ describe('runGmailSend — M8-B4', () => {
       });
       const registry = new ToolRegistry();
       for (const tool of gmailConnector.createTools(client)) registry.register(tool);
-      const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.send': 'require_confirmation' } }));
+      const executor = new ToolExecutor(
+        registry,
+        new PermissionManager({ rules: { 'gmail.send': 'require_confirmation' } }),
+      );
       const confirmationService = new ConfirmationService();
 
       const proposed = await proposeConfirmation({
@@ -342,7 +368,10 @@ describe('runGmailSend — M8-B4', () => {
         },
       });
 
-      expect(tampered).toMatchObject({ status: 'confirmation_failed', failureReason: 'payload_mismatch' });
+      expect(tampered).toMatchObject({
+        status: 'confirmation_failed',
+        failureReason: 'payload_mismatch',
+      });
       expect(fx.sendCalls).toHaveLength(0);
     });
   });
@@ -428,6 +457,75 @@ describe('runGmailSend — M8-B4', () => {
         }),
       ).rejects.toBeInstanceOf(UnknownAccountError);
       expect(fetchFn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('erreurs du fournisseur Gmail (post-confirmation) — M8-B6', () => {
+    // Ces deux tests prouvent, bout en bout via runGmailSend, un comportement
+    // déjà garanti par ToolExecutor (catch de toute exception d'execute() →
+    // status: 'error', jamais un succès) et par GmailApiClient (throw propre
+    // sur échec réseau/HTTP) : aucun des deux n'est modifié ici, seul le
+    // chemin confirmé → exécution réelle qui échoue n'était pas encore prouvé
+    // par un test à ce niveau d'intégration.
+
+    it('confirmé mais le refresh token est rejeté (invalid_grant) au moment de l’exécution → status: error, aucun envoi', async () => {
+      const accountStore = new InMemoryAccountStore();
+      const secretStore = new InMemorySecretStore();
+      // Aucune entrée dans la map : tout refresh token échange échoue (400 invalid_grant),
+      // comme un refresh token révoqué côté Google après la connexion initiale du compte.
+      const { fetchFn, sendCalls } = buildFakeGmail(new Map());
+      const connected = await connectGmailAccount({
+        result: successResult('alice@example.test', 'refresh-token-1'),
+        accountStore,
+        secretStore,
+      });
+      if (connected.status !== 'connected') throw new Error('unreachable');
+
+      const result = await runGmailSend({
+        accountStore,
+        secretStore,
+        appCredentials: APP_CREDENTIALS,
+        input: SEND_INPUT,
+        confirm: () => true,
+        accountId: connected.accountId,
+        fetchFn,
+      });
+
+      expect(result).toMatchObject({
+        status: 'error',
+        reason: expect.stringContaining("renouvellement de l'access token refusé"),
+      });
+      expect(sendCalls).toHaveLength(0);
+    });
+
+    it('confirmé, token valide, mais l’API Gmail refuse l’envoi (HTTP 500) → status: error, aucun envoi', async () => {
+      const fx = await connectedFixture();
+      const failingFetchFn = vi.fn(
+        async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+          const url = String(input);
+          if (url === 'https://oauth2.googleapis.com/token') {
+            return jsonResponse(200, { access_token: 'access-token-1', expires_in: 3600 });
+          }
+          if (url === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send') {
+            return jsonResponse(500, { error: 'internal_error' });
+          }
+          return jsonResponse(500, { error: `URL inattendue dans le test : ${url}` });
+        },
+      );
+
+      const result = await runGmailSend({
+        accountStore: fx.accountStore,
+        secretStore: fx.secretStore,
+        appCredentials: APP_CREDENTIALS,
+        input: SEND_INPUT,
+        confirm: () => true,
+        fetchFn: failingFetchFn,
+      });
+
+      expect(result).toMatchObject({
+        status: 'error',
+        reason: expect.stringContaining('requête refusée (statut HTTP 500)'),
+      });
     });
   });
 

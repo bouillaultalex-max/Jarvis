@@ -7,11 +7,14 @@ import {
   type AccountStore,
   type ConfirmationRequest,
   type ConnectGmailAccountOutcome,
+  type DisconnectGmailAccountOutcome,
   type GmailAppCredentials,
   type GmailSendInput,
   type PermissionManager,
   type SecretStore,
+  ConfirmationService,
   connectGmailAccount,
+  disconnectGmailAccount,
   FileAccountStore,
   GmailOAuthFlow,
   OsCredentialSecretStore,
@@ -58,11 +61,17 @@ function defaultAccountsFilePath(): string {
 
 function openSystemBrowser(url: string): void {
   const command =
-    process.platform === 'darwin' ? `open "${url}"` : process.platform === 'win32' ? `start "" "${url}"` : `xdg-open "${url}"`;
+    process.platform === 'darwin'
+      ? `open "${url}"`
+      : process.platform === 'win32'
+        ? `start "" "${url}"`
+        : `xdg-open "${url}"`;
 
   exec(command, (err) => {
     if (err) {
-      console.log(`Ouvrez cette URL dans votre navigateur pour connecter un compte Gmail :\n${url}`);
+      console.log(
+        `Ouvrez cette URL dans votre navigateur pour connecter un compte Gmail :\n${url}`,
+      );
     }
   });
 }
@@ -169,7 +178,9 @@ function defaultDesktopDeps(): DesktopDeps {
     accountStore: new FileAccountStore({ filePath: defaultAccountsFilePath() }),
     secretStore: new OsCredentialSecretStore(),
     appCredentials: { clientId, clientSecret },
-    ...(process.env.GMAIL_ACCOUNT_ID !== undefined ? { accountId: process.env.GMAIL_ACCOUNT_ID } : {}),
+    ...(process.env.GMAIL_ACCOUNT_ID !== undefined
+      ? { accountId: process.env.GMAIL_ACCOUNT_ID }
+      : {}),
   };
 }
 
@@ -184,7 +195,11 @@ const runOAuthConnect: ConnectGmailFn = async (deps, write) => {
   const callback = await callbackServer.result;
   const result = await flow.completeWithCallback(callback, { clientSecret });
 
-  return connectGmailAccount({ result, accountStore: deps.accountStore, secretStore: deps.secretStore });
+  return connectGmailAccount({
+    result,
+    accountStore: deps.accountStore,
+    secretStore: deps.secretStore,
+  });
 };
 
 /** Ligne d'affichage d'un `ConnectGmailAccountOutcome` — jamais l'objet brut, jamais de secret. */
@@ -260,6 +275,43 @@ export async function runConnectFlow(
   write(`Résultat de la connexion Gmail : ${describeConnectOutcome(outcome)}`);
 }
 
+/** Ligne d'affichage d'un `DisconnectGmailAccountOutcome` — jamais l'objet brut, jamais de secret. */
+function describeDisconnectOutcome(outcome: DisconnectGmailAccountOutcome): string {
+  return `déconnecté — ${outcome.accountIdentifier} (accountId=${outcome.accountId})`;
+}
+
+/**
+ * Flux `disconnect` — déconnecte un compte Gmail existant.
+ *
+ * `resolveAccount()` reste l'unique point de sélection de compte (jamais de
+ * sélection implicite) ; `disconnectGmailAccount()` reste seule responsable
+ * du `SecretStore` (le CLI ne le manipule jamais directement). Contrairement
+ * à `resolveOrConnectGmailAccount`, on n'exige pas que le compte soit
+ * actuellement exploitable : un compte déjà `disconnected` ou en `error`
+ * reste un compte connu qui doit pouvoir être déconnecté proprement
+ * (`disconnectGmailAccount` est idempotente).
+ *
+ * `disconnectGmailAccount` n'est pas un `Tool` classé `execute` — elle
+ * n'appelle jamais `PermissionManager`/`ToolExecutor` — aucune confirmation
+ * interactive n'est donc nécessaire ici, contrairement à `send`.
+ */
+export async function runDisconnectFlow(
+  deps: DesktopDeps,
+  write: (line: string) => void = console.log,
+): Promise<void> {
+  const account = await resolveAccount(deps.accountStore, {
+    provider: 'gmail',
+    accountId: deps.accountId,
+  });
+  const outcome = await disconnectGmailAccount({
+    accountId: account.id,
+    accountStore: deps.accountStore,
+    secretStore: deps.secretStore,
+    confirmationService: new ConfirmationService(),
+  });
+  write(`Résultat de la déconnexion Gmail : ${describeDisconnectOutcome(outcome)}`);
+}
+
 /**
  * Renvoie un compte Gmail exploitable : celui déjà connecté (aucun nouvel
  * OAuth), ou celui obtenu via le consentement OAuth. `resolveAccount()` reste
@@ -322,7 +374,7 @@ export interface DesktopIo {
   readonly output?: NodeJS.WritableStream;
 }
 
-/** Dispatch de la ligne de commande : `connect` (défaut) | `send`. */
+/** Dispatch de la ligne de commande : `connect` (défaut) | `send` | `disconnect`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -345,12 +397,17 @@ export async function dispatch(
     return;
   }
 
+  if (command === 'disconnect') {
+    await runDisconnectFlow(deps, write);
+    return;
+  }
+
   if (command === undefined || command === 'connect') {
     await runConnectFlow(deps, write, connect);
     return;
   }
 
-  throw new Error('Commande inconnue (attendu : connect | send).');
+  throw new Error('Commande inconnue (attendu : connect | send | disconnect).');
 }
 
 async function main(): Promise<void> {

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 
 import {
   AmbiguousAccountError,
@@ -10,6 +11,7 @@ import {
   InMemoryAccountStore,
   InMemorySecretStore,
   OsCredentialSecretStore,
+  UnknownAccountError,
   connectGmailAccount,
   disconnectGmailAccount,
   gmailRefreshTokenSecretKey,
@@ -19,7 +21,7 @@ import {
 } from '@jarvis/connectors';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { resolveExistingGmailConnection } from './main.js';
+import { dispatch, resolveExistingGmailConnection, type DesktopDeps } from './main.js';
 
 /**
  * M8-B3 — Cycle de vie de la persistance desktop.
@@ -39,7 +41,10 @@ import { resolveExistingGmailConnection } from './main.js';
  *     backend est réellement dans cet environnement).
  */
 
-const APP_CREDENTIALS: GmailAppCredentials = { clientId: 'app-client-id', clientSecret: 'FAKE-APP-CLIENT-SECRET' };
+const APP_CREDENTIALS: GmailAppCredentials = {
+  clientId: 'app-client-id',
+  clientSecret: 'FAKE-APP-CLIENT-SECRET',
+};
 
 function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'status'>): Account {
   return {
@@ -55,12 +60,88 @@ function successResult(accountIdentifier: string, refreshToken: string): GmailOA
   return { status: 'success', identity: { accountIdentifier }, refreshToken };
 }
 
+function collectingOutput(): { output: Writable; readText: () => string } {
+  let text = '';
+  const output = new Writable({
+    write(chunk: Buffer | string, _enc, cb): void {
+      text += chunk.toString();
+      cb();
+    },
+  });
+  return { output, readText: () => text };
+}
+
+describe('dispatch(["disconnect"]) — câblage CLI', () => {
+  it('compte Gmail connecté → déconnexion réussie, secret supprimé, statut mis à jour', async () => {
+    const accountStore = new InMemoryAccountStore();
+    const secretStore = new InMemorySecretStore();
+    const connected = await connectGmailAccount({
+      result: successResult('alice@example.test', 'refresh-token-1'),
+      accountStore,
+      secretStore,
+    });
+    if (connected.status !== 'connected') throw new Error('unreachable');
+    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS };
+    const { output, readText } = collectingOutput();
+
+    await dispatch(['disconnect'], deps, { output });
+
+    expect(readText()).toContain(
+      `déconnecté — alice@example.test (accountId=${connected.accountId})`,
+    );
+    const account = await accountStore.get(connected.accountId);
+    expect(account.status).toBe('disconnected');
+    expect(await secretStore.has(gmailRefreshTokenSecretKey(connected.accountId))).toBe(false);
+  });
+
+  it('aucun compte Gmail → UnknownAccountError propagée, aucune ligne de succès', async () => {
+    const accountStore = new InMemoryAccountStore();
+    const secretStore = new InMemorySecretStore();
+    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS };
+    const { output, readText } = collectingOutput();
+
+    await expect(dispatch(['disconnect'], deps, { output })).rejects.toBeInstanceOf(
+      UnknownAccountError,
+    );
+    expect(readText()).toBe('');
+  });
+
+  it('plusieurs comptes Gmail sans accountId → AmbiguousAccountError propagée, aucun secret supprimé', async () => {
+    const accountStore = new InMemoryAccountStore();
+    const secretStore = new InMemorySecretStore();
+    const a = await connectGmailAccount({
+      result: successResult('alice@example.test', 'refresh-token-A'),
+      accountStore,
+      secretStore,
+    });
+    const b = await connectGmailAccount({
+      result: successResult('bob@example.test', 'refresh-token-B'),
+      accountStore,
+      secretStore,
+    });
+    if (a.status !== 'connected' || b.status !== 'connected') throw new Error('unreachable');
+    const deps: DesktopDeps = { accountStore, secretStore, appCredentials: APP_CREDENTIALS };
+    const { output, readText } = collectingOutput();
+
+    await expect(dispatch(['disconnect'], deps, { output })).rejects.toBeInstanceOf(
+      AmbiguousAccountError,
+    );
+    expect(readText()).toBe('');
+    expect(await secretStore.has(gmailRefreshTokenSecretKey(a.accountId))).toBe(true);
+    expect(await secretStore.has(gmailRefreshTokenSecretKey(b.accountId))).toBe(true);
+  });
+});
+
 describe('resolveExistingGmailConnection — décision, sans dépendance au backend OS réel', () => {
   it('premier lancement (aucun compte) → undefined, OAuth nécessaire', async () => {
     const accountStore = new InMemoryAccountStore();
     const secretStore = new InMemorySecretStore();
 
-    const result = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS });
+    const result = await resolveExistingGmailConnection({
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+    });
 
     expect(result).toBeUndefined();
   });
@@ -72,7 +153,11 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     await accountStore.register(account);
     await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), 'refresh-token-1');
 
-    const result = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS });
+    const result = await resolveExistingGmailConnection({
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+    });
 
     expect(result).toEqual(account);
   });
@@ -86,7 +171,11 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     // ne doit pas non plus rendre le compte exploitable.
     await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), 'refresh-token-1');
 
-    const result = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS });
+    const result = await resolveExistingGmailConnection({
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+    });
 
     expect(result).toBeUndefined();
   });
@@ -98,7 +187,11 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     await accountStore.register(account);
     await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), 'refresh-token-1');
 
-    const result = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS });
+    const result = await resolveExistingGmailConnection({
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+    });
 
     expect(result).toBeUndefined();
   });
@@ -109,7 +202,11 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     const account = makeAccount({ id: 'acc-1', status: 'connected' });
     await accountStore.register(account);
 
-    const result = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS });
+    const result = await resolveExistingGmailConnection({
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+    });
 
     expect(result).toBeUndefined();
   });
@@ -123,7 +220,11 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     await secretStore.set(gmailRefreshTokenSecretKey('acc-B'), 'refresh-token-B');
 
     await expect(
-      resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS }),
+      resolveExistingGmailConnection({
+        accountStore,
+        secretStore,
+        appCredentials: APP_CREDENTIALS,
+      }),
     ).rejects.toBeInstanceOf(AmbiguousAccountError);
   });
 
@@ -158,7 +259,12 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     });
     if (connected.status !== 'connected') throw new Error('unreachable');
 
-    await disconnectGmailAccount({ accountId: connected.accountId, accountStore, secretStore, confirmationService });
+    await disconnectGmailAccount({
+      accountId: connected.accountId,
+      accountStore,
+      secretStore,
+      confirmationService,
+    });
 
     const result = await resolveExistingGmailConnection({
       accountStore,
@@ -178,7 +284,11 @@ describe('resolveExistingGmailConnection — décision, sans dépendance au back
     await accountStore.register(account);
     await secretStore.set(gmailRefreshTokenSecretKey('acc-1'), marker);
 
-    const result = await resolveExistingGmailConnection({ accountStore, secretStore, appCredentials: APP_CREDENTIALS });
+    const result = await resolveExistingGmailConnection({
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+    });
 
     expect(JSON.stringify(result)).not.toContain(marker);
   });
@@ -255,7 +365,9 @@ describe('Persistance réelle — OsCredentialSecretStore (backend OS réel requ
 
     const storeB = new OsCredentialSecretStore({ service: OS_TEST_SERVICE });
 
-    await expect(storeB.get(gmailRefreshTokenSecretKey(accountId))).resolves.toBe('refresh-token-persisted');
+    await expect(storeB.get(gmailRefreshTokenSecretKey(accountId))).resolves.toBe(
+      'refresh-token-persisted',
+    );
   });
 });
 

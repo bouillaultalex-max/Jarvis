@@ -8,6 +8,7 @@ Assistant IA personnel — monorepo npm workspaces (TypeScript strict, Node 24, 
 - Backlog actionnable : [`MASTER_BACKLOG.md`](./MASTER_BACKLOG.md)
 - État détaillé, invariants et historique complet : [`PROJECT_STATE.md`](./PROJECT_STATE.md)
 - Architecture des connecteurs : [`docs/connectors-architecture.md`](./docs/connectors-architecture.md)
+- Décisions d'architecture (ADR) : [`docs/adr/`](./docs/adr/)
 
 ## Workspaces
 
@@ -29,13 +30,16 @@ Graphe de dépendances détaillé : voir `PROJECT_STATE.md` → « Workspaces & 
 
 ```bash
 npm install
-npm run typecheck   # tsc --noEmit sur tout le monorepo
-npm run lint        # eslint . (flat config, TypeScript-aware)
-npm test            # vitest run
+npm run typecheck     # tsc --noEmit sur tout le monorepo
+npm run lint          # eslint . (flat config, TypeScript-aware)
+npm test              # vitest run
+npm run test:coverage # vitest run --coverage (informatif, aucun seuil)
 npm run format:check  # prettier --check . (informatif — pas encore un gate CI)
 ```
 
 Node 24.x, npm 11.x requis (voir `engines` si ajouté, ou aligner sur votre environnement local).
+
+`npm install` active aussi un hook Git pre-commit (`.githooks/`, via `core.hooksPath`) qui vérifie lint/format/typecheck sur les fichiers stagés. La CI (`.github/workflows/ci.yml`) ajoute un scan de secrets (gitleaks) ; les dépendances sont surveillées par Dependabot (`.github/dependabot.yml`).
 
 ## Secrets et environnement
 

@@ -9,17 +9,22 @@ import {
   type ConnectGmailAccountOutcome,
   type DisconnectGmailAccountOutcome,
   type GmailAppCredentials,
+  type GmailReadInput,
   type GmailSendInput,
-  type PermissionManager,
   type SecretStore,
+  type ToolExecutionResult,
   ConfirmationService,
   connectGmailAccount,
   disconnectGmailAccount,
   FileAccountStore,
+  gmailConnector,
   GmailOAuthFlow,
   OsCredentialSecretStore,
+  PermissionManager,
   resolveAccount,
   resolveGmailApiClient,
+  ToolExecutor,
+  ToolRegistry,
   UnknownAccountError,
 } from '@jarvis/connectors';
 
@@ -341,6 +346,72 @@ export async function resolveOrConnectGmailAccount(
 }
 
 /**
+ * Lignes d'affichage d'un résultat `gmail.read` — jamais l'objet brut.
+ *
+ * Succès : une ligne par email (expéditeur + objet uniquement — jamais le
+ * corps, ni `id`/`threadId`/métadonnées internes), aucune ligne fictive si
+ * la boîte est vide. Échec : message générique groupant tous les statuts
+ * non exécutés, jamais un `reason` non maîtrisé (même discipline que
+ * {@link describeSendResult}).
+ */
+function describeReadResult(result: ToolExecutionResult): readonly string[] {
+  if (result.status !== 'executed') {
+    return [`Lecture échouée (${result.status}).`];
+  }
+  const output = result.output as { readonly messages?: readonly unknown[] };
+  const messages = Array.isArray(output?.messages) ? output.messages : [];
+  if (messages.length === 0) {
+    return ['Aucun email trouvé.'];
+  }
+  return messages.map((message) => {
+    const { sender, subject } = message as {
+      readonly sender?: unknown;
+      readonly subject?: unknown;
+    };
+    return `${typeof sender === 'string' ? sender : '?'} — ${typeof subject === 'string' ? subject : '?'}`;
+  });
+}
+
+/**
+ * Flux `read` — lit les emails Gmail récents via le Tool `gmail.read`
+ * existant (`packages/connectors`, inchangé), en composant exactement les
+ * mêmes briques que `send`/`disconnect` : `resolveOrConnectGmailAccount()`
+ * → `resolveGmailApiClient()` → `gmailConnector.createTools()` →
+ * `ToolRegistry`/`ToolExecutor`. `gmail.read` est classé `'read'` (jamais
+ * `'execute'`) : aucune confirmation interactive n'est nécessaire, et la
+ * politique par défaut l'autorise directement (contrairement à `send`, où
+ * `require_confirmation` reste la politique par défaut).
+ */
+export async function runReadFlow(
+  deps: DesktopDeps,
+  input: GmailReadInput,
+  write: (line: string) => void = console.log,
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<ToolExecutionResult> {
+  const account = await resolveOrConnectGmailAccount(deps, write, connect);
+  const client = await resolveGmailApiClient({
+    account,
+    secretStore: deps.secretStore,
+    appCredentials: deps.appCredentials,
+    ...(deps.fetchFn !== undefined ? { fetchFn: deps.fetchFn } : {}),
+  });
+
+  const registry = new ToolRegistry();
+  for (const tool of gmailConnector.createTools(client)) {
+    registry.register(tool);
+  }
+  const permissionManager =
+    deps.permissionManager ?? new PermissionManager({ rules: { 'gmail.read': 'allow' } });
+  const executor = new ToolExecutor(registry, permissionManager);
+
+  const result = await executor.run({ tool: 'gmail.read', input });
+  for (const line of describeReadResult(result)) {
+    write(line);
+  }
+  return result;
+}
+
+/**
  * Flux `send` — M8-B5. Câble `runGmailSend` (M8-B4, inchangé) : le compte est
  * résolu (ou connecté), puis l'envoi passe **obligatoirement** par
  * `proposeConfirmation → confirm() → confirmAndExecute`. Le `confirm` réel est
@@ -374,7 +445,59 @@ export interface DesktopIo {
   readonly output?: NodeJS.WritableStream;
 }
 
-/** Dispatch de la ligne de commande : `connect` (défaut) | `send` | `disconnect`. */
+/**
+ * Parse les arguments de la sous-commande `read` :
+ *
+ *   read [--maxResults <n>]
+ *
+ * Fonction pure, même discipline que {@link parseGmailSendArgs}
+ * (`gmail-send-args.ts`) : structure uniquement l'entrée, ne valide jamais
+ * la plage de `maxResults` elle-même — cette validation de fond reste
+ * entièrement faite par `gmail.read.validateInput` via `ToolExecutor`
+ * (`packages/connectors`, inchangé). Absence de `--maxResults` ⇒ objet vide,
+ * pour que le Tool applique son propre défaut, jamais réécrit ici.
+ */
+function parseGmailReadArgs(argv: readonly string[]): GmailReadInput {
+  let raw: string | undefined;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i]!;
+
+    if (!token.startsWith('--')) {
+      throw new Error(
+        'read : argument positionnel inattendu (seule l’option --maxResults est acceptée).',
+      );
+    }
+
+    const eq = token.indexOf('=');
+    const name = eq !== -1 ? token.slice(2, eq) : token.slice(2);
+
+    if (name !== 'maxResults') {
+      throw new Error(`read : option inconnue « --${name} » (connue : --maxResults).`);
+    }
+
+    let value: string;
+    if (eq !== -1) {
+      value = token.slice(eq + 1);
+    } else {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('--')) {
+        throw new Error('read : valeur manquante pour l’option --maxResults.');
+      }
+      value = next;
+      i += 1;
+    }
+
+    if (raw !== undefined) {
+      throw new Error('read : option --maxResults fournie plusieurs fois.');
+    }
+    raw = value;
+  }
+
+  return raw === undefined ? {} : { maxResults: Number(raw) };
+}
+
+/** Dispatch de la ligne de commande : `connect` (défaut) | `send` | `disconnect` | `read`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -402,12 +525,18 @@ export async function dispatch(
     return;
   }
 
+  if (command === 'read') {
+    const input = parseGmailReadArgs(argv.slice(1));
+    await runReadFlow(deps, input, write, connect);
+    return;
+  }
+
   if (command === undefined || command === 'connect') {
     await runConnectFlow(deps, write, connect);
     return;
   }
 
-  throw new Error('Commande inconnue (attendu : connect | send | disconnect).');
+  throw new Error('Commande inconnue (attendu : connect | send | disconnect | read).');
 }
 
 async function main(): Promise<void> {

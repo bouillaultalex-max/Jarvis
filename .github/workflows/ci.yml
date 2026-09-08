@@ -15,6 +15,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install gitleaks
+        run: |
+          # Binaire officiel gitleaks (github.com/gitleaks/gitleaks), version figée
+          # pour la reproductibilité. Le wrapper Action officiel (gitleaks/gitleaks-action)
+          # exige une licence gratuite pour tout compte GitHub de type organisation ;
+          # le binaire CLI, lui, reste MIT/gratuit sans condition — évite ce risque.
+          GITLEAKS_VERSION="8.21.2"
+          GITLEAKS_SHA256="5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          chmod +x /tmp/gitleaks
+
+      - name: Gitleaks secret scan
+        run: /tmp/gitleaks detect --source=. --no-git --no-banner --redact --exit-code 1
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'

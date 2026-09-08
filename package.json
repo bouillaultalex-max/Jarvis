@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "lint": "eslint .",

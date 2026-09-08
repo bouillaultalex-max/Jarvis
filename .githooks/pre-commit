@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# Hook pre-commit natif (git core.hooksPath) — OUT-01.
+#
+# - Ne modifie JAMAIS l'index ni les fichiers stagés.
+# - Ne lance JAMAIS git add / commit / push / reset / checkout / clean.
+# - Vérifie ESLint + Prettier sur le CONTENU STAGÉ (pas le working tree) des
+#   fichiers TS/JS stagés, indépendamment de toute modification non stagée
+#   du même fichier ou d'un autre fichier.
+# - Lance un typecheck complet du projet (tsc --noEmit a besoin du contexte
+#   du projet entier, pas seulement des fichiers stagés).
+# - Ne lance PAS la suite de tests (vitest) : réservé à la CI.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+fail() {
+  echo "" >&2
+  echo "✗ pre-commit: $1 — commit annulé." >&2
+  exit 1
+}
+
+# --- Fichiers TS/JS stagés (ajoutés/copiés/modifiés/renommés) ---
+# --diff-filter=ACMR exclut les suppressions (D) : rien à lint/formatter pour
+# un fichier supprimé. -z + lecture NUL-délimitée : sûr avec des chemins
+# contenant des espaces ou caractères spéciaux.
+STAGED_FILES=()
+while IFS= read -r -d '' FILE; do
+  STAGED_FILES+=("$FILE")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
+
+if [ "${#STAGED_FILES[@]}" -eq 0 ]; then
+  echo "pre-commit: aucun fichier TS/JS stagé — ESLint/Prettier ignorés."
+else
+  # Copie du CONTENU STAGÉ (git show ":<fichier>", pas le working tree) dans
+  # un dossier temporaire à l'intérieur du dépôt, pour qu'ESLint/Prettier
+  # résolvent normalement eslint.config.js/.prettierrc.json (recherche
+  # ascendante depuis le dossier du fichier) tout en ne contrôlant QUE ce qui
+  # sera réellement commité.
+  STAGED_COPY_DIR="$(mktemp -d "$REPO_ROOT/.pre-commit-staged.XXXXXXXXXX")"
+  trap 'rm -rf "$STAGED_COPY_DIR"' EXIT
+
+  CHECK_FILES=()
+  for FILE in "${STAGED_FILES[@]}"; do
+    DEST="$STAGED_COPY_DIR/$FILE"
+    mkdir -p "$(dirname "$DEST")"
+    if git show ":$FILE" > "$DEST" 2>/dev/null; then
+      CHECK_FILES+=("$FILE")
+    fi
+  done
+
+  if [ "${#CHECK_FILES[@]}" -gt 0 ]; then
+    echo "pre-commit: ESLint sur ${#CHECK_FILES[@]} fichier(s) stagé(s)…"
+    (cd "$STAGED_COPY_DIR" && npx --no-install eslint -- "${CHECK_FILES[@]}") \
+      || fail "ESLint a échoué sur le contenu stagé"
+
+    echo "pre-commit: Prettier --check sur ${#CHECK_FILES[@]} fichier(s) stagé(s)…"
+    (cd "$STAGED_COPY_DIR" && npx --no-install prettier --check -- "${CHECK_FILES[@]}") \
+      || fail "Prettier a détecté un formatage non conforme dans le contenu stagé (corrigez puis re-stagez)"
+  fi
+fi
+
+echo "pre-commit: typecheck complet du projet…"
+npm run --silent typecheck || fail "typecheck (tsc --noEmit) a échoué"
+
+echo "✓ pre-commit: tous les checks sont passés."
+exit 0

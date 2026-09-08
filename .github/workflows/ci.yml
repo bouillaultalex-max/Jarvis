@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install (reproductible)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Scan for obvious committed secrets
+        run: |
+          # Scan basique par motifs connus (clés privées, tokens de fournisseurs
+          # courants). Ce n'est PAS un scanner de secrets exhaustif (type
+          # gitleaks/trufflehog) — seulement un filet de sécurité low-cost sans
+          # dépendance externe.
+          PATTERN="BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY"
+          PATTERN="$PATTERN|AKIA[0-9A-Z]{16}"
+          PATTERN="$PATTERN|gh[pousr]_[A-Za-z0-9]{36}"
+          PATTERN="$PATTERN|sk-[A-Za-z0-9]{20,}"
+          PATTERN="$PATTERN|xox[baprs]-[A-Za-z0-9-]{10,}"
+          if git grep -nIE "$PATTERN" -- . ':!*.lock' ':!package-lock.json'; then
+            echo "Potential secret material found in tracked files." >&2
+            exit 1
+          fi
+          echo "No obvious secret patterns found."

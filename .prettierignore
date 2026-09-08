@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+package-lock.json
+.claude
+.claude-flow
+.swarm
+*.db
+PROJECT_STATE.md
+MASTER_BACKLOG.md
+MASTER_ROADMAP.md

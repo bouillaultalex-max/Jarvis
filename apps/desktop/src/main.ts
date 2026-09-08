@@ -21,6 +21,7 @@ import {
   type ConnectGmailAccountOutcome,
   type DisconnectGmailAccountOutcome,
   type GmailAppCredentials,
+  type GmailPrepareReplyInput,
   type GmailReadInput,
   type GmailSendInput,
   type SecretStore,
@@ -43,6 +44,7 @@ import {
 import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js';
 import { describeInboxResult } from './inbox-view.js';
 import { parseGmailSendArgs } from './gmail-send-args.js';
+import { parsePrepareReplyArgs } from './prepare-reply-args.js';
 import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
 import { createTerminalConfirm } from './terminal-confirm.js';
 
@@ -526,6 +528,80 @@ export async function runInboxFlow(
 }
 
 /**
+ * Lignes d'affichage d'un brouillon `gmail.prepare_reply` — jamais l'objet brut.
+ *
+ * Succès : destinataire, objet et corps du brouillon — les trois champs
+ * nécessaires pour relire puis, le cas échéant, expédier la réponse. Le
+ * `threadId` n'est **pas** affiché : identifiant technique interne, inutile à
+ * l'utilisateur (même discipline que {@link describeReadResult}, qui n'affiche
+ * jamais d'`id`/`threadId`). `to` et `subject` sont dérivés du message
+ * réellement lu par le Tool ; `body` est celui fourni en argument.
+ * Échec : message générique par statut, jamais un `reason` non maîtrisé.
+ */
+function describePrepareReplyResult(result: ToolExecutionResult): readonly string[] {
+  if (result.status !== 'executed') {
+    return [`Préparation de la réponse échouée (${result.status}).`];
+  }
+  const output = result.output as {
+    readonly to?: unknown;
+    readonly subject?: unknown;
+    readonly body?: unknown;
+  };
+  const field = (value: unknown): string => (typeof value === 'string' ? value : '?');
+  return [
+    `Destinataire : ${field(output?.to)}`,
+    `Objet : ${field(output?.subject)}`,
+    `Corps : ${field(output?.body)}`,
+  ];
+}
+
+/**
+ * Flux `prepare-reply` — prépare un brouillon de réponse via le Tool
+ * `gmail.prepare_reply` existant (`@jarvis/connectors`, M7.3, inchangé), en
+ * composant exactement les mêmes briques de confiance que `read`/`inbox` :
+ * `resolveOrConnectGmailAccount()` → `resolveGmailApiClient()` →
+ * `gmailConnector.createTools()` → `ToolRegistry`/`PermissionManager`/
+ * `ToolExecutor`. L'appel passe **obligatoirement** par `ToolExecutor.run`
+ * (jamais `tool.execute()` directement).
+ *
+ * `gmail.prepare_reply` est classé `'prepare'` : **aucun effet de bord
+ * Gmail** (le seul appel réseau est une lecture, `client.getMessage`), donc
+ * aucune confirmation interactive — contrairement à `send`. `to`, `subject`
+ * et `threadId` du brouillon sont dérivés du message réellement lu par le
+ * Tool ; seul `body` vient de l'appelant. `'prepare'` n'a pas de défaut de
+ * politique (⇒ `deny`) : une règle explicite `'allow'` est donc fournie ici,
+ * comme `runReadFlow` le fait pour `gmail.read`.
+ */
+export async function runPrepareReplyFlow(
+  deps: DesktopDeps,
+  input: GmailPrepareReplyInput,
+  write: (line: string) => void = console.log,
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<ToolExecutionResult> {
+  const account = await resolveOrConnectGmailAccount(deps, write, connect);
+  const client = await resolveGmailApiClient({
+    account,
+    secretStore: deps.secretStore,
+    appCredentials: deps.appCredentials,
+    ...(deps.fetchFn !== undefined ? { fetchFn: deps.fetchFn } : {}),
+  });
+
+  const registry = new ToolRegistry();
+  for (const tool of gmailConnector.createTools(client)) {
+    registry.register(tool);
+  }
+  const permissionManager =
+    deps.permissionManager ?? new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } });
+  const executor = new ToolExecutor(registry, permissionManager);
+
+  const result = await executor.run({ tool: 'gmail.prepare_reply', input });
+  for (const line of describePrepareReplyResult(result)) {
+    write(line);
+  }
+  return result;
+}
+
+/**
  * Flux `send` — M8-B5. Câble `runGmailSend` (M8-B4, inchangé) : le compte est
  * résolu (ou connecté), puis l'envoi passe **obligatoirement** par
  * `proposeConfirmation → confirm() → confirmAndExecute`. Le `confirm` réel est
@@ -614,7 +690,7 @@ function parseGmailReadArgs(argv: readonly string[], command = 'read'): GmailRea
   return raw === undefined ? {} : { maxResults: Number(raw) };
 }
 
-/** Dispatch de la ligne de commande : `connect` (défaut) | `send` | `disconnect` | `read`. */
+/** Dispatch : `connect` (défaut) | `read` | `inbox` | `prepare-reply` | `send` | `disconnect`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -654,12 +730,20 @@ export async function dispatch(
     return;
   }
 
+  if (command === 'prepare-reply') {
+    const input = parsePrepareReplyArgs(argv.slice(1));
+    await runPrepareReplyFlow(deps, input, write, connect);
+    return;
+  }
+
   if (command === undefined || command === 'connect') {
     await runConnectFlow(deps, write, connect);
     return;
   }
 
-  throw new Error('Commande inconnue (attendu : connect | send | disconnect | read | inbox).');
+  throw new Error(
+    'Commande inconnue (attendu : connect | read | inbox | prepare-reply | send | disconnect).',
+  );
 }
 
 async function main(): Promise<void> {

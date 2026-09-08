@@ -1,16 +1,17 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-04 — M7 (M7.1–M7.4) committé et terminé :
-identification des emails nécessitant l'attention, résumé LLM (`Tool`
-`action: 'read'`), préparation de réponse Gmail (`gmail.prepare_reply`,
-`action: 'prepare'`, cible toujours dérivée du message réel), et
-composition `summarizeEmailsNeedingAttention`. Toujours aucun `gmail.send`.
-Non branché dans `apps/api`.
-Depuis, une **fondation architecturale transversale** — `Connector
-Architecture Foundation` (commit `8506792`, voir « Functional milestones
-vs Architectural foundations » ci-dessous) — a été ajoutée : elle ne
-constitue PAS un nouveau jalon fonctionnel et ne remplace pas le M5 Gmail
-historique (`fd13ffa`)._
+_Dernière mise à jour : 2026-09-08 — M8 (Gmail Send) committé et terminé,
+sous-jalons M8-B2 à M8-B6 : OAuth Google Authorization Code + PKCE
+(`2d088b7`), `SecretStore` de production via trousseau OS (`b5db57e`),
+boucle d'envoi confirmée (`a811027`), câblage CLI desktop `connect`/`send`
+(`309bbfb`), couverture des erreurs réseau/provider post-confirmation
+(`2faf205`). Voir section dédiée ci-dessous. `apps/api` reste non branché
+(aucun outil connecteur dans son `ToolRegistry`).
+Entre M7.4 et M8, une **fondation architecturale transversale** —
+`Connector Architecture Foundation` (commit `8506792`, voir « Functional
+milestones vs Architectural foundations » ci-dessous) — a été ajoutée :
+elle ne constitue PAS un nouveau jalon fonctionnel et ne remplace pas le M5
+Gmail historique (`fd13ffa`)._
 
 ## Vue d'ensemble
 
@@ -61,7 +62,7 @@ elle est substantielle en volume de code ou en tests.
 @jarvis/inbox           → @jarvis/core, @jarvis/classification, @jarvis/llm (types uniquement), @jarvis/types
                            (+ @jarvis/connectors en devDependency, tests uniquement)
 apps/api                → @jarvis/core, @jarvis/llm, @jarvis/tools, fastify
-apps/desktop            (vide)
+apps/desktop            → @jarvis/connectors
 ```
 
 `@jarvis/connectors` ne dépend que de `@jarvis/core` + `@jarvis/types` :
@@ -88,11 +89,11 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/llm` | Abstraction LLM + `AnthropicProvider` | fonctionnel ; clé lue en lazy au 1er appel ; `LlmResponse.toolCall?` défini mais jamais émis par `AnthropicProvider` |
 | `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` ; inchangé depuis M4 |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
-| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) ; + fondation `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` (`Connector Architecture Foundation`, hors jalon fonctionnel) | aucune capacité d'écriture (`gmail.send`/`modify`/`delete` inexistants) ; `gmailConnector` n'utilise pas encore `ConnectorRegistry`/`AccountStore`/`SecretStore` |
+| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) + `gmail.send` (`action: 'execute'`, M8) ; + `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` ; + `OsCredentialSecretStore` (M8-B3, production) ; + `GmailOAuthFlow` PKCE (M8-B2) ; + `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute` (M8) | `gmail.modify`/`gmail.delete` toujours inexistants ; `gmailConnector` utilise `ConnectorRegistry`/`AccountStore`/`SecretStore` via `resolveGmailApiClient` (M8) |
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
-| `apps/desktop` | Client desktop | non commencé (dossier vide) |
+| `apps/desktop` | Client CLI (`connect`, `send`) | fonctionnel — connexion OAuth PKCE, persistance via trousseau OS, envoi Gmail confirmé (M8-B2→B6) |
 
 ## Ce qui fonctionne
 
@@ -223,9 +224,12 @@ Google OAuth credentials → GmailApiClient (Gmail API) → GmailRawMessage
   guise de corps), convertit `internalDate` en ISO 8601. Au-delà de cette
   fonction, plus aucun objet brut Gmail ne remonte.
 - **`gmail-connector.ts`** — `gmailConnector: Connector<GmailApiClient>` :
-  `capabilities: ['gmail.read']`, un seul `Tool` (`action: 'read'`). Pas de
-  `gmail.send`, `gmail.modify`, `gmail.delete` ni `gmail.prepare_reply` — ni
-  comme `Tool`, ni comme méthode sur `GmailApiClient`.
+  à l'origine (M5) `capabilities: ['gmail.read']`, un seul `Tool`
+  (`action: 'read'`). **Depuis M7.3/M8, étendu** à trois `Tool` :
+  `gmail.read` (`'read'`), `gmail.prepare_reply` (`'prepare'`, M7.3),
+  `gmail.send` (`'execute'`, M8 — voir section dédiée ci-dessous). Toujours
+  pas de `gmail.modify` ni `gmail.delete` — ni comme `Tool`, ni comme
+  méthode sur `GmailApiClient`.
 - **`ClassificationEngine` non modifié** : consomme l'`EmailMessage` produit
   par le mapper exactement comme n'importe quel autre `EmailMessage`.
 
@@ -275,12 +279,60 @@ Documentation détaillée : `docs/connectors-architecture.md`. Tests :
 `capability.test.ts` (5), `in-memory-secret-store.test.ts` (7),
 `security.test.ts` (10) — 41 tests, tous dans `packages/connectors/src/`.
 
-Ne résout **aucune** des décisions encore ouvertes listées dans
-« Prochaine étape prévue (connecteurs) » ci-dessous (flux de connexion
-OAuth initiale, stockage sécurisé de production du refresh token, modèle
-de confirmation UI pour `gmail.send`) : `InMemorySecretStore` n'est pas un
-stockage de production, et rien ne branche encore `gmailConnector` sur
-`ConnectorRegistry`/`AccountStore`/`SecretStore`.
+À l'époque de son introduction (`8506792`), cette fondation ne résolvait
+encore aucune des décisions listées dans « Prochaine étape prévue
+(connecteurs) » (flux de connexion OAuth initiale, stockage sécurisé de
+production du refresh token, modèle de confirmation UI pour `gmail.send`).
+**Ces trois décisions sont désormais tranchées et implémentées par M8**
+(voir section suivante) : `InMemorySecretStore` reste dev/test uniquement,
+mais `gmailConnector` utilise maintenant `AccountStore`/`SecretStore` en
+production via `resolveGmailApiClient`.
+
+## Envoi Gmail confirmé (M8 — `gmail.send`, terminé)
+
+Jalon fonctionnel M8, décomposé en 5 sous-étapes toutes committées. Ferme
+le dernier point resté ouvert depuis M5 : `gmail.send` (`action: 'execute'`,
+effet de bord réel et irréversible), avec confirmation utilisateur
+obligatoire.
+
+- **M8-B2 — OAuth Google Authorization Code + PKCE** (`2d088b7`,
+  `packages/connectors/src/gmail/gmail-oauth-flow.ts`) : flux de connexion
+  initiale du compte, `code_challenge`/`code_verifier` (méthode `S256`,
+  RFC 7636). `gmail-oauth-callback-server.ts` écoute strictement sur
+  `127.0.0.1` (jamais `0.0.0.0`).
+- **M8-B3 — `SecretStore` de production** (`b5db57e`,
+  `packages/connectors/src/os/os-credential-secret-store.ts`) :
+  `OsCredentialSecretStore` délègue entièrement au trousseau natif de l'OS
+  (Windows Credential Manager / macOS Keychain / Linux Secret Service) via
+  `@napi-rs/keyring` — aucun fichier, aucune clé de chiffrement gérée par
+  JARVIS. `FileAccountStore` (déjà existant) assure la persistance des
+  comptes entre deux lancements. Voir `docs/adr/0003-os-credential-backend.md`.
+- **M8-B4 — Boucle d'envoi confirmée** (`a811027`,
+  `apps/desktop/src/gmail-send.ts`, `runGmailSend`) : compose
+  `resolveAccount()` → `resolveGmailApiClient()` →
+  `gmailConnector.createTools()` → `ToolExecutor` → `proposeConfirmation()`
+  → confirmation utilisateur → `confirmAndExecute()`. Une politique
+  `'allow'` sur `gmail.send` est refusée (`confirmation_required`) plutôt
+  qu'exécutée. Voir `docs/adr/0004-resolve-account-single-point.md` et
+  `docs/adr/0005-tool-executor-and-confirmation.md`.
+- **M8-B5 — Câblage CLI desktop** (`309bbfb`,
+  `apps/desktop/src/{main,gmail-send-args,terminal-confirm}.ts`) :
+  sous-commandes `connect` et `send` de `apps/desktop`, confirmation au
+  terminal (`createTerminalConfirm`), OAuth non relancé si un compte est
+  déjà connecté.
+- **M8-B6 — Couverture des erreurs post-confirmation** (`2faf205`,
+  `gmail-send.test.ts`, `main-send.test.ts`) : preuve par test que
+  `runGmailSend` renvoie `status: 'error'` (jamais un faux succès) si le
+  refresh token est rejeté (`invalid_grant`) ou si l'API Gmail refuse
+  l'envoi, jusqu'au message affiché par la CLI.
+
+**508 tests / 47 fichiers** au total (voir « Vérifications » ci-dessous).
+Décisions architecturales de M8 formalisées dans `docs/adr/0001` à `0005`.
+
+`disconnectGmailAccount()` (`packages/connectors/src/gmail/gmail-connection.ts`)
+existe et est testée, mais n'est **pas câblée** dans `apps/desktop` (`dispatch()`
+n'expose que `connect`/`send`) — capacité de bibliothèque non encore
+exposée à l'utilisateur, pas un jalon en cours.
 
 ### Limites connues (héritées de M4, inchangées)
 
@@ -294,35 +346,26 @@ stockage de production, et rien ne branche encore `gmailConnector` sur
 
 - **Discord/Calendar/autres fournisseurs** : `InMemoryConnector` reste le
   seul exemple non-Gmail.
-- **Toute capacité Gmail au-delà de la lecture** : pas de `gmail.send`, pas
-  de `gmail.modify`, pas de `gmail.delete`, pas de `gmail.prepare_reply`.
-  Volontaire pour ce jalon (M5 = lecture seule) — un futur jalon pourra
-  ajouter `gmail.prepare_reply` (action `prepare`) puis, avec un modèle de
-  confirmation explicite, `gmail.send` (action `execute`).
-- **Connexion initiale du compte** (flux de consentement OAuth interactif,
-  obtention du tout premier refresh token) : non implémentée. `gmailConnector`
-  suppose un `refreshToken` déjà obtenu, fourni via `GmailCredentials`.
-- **Stockage sécurisé du refresh token** : seule l'interface
-  `RefreshTokenStore` est posée ; aucune implémentation (fichier chiffré,
-  trousseau OS…) n'existe. Le refresh token transite tel quel, en mémoire,
-  via `GmailCredentials`.
-- **`apps/connectors` non branché dans `apps/api`** : le `ToolRegistry` de
-  `apps/api` reste vide de tout outil connecteur pour l'instant — décision
-  explicitement repoussée par consigne de ce jalon.
-- **`apps/desktop`** : aucun flux de connexion Gmail dans une UI — hors
-  scope tant que la connexion initiale (ci-dessus) n'est pas tranchée.
+- **Modification/suppression Gmail** : toujours pas de `gmail.modify`, pas
+  de `gmail.delete`. `gmail.read`, `gmail.prepare_reply` et `gmail.send`
+  existent tous les trois depuis M8 (voir section dédiée ci-dessus).
+- **Connexion initiale du compte** : ~~non implémentée~~ **résolue par
+  M8-B2** (flux OAuth interactif + PKCE, `gmail-oauth-flow.ts`).
+- **Stockage sécurisé du refresh token** : ~~aucune implémentation~~
+  **résolu par M8-B3** (`OsCredentialSecretStore`, trousseau OS).
+- **`apps/connectors` non branché dans `apps/api`** : **toujours vrai** —
+  le `ToolRegistry` de `apps/api` reste vide de tout outil connecteur ;
+  seul `apps/desktop` consomme `@jarvis/connectors` à ce stade.
+- **`apps/desktop`** : ~~aucun flux de connexion Gmail~~ **résolu par
+  M8-B2/B5** (`connect`/`send` en CLI).
 
 ### Prochaine étape prévue (connecteurs)
 
-Décision à prendre avant d'aller plus loin sur Gmail : flux de connexion
-initiale du compte (desktop vs. serveur), stockage sécurisé du refresh token
-(où, comment chiffré), et modèle de confirmation utilisateur pour de
-futures actions `execute` réelles (UI de confirmation via `apps/api` ou
-`apps/desktop`) — avant tout `gmail.send`.
-
-Ces décisions restent entières après `Connector Architecture Foundation`
-(`8506792`) : `SecretStore`/`AccountStore` posent l'abstraction, pas la
-réponse à ces questions (voir section dédiée ci-dessus).
+Les trois décisions listées ci-dessus au moment de `Connector Architecture
+Foundation` (flux de connexion initiale, stockage sécurisé du refresh
+token, modèle de confirmation utilisateur) sont **toutes tranchées et
+implémentées par M8** (voir section dédiée ci-dessus). Point encore ouvert,
+non prioritaire : `apps/api` reste sans aucun outil connecteur branché.
 
 ## Moteur de classification d'emails (`@jarvis/classification`)
 
@@ -554,35 +597,35 @@ ClassifiedEmail[] → filterEmailsNeedingAttention (M7.1) → EmailSummarizer (M
 - Non branché dans `apps/api` : aucune route HTTP n'expose ce flux.
 - Aucune pagination/synchronisation incrémentale (pas de curseur, pas de
   détection de « nouveaux » emails depuis la dernière lecture).
-- Aucun `gmail.send` : l'envoi reste un jalon séparé, après feu vert
-  explicite (M8, non commencé).
+- `gmail.send` : était un jalon séparé nécessitant feu vert explicite —
+  **fait, voir M8 ci-dessus**.
 - Aucune génération automatique du corps d'une réponse par LLM :
   `gmail.prepare_reply` structure un corps déjà fourni, il ne le rédige pas.
 
 ### Prochaine étape prévue (inbox)
 
-Décision à prendre avant d'aller plus loin : faut-il brancher ce flux dans
-`apps/api` (une route HTTP qui déclenche `fetchAndClassifyEmails`/
-`summarizeEmailsNeedingAttention` et expose leurs résultats), ou d'abord
-construire l'interface conversationnelle (NLU → `UserRuleRequest`/feedback) ?
-Les deux restent hors scope tant que la connexion initiale OAuth (M5,
-toujours non tranchée) n'est pas résolue. `gmail.send` reste un jalon séparé
-nécessitant un feu vert explicite.
+La connexion initiale OAuth et `gmail.send` sont désormais résolus (M8, voir
+ci-dessus). Décision toujours ouverte, non tranchée à ce stade : faut-il
+brancher ce flux dans `apps/api` (une route HTTP qui déclenche
+`fetchAndClassifyEmails`/`summarizeEmailsNeedingAttention` et expose leurs
+résultats), ou d'abord construire l'interface conversationnelle (NLU →
+`UserRuleRequest`/feedback) ?
 
 ## Ce qui n'est PAS fait (volontairement)
 
 - Discord, Calendar, Outlook, ou tout autre fournisseur réel : seul Gmail a
   un connecteur réel.
-- `gmail.send`, `gmail.modify`, `gmail.delete` : aucune de ces capacités
-  n'existe (ni `Tool`, ni méthode sur `GmailApiClient`). `gmail.prepare_reply`
-  existe depuis M7.3 (`action: 'prepare'`, aucun effet de bord).
+- `gmail.modify`, `gmail.delete` : n'existent pas (ni `Tool`, ni méthode sur
+  `GmailApiClient`). `gmail.prepare_reply` (M7.3) et `gmail.send` (M8)
+  existent tous les deux.
 - Pas de tool-use Anthropic réel (`AnthropicProvider` n'émet pas de `toolCall`).
 - Connecteurs non branchés dans `apps/api` (`ToolRegistry` de l'API toujours
   vide d'outil connecteur) — `@jarvis/classification` n'a donc jamais reçu
-  de vrai `EmailMessage` en dehors des tests.
-- Flux de connexion initiale du compte Gmail (consentement OAuth, obtention
-  du premier refresh token) et stockage sécurisé du refresh token : seules
-  les interfaces sont posées (`RefreshTokenStore`), non implémentées.
+  de vrai `EmailMessage` en dehors des tests. `apps/desktop`, lui, consomme
+  `@jarvis/connectors` directement (M8).
+- `disconnectGmailAccount()` existe (`@jarvis/connectors`) mais n'est pas
+  câblée dans une commande CLI `apps/desktop` (seuls `connect`/`send` le
+  sont).
 - Aucune extraction NLU de règles depuis du texte libre — `@jarvis/inbox`
   prépare les contrats (`recordFeedbackForEmail`, `applyUserRule`) mais ne
   parse aucun langage naturel.
@@ -590,27 +633,20 @@ nécessitant un feu vert explicite.
   de l'API reste vide de tout outil connecteur.
 - Pas de mémoire persistante, pas de streaming, pas de WebSocket.
 - Pas d'outil filesystem / shell / réseau générique.
-- `apps/desktop` non commencé.
 
-## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7 + Connector Architecture Foundation)
+## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7 + Connector Architecture Foundation + M8)
 
 - `npm run typecheck` : vert
-- `npm run typecheck --workspaces` : vert (8 workspaces)
-- `npm test` : vert — **225 tests, 28 fichiers** (184 issus des jalons
-  fonctionnels M4–M7.4 + 41 nouveaux, tous dans `@jarvis/connectors`,
-  ajoutés par `Connector Architecture Foundation`, `8506792` :
-  `connector-registry.test.ts` (9), `account.test.ts` (10),
-  `capability.test.ts` (5), `in-memory-secret-store.test.ts` (7),
-  `security.test.ts` (10)). Détail des jalons fonctionnels, pour
-  `@jarvis/inbox` : 6 (`fetch-emails.test.ts`), 2
-  (`classify-emails.test.ts`), 6 (`feedback.test.ts`), 9
-  (`gmail-integration.test.ts`), 9 (`attention.test.ts`, M7.1), 8
-  (`email-summarizer.test.ts`, M7.2), 9 (`summarize-email-tool.test.ts`,
-  M7.2), 7 (`triage.test.ts`, M7.4) ; et pour `@jarvis/connectors`,
-  `gmail-connector.test.ts` étendu à 14 tests (M7.3).
-- `npm run lint` : aucun workspace ne définit de script `lint` (aucune
-  config ESLint dans le dépôt) — préexistant, non lié à `8506792`, à lire
-  comme N/A plutôt que comme un échec.
+- `npm test` : vert — **508 tests, 47 fichiers** au total. Détail non
+  exhaustif : 225 tests / 28 fichiers à l'issue de `Connector Architecture
+  Foundation` (`8506792`, voir historique ci-dessous pour le détail par
+  fichier) ; le reste ajouté par M8 (OAuth PKCE, `OsCredentialSecretStore`,
+  `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute`,
+  `gmail.send`, câblage CLI `apps/desktop`, et la couverture d'erreurs
+  post-confirmation de M8-B6 dans `gmail-send.test.ts`/`main-send.test.ts`).
+- `npm run lint` : vert — `eslint .` (flat config ESLint 9, voir
+  `eslint.config.js` à la racine), y compris les règles de frontières
+  entre workspaces.
 - Aucun appel réseau réel dans les tests : `GmailApiClient` (via
   `gmailConnector`) reçoit systématiquement un `fetchFn` mocké,
   `ClassificationEngine` et `LlmProviderEmailSummarizer` n'utilisent que
@@ -637,7 +673,12 @@ Jalons fonctionnels (`M4` → `M8`, chronologie de référence) :
 - `b5d82df` intégration Gmail ↔ classification, `@jarvis/inbox` — **M6**
 - `84e2955` triage, résumés, préparation de réponse Gmail — **M7.1 + M7.2 + M7.3**
 - `938d71c` composition `summarizeEmailsNeedingAttention` (`triage.ts`) — **M7.4**, committé et terminé
-- **M8** (Gmail send) : pas encore commencé — voir « Prochaine étape prévue (connecteurs) » ci-dessus et `MASTER_BACKLOG.md`
+- **M8 — Gmail Send**, committé et terminé :
+  - `2d088b7` OAuth Google Authorization Code + PKCE — **M8-B2**
+  - `b5db57e` `SecretStore` de production (trousseau OS) — **M8-B3**
+  - `a811027` boucle d'envoi Gmail confirmée — **M8-B4**
+  - `309bbfb` câblage CLI desktop `connect`/`send` — **M8-B5**
+  - `2faf205` couverture des erreurs post-confirmation — **M8-B6**
 
 Fondations architecturales (hors numérotation fonctionnelle — voir
 « Functional milestones vs Architectural foundations » en tête de

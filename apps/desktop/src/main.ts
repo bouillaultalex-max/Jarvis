@@ -3,6 +3,18 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  ClassificationEngine,
+  InMemoryPreferenceStore,
+  LlmProviderEmailClassifier,
+} from '@jarvis/classification';
+import {
+  EmailFetchBlockedError,
+  fetchAndClassifyEmails,
+  type ClassifiedEmail,
+} from '@jarvis/inbox';
+import { AnthropicProvider, type LlmProvider } from '@jarvis/llm';
+
+import {
   type Account,
   type AccountStore,
   type ConfirmationRequest,
@@ -29,6 +41,7 @@ import {
 } from '@jarvis/connectors';
 
 import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js';
+import { describeInboxResult } from './inbox-view.js';
 import { parseGmailSendArgs } from './gmail-send-args.js';
 import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
 import { createTerminalConfirm } from './terminal-confirm.js';
@@ -159,6 +172,19 @@ export interface DesktopDeps {
    * `PermissionManager` — le fournit.
    */
   readonly permissionManager?: PermissionManager;
+  /**
+   * Injecté par les tests uniquement (flux `inbox`). Absent en production ⇒
+   * moteur construit par {@link buildInboxClassificationEngine} (préférences
+   * en mémoire, LLM branché seulement si `ANTHROPIC_API_KEY` est présente).
+   */
+  readonly classificationEngine?: ClassificationEngine;
+  /**
+   * Injecté par les tests uniquement (flux `inbox`, transmis à
+   * {@link buildInboxClassificationEngine} lorsque `classificationEngine`
+   * n'est pas fourni). Absent en production ⇒ `AnthropicProvider` si
+   * `ANTHROPIC_API_KEY` est présente, sinon aucun LLM.
+   */
+  readonly llmProvider?: LlmProvider;
 }
 
 /**
@@ -412,6 +438,94 @@ export async function runReadFlow(
 }
 
 /**
+ * Construit le moteur de classification de la sous-commande `inbox`.
+ *
+ * - Préférences : magasin **en mémoire**, toujours vide — cette commande
+ *   n'introduit aucune persistance de préférences (une préférence ne peut
+ *   exister ici que si un `classificationEngine` est injecté par un test).
+ * - LLM : branché uniquement si `ANTHROPIC_API_KEY` est présente (ou si un
+ *   provider est injecté). Sans clé, le moteur n'a pas de `llmClassifier` et
+ *   retombe explicitement sur `uncertain` (`source: 'default'`). Si le LLM
+ *   échoue à l'exécution, `LlmProviderEmailClassifier` renvoie `undefined` et
+ *   `ClassificationEngine` applique le même repli contrôlé — jamais une
+ *   erreur, jamais un message d'erreur LLM brut.
+ */
+export function buildInboxClassificationEngine(
+  options: { readonly llmProvider?: LlmProvider } = {},
+): ClassificationEngine {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const provider = options.llmProvider ?? (apiKey ? new AnthropicProvider() : undefined);
+  return new ClassificationEngine({
+    preferenceStore: new InMemoryPreferenceStore(),
+    ...(provider !== undefined ? { llmClassifier: new LlmProviderEmailClassifier(provider) } : {}),
+  });
+}
+
+/**
+ * Flux `inbox` — lit puis classe les emails Gmail récents en composant
+ * exactement les mêmes briques de confiance que `read` :
+ * `resolveOrConnectGmailAccount()` → `resolveGmailApiClient()` →
+ * `gmailConnector.createTools()` → `ToolRegistry`/`PermissionManager`/
+ * `ToolExecutor`. La lecture passe par `fetchAndClassifyEmails`
+ * (`@jarvis/inbox`, inchangé), qui invoque `gmail.read` **strictement** via
+ * `ToolExecutor` puis applique `ClassificationEngine.classify` email par
+ * email.
+ *
+ * `--maxResults` est transmis tel quel à `gmail.read` (jamais réécrit ici).
+ * Une lecture non exécutée (erreur Gmail, refus…) est signalée par un statut
+ * générique — jamais le `reason` d'origine (même discipline que
+ * {@link describeReadResult}). Seuls expéditeur, objet, libellé, raison et
+ * provenance sont affichés (voir {@link describeInboxResult}).
+ */
+export async function runInboxFlow(
+  deps: DesktopDeps,
+  input: GmailReadInput,
+  write: (line: string) => void = console.log,
+  connect: ConnectGmailFn = runOAuthConnect,
+): Promise<readonly ClassifiedEmail[]> {
+  const account = await resolveOrConnectGmailAccount(deps, write, connect);
+  const client = await resolveGmailApiClient({
+    account,
+    secretStore: deps.secretStore,
+    appCredentials: deps.appCredentials,
+    ...(deps.fetchFn !== undefined ? { fetchFn: deps.fetchFn } : {}),
+  });
+
+  const registry = new ToolRegistry();
+  for (const tool of gmailConnector.createTools(client)) {
+    registry.register(tool);
+  }
+  const permissionManager =
+    deps.permissionManager ?? new PermissionManager({ rules: { 'gmail.read': 'allow' } });
+  const executor = new ToolExecutor(registry, permissionManager);
+
+  const engine =
+    deps.classificationEngine ??
+    buildInboxClassificationEngine(
+      deps.llmProvider !== undefined ? { llmProvider: deps.llmProvider } : {},
+    );
+
+  let classified: readonly ClassifiedEmail[];
+  try {
+    classified = await fetchAndClassifyEmails(executor, engine, {
+      toolName: 'gmail.read',
+      input,
+    });
+  } catch (err) {
+    if (err instanceof EmailFetchBlockedError) {
+      write(`Lecture échouée (${err.outcome.status}).`);
+      return [];
+    }
+    throw err;
+  }
+
+  for (const line of describeInboxResult(classified)) {
+    write(line);
+  }
+  return classified;
+}
+
+/**
  * Flux `send` — M8-B5. Câble `runGmailSend` (M8-B4, inchangé) : le compte est
  * résolu (ou connecté), puis l'envoi passe **obligatoirement** par
  * `proposeConfirmation → confirm() → confirmAndExecute`. Le `confirm` réel est
@@ -456,8 +570,11 @@ export interface DesktopIo {
  * entièrement faite par `gmail.read.validateInput` via `ToolExecutor`
  * (`packages/connectors`, inchangé). Absence de `--maxResults` ⇒ objet vide,
  * pour que le Tool applique son propre défaut, jamais réécrit ici.
+ *
+ * Partagée par `read` et `inbox` (contrat d'options identique) : `command`
+ * ne sert qu'à préfixer les messages d'erreur.
  */
-function parseGmailReadArgs(argv: readonly string[]): GmailReadInput {
+function parseGmailReadArgs(argv: readonly string[], command = 'read'): GmailReadInput {
   let raw: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -465,7 +582,7 @@ function parseGmailReadArgs(argv: readonly string[]): GmailReadInput {
 
     if (!token.startsWith('--')) {
       throw new Error(
-        'read : argument positionnel inattendu (seule l’option --maxResults est acceptée).',
+        `${command} : argument positionnel inattendu (seule l’option --maxResults est acceptée).`,
       );
     }
 
@@ -473,7 +590,7 @@ function parseGmailReadArgs(argv: readonly string[]): GmailReadInput {
     const name = eq !== -1 ? token.slice(2, eq) : token.slice(2);
 
     if (name !== 'maxResults') {
-      throw new Error(`read : option inconnue « --${name} » (connue : --maxResults).`);
+      throw new Error(`${command} : option inconnue « --${name} » (connue : --maxResults).`);
     }
 
     let value: string;
@@ -482,14 +599,14 @@ function parseGmailReadArgs(argv: readonly string[]): GmailReadInput {
     } else {
       const next = argv[i + 1];
       if (next === undefined || next.startsWith('--')) {
-        throw new Error('read : valeur manquante pour l’option --maxResults.');
+        throw new Error(`${command} : valeur manquante pour l’option --maxResults.`);
       }
       value = next;
       i += 1;
     }
 
     if (raw !== undefined) {
-      throw new Error('read : option --maxResults fournie plusieurs fois.');
+      throw new Error(`${command} : option --maxResults fournie plusieurs fois.`);
     }
     raw = value;
   }
@@ -531,12 +648,18 @@ export async function dispatch(
     return;
   }
 
+  if (command === 'inbox') {
+    const input = parseGmailReadArgs(argv.slice(1), 'inbox');
+    await runInboxFlow(deps, input, write, connect);
+    return;
+  }
+
   if (command === undefined || command === 'connect') {
     await runConnectFlow(deps, write, connect);
     return;
   }
 
-  throw new Error('Commande inconnue (attendu : connect | send | disconnect | read).');
+  throw new Error('Commande inconnue (attendu : connect | send | disconnect | read | inbox).');
 }
 
 async function main(): Promise<void> {

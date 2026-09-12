@@ -64,7 +64,7 @@ describe('echo — bout en bout (registre → validation → permissions → ex�
       new PermissionManager({ rules: { echo: 'allow' } }),
     );
     const llm = new ScriptedLlmProvider([
-      { content: '', toolCall: { tool: 'echo', input: { text: 'Salut' } } },
+      { content: '', toolCall: { id: 'call-1', tool: 'echo', input: { text: 'Salut' } } },
       { content: 'L’outil echo a répondu « Salut ».' },
     ]);
     const agent = new AgentLoop(llm, { toolExecutor: executor });

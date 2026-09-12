@@ -183,3 +183,34 @@ describe('ToolExecutor', () => {
     expect(tool.executeCount).toBe(0);
   });
 });
+
+describe('ToolExecutor.listTools', () => {
+  it('reflète le registre, dans l’ordre d’enregistrement', () => {
+    const registry = new ToolRegistry();
+    const a = new CountingTool('a');
+    const b = new CountingTool('b');
+    registry.register(a);
+    registry.register(b);
+    const executor = new ToolExecutor(registry, new PermissionManager());
+
+    expect(executor.listTools().map((t) => t.name)).toEqual(['a', 'b']);
+    expect(executor.listTools()[0]).toBe(a);
+  });
+
+  it('registre vide → liste vide', () => {
+    const executor = new ToolExecutor(new ToolRegistry(), new PermissionManager());
+
+    expect(executor.listTools()).toEqual([]);
+  });
+
+  it('renvoie une copie : muter le tableau retourné n’affecte pas le registre', () => {
+    const registry = new ToolRegistry();
+    registry.register(new CountingTool('a'));
+    registry.register(new CountingTool('b'));
+    const executor = new ToolExecutor(registry, new PermissionManager());
+
+    (executor.listTools() as Tool[]).pop();
+
+    expect(executor.listTools()).toHaveLength(2);
+  });
+});

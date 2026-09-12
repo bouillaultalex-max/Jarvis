@@ -28,7 +28,7 @@ class ScriptedLlmProvider implements LlmProvider {
 
 const CALL = (tool: string, input: unknown): LlmResponse => ({
   content: '',
-  toolCall: { tool, input },
+  toolCall: { id: 'call-1', tool, input },
 });
 
 function buildFullExecutor(

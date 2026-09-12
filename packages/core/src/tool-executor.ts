@@ -1,4 +1,4 @@
-import type { ActionLevel } from './tool.js';
+import type { ActionLevel, Tool } from './tool.js';
 import type { PermissionDecision, PermissionManager } from './permissions.js';
 import type { ToolRegistry } from './tool-registry.js';
 
@@ -87,6 +87,17 @@ export class ToolExecutor {
     private readonly registry: ToolRegistry,
     private readonly permissions: PermissionManager,
   ) {}
+
+  /**
+   * Liste, **en lecture seule**, les outils enregistrés — pour qu'un
+   * orchestrateur (ex. `AgentLoop`) puisse construire les définitions à
+   * présenter au LLM. Renvoie une **copie** (celle produite par
+   * `ToolRegistry.list`) : muter le tableau retourné n'affecte pas le
+   * registre, qui reste privé et non mutable via cette API.
+   */
+  listTools(): readonly Tool[] {
+    return this.registry.list();
+  }
 
   async run(request: ToolRequest): Promise<ToolExecutionResult> {
     if (!this.registry.has(request.tool)) {

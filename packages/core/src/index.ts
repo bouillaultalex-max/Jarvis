@@ -1,4 +1,55 @@
-export type { LlmMessage, LlmProvider, LlmResponse, LlmToolCall } from '@jarvis/llm';
+export type {
+  LlmMessage,
+  LlmAssistantToolCallMessage,
+  LlmToolResultMessage,
+  LlmConversationMessage,
+  LlmToolDefinition,
+  LlmChatOptions,
+  LlmProvider,
+  LlmResponse,
+  LlmToolCall,
+} from '@jarvis/llm';
+
+export type {
+  Provenance,
+  ProvenanceOrigin,
+  MemoryKind,
+  MemoryEntry,
+  MemoryListFilter,
+  MemoryStore,
+  MemoryQuery,
+  MemorySelector,
+  LexicalMemorySelectorOptions,
+  MemoryCandidate,
+  MemoryCandidateValidation,
+  MemoryInteraction,
+  MemoryExtractionResult,
+  MemoryExtractor,
+  MemoryExtractionModelCall,
+  MemoryPromotionDecision,
+  MemoryPromotionPolicy,
+  DefaultMemoryPromotionPolicyOptions,
+  MemoryPromotionOutcome,
+  PromoteMemoryCandidateOptions,
+  MemoryPromotionResult,
+  MemoryPromoterOptions,
+  MemoryConfirmationResult,
+  PendingMemoryConfirmation,
+} from '@jarvis/memory';
+export {
+  LexicalMemorySelector,
+  resolveMemoryLineage,
+  validateMemoryCandidate,
+  parseMemoryExtraction,
+  createLlmMemoryExtractor,
+  buildMemoryExtractionUserPrompt,
+  MEMORY_EXTRACTION_INSTRUCTIONS,
+  MAX_MEMORY_CANDIDATES,
+  createDefaultMemoryPromotionPolicy,
+  createConservativeMemoryPromotionPolicy,
+  promoteMemoryCandidate,
+  MemoryPromoter,
+} from '@jarvis/memory';
 
 export * from './tool.js';
 export * from './tool-registry.js';

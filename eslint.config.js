@@ -78,6 +78,26 @@ module.exports = tseslint.config(
   },
 
   {
+    // packages/memory : fondation mémoire contrôlée, feuille pure (comme @jarvis/types
+    // et @jarvis/llm) ; consommée par @jarvis/core, jamais l'inverse.
+    files: ['packages/memory/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@jarvis/*'],
+              message:
+                '@jarvis/memory est une feuille : aucune dépendance vers un autre package @jarvis/*.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
     // packages/core : moteur générique (Tool/PermissionManager/ToolExecutor/AgentLoop) ;
     // ne connaît jamais les connecteurs ni la logique métier (PROJECT_STATE.md).
     // @jarvis/llm est référencé uniquement en `import type`/`export type`

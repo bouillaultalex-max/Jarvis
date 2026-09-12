@@ -34,6 +34,16 @@ function createInMemoryReadTool(
     description: 'Lit la boîte de réception fictive (aucun effet de bord).',
     action: 'read',
 
+    // `messageId` optionnel ; `validateInput` accepte une entrée vide et ne
+    // rejette pas les clés inconnues.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', description: 'Lire uniquement ce message (optionnel).' },
+      },
+      required: [],
+    },
+
     validateInput(input: unknown): ToolValidationResult<InMemoryReadInput> {
       if (input === undefined || input === null) {
         return valid({});
@@ -76,6 +86,16 @@ function createInMemoryPrepareReplyTool(
     description: "Prépare un brouillon de réponse à un message existant, sans l'envoyer.",
     action: 'prepare',
 
+    // `messageId` et `body` requis, non vides ; clés inconnues non rejetées.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', minLength: 1, description: 'Message auquel répondre.' },
+        body: { type: 'string', minLength: 1, description: 'Corps du brouillon.' },
+      },
+      required: ['messageId', 'body'],
+    },
+
     validateInput(input: unknown): ToolValidationResult<InMemoryPrepareReplyInput> {
       if (typeof input !== 'object' || input === null) {
         return invalid('inmemory.prepare_reply : objet attendu.');
@@ -115,6 +135,18 @@ function createInMemorySendTool(
     name: 'inmemory.send',
     description: "Envoie réellement un message (mutation de l'état local du connecteur).",
     action: 'execute',
+
+    // `to` non vide ; `subject` et `body` requis (peuvent être vides).
+    // `validateInput` ne rejette pas les clés inconnues → pas d'`additionalProperties: false`.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', minLength: 1, description: 'Destinataire.' },
+        subject: { type: 'string', description: 'Objet.' },
+        body: { type: 'string', description: 'Corps.' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
 
     validateInput(input: unknown): ToolValidationResult<InMemorySendInput> {
       if (typeof input !== 'object' || input === null) {

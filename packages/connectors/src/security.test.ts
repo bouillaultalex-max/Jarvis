@@ -24,7 +24,9 @@ import { requireSecret } from './secret-store.js';
 
 const FAKE_SECRET = 'FAKE-REFRESH-TOKEN-NOT-REAL-xyz789';
 
-function makeAccount(overrides: Partial<Account> & Pick<Account, 'id' | 'provider' | 'accountIdentifier'>): Account {
+function makeAccount(
+  overrides: Partial<Account> & Pick<Account, 'id' | 'provider' | 'accountIdentifier'>,
+): Account {
   return {
     displayName: undefined,
     status: 'connected',
@@ -75,7 +77,9 @@ describe('Sécurité — un secret n’est jamais exposé à un Tool, au LLM ou 
 
     for (const tool of tools) {
       // Contrat générique Tool uniquement — aucune propriété "secret", "token", "client"…
-      expect(Object.keys(tool).sort()).toEqual(['action', 'description', 'execute', 'name', 'validateInput'].sort());
+      expect(Object.keys(tool).sort()).toEqual(
+        ['action', 'description', 'execute', 'inputSchema', 'name', 'validateInput'].sort(),
+      );
     }
 
     const readTool = tools.find((t) => t.name === 'inmemory.read')!;
@@ -167,10 +171,20 @@ describe('Sécurité — aucun contournement de PermissionManager', () => {
 describe('Sécurité — ambiguïté de compte : jamais de sélection implicite', () => {
   it('deux comptes pour le même provider, aucun accountId : AmbiguousAccountError, aucune action ne peut être lancée par erreur', async () => {
     const accountStore = new InMemoryAccountStore();
-    await accountStore.register(makeAccount({ id: 'acc-perso', provider: 'inmemory', accountIdentifier: 'perso@example.test' }));
-    await accountStore.register(makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }));
+    await accountStore.register(
+      makeAccount({
+        id: 'acc-perso',
+        provider: 'inmemory',
+        accountIdentifier: 'perso@example.test',
+      }),
+    );
+    await accountStore.register(
+      makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }),
+    );
 
-    await expect(resolveAccount(accountStore, { provider: 'inmemory' })).rejects.toThrowError(AmbiguousAccountError);
+    await expect(resolveAccount(accountStore, { provider: 'inmemory' })).rejects.toThrowError(
+      AmbiguousAccountError,
+    );
 
     // Simule l'appelant (ex. un Tool ou une route API) qui doit gérer
     // l'échec explicitement plutôt que de continuer avec un compte par défaut.
@@ -186,10 +200,21 @@ describe('Sécurité — ambiguïté de compte : jamais de sélection implicite'
 
   it('fournir explicitement accountId lève l’ambiguïté et sélectionne le bon compte', async () => {
     const accountStore = new InMemoryAccountStore();
-    await accountStore.register(makeAccount({ id: 'acc-perso', provider: 'inmemory', accountIdentifier: 'perso@example.test' }));
-    await accountStore.register(makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }));
+    await accountStore.register(
+      makeAccount({
+        id: 'acc-perso',
+        provider: 'inmemory',
+        accountIdentifier: 'perso@example.test',
+      }),
+    );
+    await accountStore.register(
+      makeAccount({ id: 'acc-pro', provider: 'inmemory', accountIdentifier: 'pro@example.test' }),
+    );
 
-    const resolved = await resolveAccount(accountStore, { provider: 'inmemory', accountId: 'acc-pro' });
+    const resolved = await resolveAccount(accountStore, {
+      provider: 'inmemory',
+      accountId: 'acc-pro',
+    });
 
     expect(resolved.id).toBe('acc-pro');
   });

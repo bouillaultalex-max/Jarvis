@@ -31,7 +31,10 @@ class FakeSummarizer implements EmailSummarizer {
   }
 }
 
-function buildExecutor(summarizer: EmailSummarizer, decision: 'allow' | 'deny' | 'require_confirmation') {
+function buildExecutor(
+  summarizer: EmailSummarizer,
+  decision: 'allow' | 'deny' | 'require_confirmation',
+) {
   const tool = createSummarizeEmailTool(summarizer);
   const registry = new ToolRegistry();
   registry.register(tool);
@@ -44,6 +47,33 @@ describe('createSummarizeEmailTool — contrat', () => {
     const tool = createSummarizeEmailTool(new FakeSummarizer({ summary: 'x' }));
 
     expect(tool.action).toBe('read');
+  });
+
+  it('expose un inputSchema JSON Schema cohérent avec validateInput', () => {
+    const schema = createSummarizeEmailTool(new FakeSummarizer({ summary: 'x' })).inputSchema;
+
+    expect(typeof schema).toBe('object');
+    expect(schema.type).toBe('object');
+
+    // Entrée : `{ email: EmailMessage }` — `email` requis.
+    expect(Object.keys(schema.properties as object)).toEqual(['email']);
+    expect(schema.required).toEqual(['email']);
+
+    const emailSchema = (schema.properties as Record<string, Record<string, unknown>>).email;
+    expect(emailSchema.type).toBe('object');
+    // Champs réellement exigés par isEmailMessageShape (threadId reste optionnel).
+    expect([...(emailSchema.required as string[])].sort()).toEqual(
+      ['body', 'id', 'receivedAt', 'recipients', 'sender', 'subject'].sort(),
+    );
+    expect(Object.keys(emailSchema.properties as object)).toContain('threadId');
+    expect(emailSchema.required as string[]).not.toContain('threadId');
+
+    // Ni l'entrée ni `email` ne rejettent les clés inconnues → pas de verrou.
+    expect(schema.additionalProperties).not.toBe(false);
+    expect(emailSchema.additionalProperties).not.toBe(false);
+
+    // Aucun secret, aucun token, aucun accountId.
+    expect(JSON.stringify(schema)).not.toMatch(/account|token|secret|credential|oauth|api[_-]?key/);
   });
 
   it('validateInput rejette une entrée malformée', () => {

@@ -31,7 +31,10 @@ const CALL = (tool: string, input: unknown): LlmResponse => ({
   toolCall: { tool, input },
 });
 
-function buildFullExecutor(client: InMemoryMailClient, decisions: Record<string, 'allow' | 'deny' | 'require_confirmation'>) {
+function buildFullExecutor(
+  client: InMemoryMailClient,
+  decisions: Record<string, 'allow' | 'deny' | 'require_confirmation'>,
+) {
   const registry = new ToolRegistry();
   for (const tool of inMemoryConnector.createTools(client)) {
     registry.register(tool);
@@ -68,7 +71,10 @@ describe('InMemoryConnector — architecture connecteurs', () => {
     registry.register(inMemoryConnector.createTools(client)[0]!);
     const executor = new ToolExecutor(registry, new PermissionManager({ default: 'allow' }));
 
-    const result = await executor.run({ tool: 'inmemory.send', input: { to: 'x', subject: 's', body: 'b' } });
+    const result = await executor.run({
+      tool: 'inmemory.send',
+      input: { to: 'x', subject: 's', body: 'b' },
+    });
 
     expect(result.status).toBe('unknown_tool');
     expect(client.listSent()).toHaveLength(0);
@@ -101,7 +107,7 @@ describe('InMemoryConnector — architecture connecteurs', () => {
     expect(client.listSent()).toHaveLength(0);
   });
 
-  it('execute passe bien par le ToolExecutor et mute réellement l\'état (envoi effectif)', async () => {
+  it("execute passe bien par le ToolExecutor et mute réellement l'état (envoi effectif)", async () => {
     const client = new InMemoryMailClient();
     const executor = buildFullExecutor(client, { 'inmemory.send': 'allow' });
 
@@ -160,7 +166,7 @@ describe('InMemoryConnector — architecture connecteurs', () => {
     expect(client.listSent()).toHaveLength(0);
   });
 
-  it('le connecteur reçoit sa dépendance d\'authentification par injection, jamais exposée sur le Tool', () => {
+  it("le connecteur reçoit sa dépendance d'authentification par injection, jamais exposée sur le Tool", () => {
     const client = new InMemoryMailClient();
     const tools = inMemoryConnector.createTools(client);
 
@@ -168,7 +174,7 @@ describe('InMemoryConnector — architecture connecteurs', () => {
       // Le Tool n'expose que le contrat générique : aucune propriété "client",
       // "auth", "token" ou équivalent n'est attachée à l'objet.
       expect(Object.keys(tool).sort()).toEqual(
-        ['action', 'description', 'execute', 'name', 'validateInput'].sort(),
+        ['action', 'description', 'execute', 'inputSchema', 'name', 'validateInput'].sort(),
       );
     }
   });
@@ -205,5 +211,71 @@ describe('InMemoryConnector — architecture connecteurs', () => {
       expect(JSON.stringify(sentMessages)).not.toContain(marker);
     }
     expect(JSON.stringify(result)).not.toContain(marker);
+  });
+});
+
+describe('inMemoryConnector — inputSchema (cohérence avec validateInput)', () => {
+  const tools = () => inMemoryConnector.createTools(new InMemoryMailClient());
+
+  function assertObjectSchema(schema: Record<string, unknown>): void {
+    expect(typeof schema).toBe('object');
+    expect(schema).not.toBeNull();
+    expect(schema.type).toBe('object');
+    expect(JSON.stringify(schema)).not.toMatch(
+      /account[iI]d|token|secret|credential|refresh|oauth|api[_-]?key|fakeAuthMarker/,
+    );
+  }
+
+  it('générique : chaque Tool produit par createTools a un inputSchema object sain', () => {
+    const all = tools();
+    expect(all).toHaveLength(3);
+    for (const tool of all) {
+      assertObjectSchema(tool.inputSchema);
+    }
+  });
+
+  it('inmemory.read : messageId optionnel, rien de requis', () => {
+    const [read] = tools();
+    assertObjectSchema(read!.inputSchema);
+    expect(Object.keys(read!.inputSchema.properties as object).sort()).toEqual(['messageId']);
+    expect((read!.inputSchema.required as string[] | undefined) ?? []).toEqual([]);
+    expect(read!.inputSchema.additionalProperties).not.toBe(false);
+  });
+
+  it('inmemory.prepare_reply : messageId + body requis', () => {
+    const [, prepare] = tools();
+    expect(Object.keys(prepare!.inputSchema.properties as object).sort()).toEqual([
+      'body',
+      'messageId',
+    ]);
+    expect([...(prepare!.inputSchema.required as string[])].sort()).toEqual(['body', 'messageId']);
+  });
+
+  it('inmemory.send : to/subject/body requis, clés inconnues tolérées (validateInput ne les rejette pas)', () => {
+    const [, , send] = tools();
+    expect(Object.keys(send!.inputSchema.properties as object).sort()).toEqual([
+      'body',
+      'subject',
+      'to',
+    ]);
+    expect([...(send!.inputSchema.required as string[])].sort()).toEqual(['body', 'subject', 'to']);
+    expect(send!.inputSchema.additionalProperties).not.toBe(false);
+    // Cohérence : validateInput accepte bien une clé inconnue (elle est ignorée).
+    expect(send!.validateInput({ to: 'x@y.test', subject: 's', body: 'b', extra: 1 }).ok).toBe(
+      true,
+    );
+  });
+
+  it('l’ajout du schema ne change pas ToolExecutor : inmemory.send exécute toujours et mute l’état', async () => {
+    const client = new InMemoryMailClient();
+    const executor = buildFullExecutor(client, { 'inmemory.send': 'allow' });
+
+    const result = await executor.run({
+      tool: 'inmemory.send',
+      input: { to: 'z@example.test', subject: 's', body: 'b' },
+    });
+
+    expect(result.status).toBe('executed');
+    expect(client.listSent()).toHaveLength(1);
   });
 });

@@ -13,6 +13,11 @@ interface CounterInput {
 class CountingTool implements Tool<CounterInput, { doubled: number }> {
   public executeCount = 0;
   readonly description = 'compteur de test';
+  readonly inputSchema = {
+    type: 'object',
+    properties: { n: { type: 'number' } },
+    required: ['n'],
+  };
 
   constructor(
     readonly name = 'test.counter',
@@ -41,6 +46,11 @@ class ThrowingTool implements Tool<{ x: number }, { x: number }> {
   readonly name = 'test.thrower';
   readonly description = 'lève toujours';
   readonly action: ActionLevel = 'execute';
+  readonly inputSchema = {
+    type: 'object',
+    properties: { x: { type: 'number' } },
+    required: ['x'],
+  };
 
   validateInput(input: unknown): ToolValidationResult<{ x: number }> {
     if (

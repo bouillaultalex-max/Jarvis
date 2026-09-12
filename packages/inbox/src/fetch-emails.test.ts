@@ -35,6 +35,11 @@ const fakeReadTool: Tool<FakeReadInput, FakeReadOutput> = {
   name: 'fake.read',
   description: 'Faux Tool de lecture pour les tests.',
   action: 'read',
+  inputSchema: {
+    type: 'object',
+    properties: { count: { type: 'number' } },
+    required: [],
+  },
   validateInput(input: unknown): ToolValidationResult<FakeReadInput> {
     if (input === undefined || input === null) return valid({});
     if (typeof input !== 'object') return invalid('fake.read : entrée invalide.');
@@ -54,13 +59,17 @@ const malformedTool: Tool = {
   name: 'malformed.read',
   description: 'Renvoie une forme inexploitable.',
   action: 'read',
+  inputSchema: { type: 'object' },
   validateInput: (input: unknown) => valid(input),
   async execute() {
     return { notMessages: [] };
   },
 };
 
-function buildExecutor(decision: 'allow' | 'deny' | 'require_confirmation', tool: Tool = fakeReadTool) {
+function buildExecutor(
+  decision: 'allow' | 'deny' | 'require_confirmation',
+  tool: Tool = fakeReadTool,
+) {
   const registry = new ToolRegistry();
   registry.register(tool);
   const permissions = new PermissionManager({ rules: { [tool.name]: decision } });
@@ -71,7 +80,10 @@ describe('fetchEmailsViaTool — générique, aucun fournisseur codé en dur', (
   it('renvoie les emails quand le Tool est autorisé et exécuté', async () => {
     const executor = buildExecutor('allow');
 
-    const emails = await fetchEmailsViaTool(executor, { toolName: 'fake.read', input: { count: 3 } });
+    const emails = await fetchEmailsViaTool(executor, {
+      toolName: 'fake.read',
+      input: { count: 3 },
+    });
 
     expect(emails).toHaveLength(3);
     expect(emails[0]?.id).toBe('m1');

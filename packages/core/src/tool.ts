@@ -43,6 +43,23 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
   readonly description: string;
   /** Niveau d'action (sert à la politique de permissions et à l'orchestration). */
   readonly action: ActionLevel;
+  /**
+   * Schéma JSON (compatible avec le champ `input_schema` attendu par Anthropic)
+   * décrivant la **forme d'entrée attendue**, destiné à être présenté au LLM.
+   *
+   * ⚠️ **Ce n'est PAS une validation.** La validation de sécurité réelle reste
+   * {@link Tool.validateInput}, exécutée par `ToolExecutor` avant toute
+   * décision de permission et toute exécution — le LLM n'est jamais une source
+   * fiable. `inputSchema` doit rester **cohérent** avec `validateInput` (mêmes
+   * propriétés, mêmes champs `required`, `additionalProperties: false`
+   * uniquement lorsque `validateInput` rejette les clés inconnues) mais ne le
+   * remplace jamais.
+   *
+   * Toujours un objet JSON Schema de type `'object'`. N'expose jamais de
+   * secret, de token, ni de champ interne (ex. `accountId`) que le `Tool`
+   * n'accepte pas réellement.
+   */
+  readonly inputSchema: Record<string, unknown>;
   /** Valide (et normalise) une entrée non fiable. Ne lève jamais. */
   validateInput(input: unknown): ToolValidationResult<TInput>;
   /** Exécute l'outil sur une entrée déjà validée. */

@@ -8,6 +8,8 @@ function stubTool(name: string): Tool<{ v: unknown }, { v: unknown }> {
     name,
     description: `stub ${name}`,
     action: 'read',
+    // `validateInput` accepte n'importe quelle entrée : schéma object permissif.
+    inputSchema: { type: 'object' },
     validateInput(input: unknown): ToolValidationResult<{ v: unknown }> {
       return valid({ v: input });
     },

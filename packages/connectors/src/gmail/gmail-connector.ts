@@ -2,7 +2,11 @@ import { type Tool, type ToolValidationResult, invalid, valid } from '@jarvis/co
 import type { EmailMessage } from '@jarvis/types';
 
 import type { Connector } from '../connector.js';
-import { GmailApiClient, type GmailSendMessageInput, type GmailSendMessageResult } from './gmail-api-client.js';
+import {
+  GmailApiClient,
+  type GmailSendMessageInput,
+  type GmailSendMessageResult,
+} from './gmail-api-client.js';
 import { mapGmailMessageToEmailMessage } from './gmail-message-mapper.js';
 
 /**
@@ -29,8 +33,24 @@ const MAX_ALLOWED_RESULTS = 50;
 function createGmailReadTool(client: GmailApiClient): Tool<GmailReadInput, GmailReadOutput> {
   return {
     name: 'gmail.read',
-    description: 'Lit les emails récents de la boîte de réception Gmail (lecture seule, aucun effet de bord).',
+    description:
+      'Lit les emails récents de la boîte de réception Gmail (lecture seule, aucun effet de bord).',
     action: 'read',
+
+    // `maxResults` est le seul champ accepté, optionnel, entier borné.
+    // `validateInput` n'exige rien et ne rejette pas les clés inconnues.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxResults: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_ALLOWED_RESULTS,
+          description: `Nombre d'emails à lire (1 à ${MAX_ALLOWED_RESULTS}). Défaut : ${DEFAULT_MAX_RESULTS}.`,
+        },
+      },
+      required: [],
+    },
 
     validateInput(input: unknown): ToolValidationResult<GmailReadInput> {
       if (input === undefined || input === null) {
@@ -47,14 +67,18 @@ function createGmailReadTool(client: GmailApiClient): Tool<GmailReadInput, Gmail
           maxResults < 1 ||
           maxResults > MAX_ALLOWED_RESULTS
         ) {
-          return invalid(`gmail.read : « maxResults » doit être un entier entre 1 et ${MAX_ALLOWED_RESULTS}.`);
+          return invalid(
+            `gmail.read : « maxResults » doit être un entier entre 1 et ${MAX_ALLOWED_RESULTS}.`,
+          );
         }
       }
       return valid({ maxResults });
     },
 
     async execute(input: GmailReadInput): Promise<GmailReadOutput> {
-      const ids = await client.listMessageIds({ maxResults: input.maxResults ?? DEFAULT_MAX_RESULTS });
+      const ids = await client.listMessageIds({
+        maxResults: input.maxResults ?? DEFAULT_MAX_RESULTS,
+      });
       const messages: EmailMessage[] = [];
       for (const id of ids) {
         const raw = await client.getMessage(id);
@@ -88,12 +112,30 @@ export interface GmailDraftReply {
  * présente dans l'entrée brute (ex. un `to` fourni par le modèle) est
  * structurellement ignorée, jamais transmise à `execute`.
  */
-function createGmailPrepareReplyTool(client: GmailApiClient): Tool<GmailPrepareReplyInput, GmailDraftReply> {
+function createGmailPrepareReplyTool(
+  client: GmailApiClient,
+): Tool<GmailPrepareReplyInput, GmailDraftReply> {
   return {
     name: 'gmail.prepare_reply',
     description:
       "Prépare un brouillon de réponse à un email Gmail déjà lu, sans l'envoyer (aucun effet de bord).",
     action: 'prepare',
+
+    // Seuls `messageId` et `body` sont retenus (les deux requis, non vides).
+    // `to`/`subject`/`threadId` sont dérivés du message réel : une telle clé
+    // fournie par le modèle est ignorée, jamais rejetée → pas d'`additionalProperties: false`.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: {
+          type: 'string',
+          minLength: 1,
+          description: "Identifiant de l'email Gmail auquel répondre.",
+        },
+        body: { type: 'string', minLength: 1, description: 'Corps de la réponse.' },
+      },
+      required: ['messageId', 'body'],
+    },
 
     validateInput(input: unknown): ToolValidationResult<GmailPrepareReplyInput> {
       if (typeof input !== 'object' || input === null) {
@@ -151,6 +193,24 @@ function createGmailSendTool(client: GmailApiClient): Tool<GmailSendInput, Gmail
     description: 'Envoie réellement un email via Gmail (action irréversible, effet de bord réel).',
     action: 'execute',
 
+    // `validateInput` rejette toute clé hors { to, subject, body, threadId }
+    // → `additionalProperties: false`. `to` non vide ; `subject` et `body`
+    // requis mais peuvent être vides ; `threadId` optionnel.
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', minLength: 1, description: 'Adresse du destinataire.' },
+        subject: { type: 'string', description: "Objet de l'email." },
+        body: { type: 'string', description: "Corps de l'email." },
+        threadId: {
+          type: 'string',
+          description: 'Fil de discussion Gmail auquel rattacher le message (optionnel).',
+        },
+      },
+      required: ['to', 'subject', 'body'],
+      additionalProperties: false,
+    },
+
     validateInput(input: unknown): ToolValidationResult<GmailSendInput> {
       if (typeof input !== 'object' || input === null) {
         return invalid('gmail.send : objet attendu.');
@@ -191,6 +251,10 @@ export const gmailConnector: Connector<GmailApiClient> = {
   capabilities: ['gmail.read', 'gmail.prepare_reply', 'gmail.send'],
 
   createTools(client: GmailApiClient): readonly Tool[] {
-    return [createGmailReadTool(client), createGmailPrepareReplyTool(client), createGmailSendTool(client)];
+    return [
+      createGmailReadTool(client),
+      createGmailPrepareReplyTool(client),
+      createGmailSendTool(client),
+    ];
   },
 };

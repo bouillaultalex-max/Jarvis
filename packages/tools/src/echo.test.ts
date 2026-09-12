@@ -9,6 +9,25 @@ describe('echoTool', () => {
     expect(typeof echoTool.description).toBe('string');
   });
 
+  it('expose un inputSchema JSON Schema cohérent avec validateInput', () => {
+    const schema = echoTool.inputSchema;
+
+    expect(typeof schema).toBe('object');
+    expect(schema).not.toBeNull();
+    expect(schema.type).toBe('object');
+
+    // validateInput exige `text: string`, et rien d'autre.
+    expect(Object.keys(schema.properties as object)).toEqual(['text']);
+    expect((schema.properties as Record<string, Record<string, unknown>>).text.type).toBe('string');
+    expect(schema.required).toEqual(['text']);
+
+    // validateInput ignore (ne rejette pas) les clés inconnues → pas de verrou.
+    expect(schema.additionalProperties).not.toBe(false);
+
+    // Aucun champ sensible / interne.
+    expect(JSON.stringify(schema)).not.toMatch(/account|token|secret|credential|oauth|api[_-]?key/);
+  });
+
   it('valide et normalise une entrée correcte', () => {
     const result = echoTool.validateInput({ text: 'Bonjour', extra: 'ignoré' });
 

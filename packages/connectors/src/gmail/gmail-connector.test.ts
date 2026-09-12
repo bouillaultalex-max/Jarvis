@@ -2,9 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { PermissionManager, ToolExecutor, ToolRegistry } from '@jarvis/core';
 
 import type { Account } from '../account.js';
-import { confirmAndExecute, proposeConfirmation, type ConfirmationFailed } from '../confirmation/confirmation-flow.js';
+import {
+  confirmAndExecute,
+  proposeConfirmation,
+  type ConfirmationFailed,
+} from '../confirmation/confirmation-flow.js';
 import type { ConfirmationInputSummary } from '../confirmation/confirmation-request.js';
-import { ConfirmationService, type ConfirmationPayload } from '../confirmation/confirmation-service.js';
+import {
+  ConfirmationService,
+  type ConfirmationPayload,
+} from '../confirmation/confirmation-service.js';
 import { GmailApiClient } from './gmail-api-client.js';
 import type { AccessTokenProvider } from './gmail-auth.js';
 import { gmailConnector } from './gmail-connector.js';
@@ -23,7 +30,10 @@ class FakeAccessTokenProvider implements AccessTokenProvider {
 }
 
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 function encode(text: string): string {
@@ -64,7 +74,10 @@ function buildFakeFetch(messages: readonly ReturnType<typeof rawGmailMessage>[])
   });
 }
 
-function buildClient(messages: readonly ReturnType<typeof rawGmailMessage>[], accessTokenProvider?: AccessTokenProvider) {
+function buildClient(
+  messages: readonly ReturnType<typeof rawGmailMessage>[],
+  accessTokenProvider?: AccessTokenProvider,
+) {
   return new GmailApiClient({
     accessTokenProvider: accessTokenProvider ?? new FakeAccessTokenProvider(),
     fetchFn: buildFakeFetch(messages),
@@ -86,7 +99,11 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
   });
 
   it('n’expose aucune capacité de modification ou de suppression (gmail.send existe désormais depuis M8-A6)', () => {
-    expect(gmailConnector.capabilities).toEqual(['gmail.read', 'gmail.prepare_reply', 'gmail.send']);
+    expect(gmailConnector.capabilities).toEqual([
+      'gmail.read',
+      'gmail.prepare_reply',
+      'gmail.send',
+    ]);
 
     const client = buildClient([]);
     const registry = new ToolRegistry();
@@ -100,7 +117,10 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
     }
     // Même avec une politique "tout autoriser", un outil inexistant ne peut jamais s'exécuter.
     return expect(
-      executor.run({ tool: 'gmail.modify', input: { to: 'x@example.test', subject: 's', body: 'b' } }),
+      executor.run({
+        tool: 'gmail.modify',
+        input: { to: 'x@example.test', subject: 's', body: 'b' },
+      }),
     ).resolves.toMatchObject({ status: 'unknown_tool' });
   });
 
@@ -115,7 +135,10 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
     for (const tool of gmailConnector.createTools(client)) {
       registry.register(tool);
     }
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.read': 'allow' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.read': 'allow' } }),
+    );
 
     const result = await executor.run({ tool: 'gmail.read', input: {} });
 
@@ -123,7 +146,11 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
     if (result.status !== 'executed') throw new Error('unreachable');
     const output = result.output as { messages: unknown[] };
     expect(output.messages).toHaveLength(3);
-    expect(output.messages[0]).toMatchObject({ id: 'm1', sender: 'boss@example.com', subject: 'Sujet 1' });
+    expect(output.messages[0]).toMatchObject({
+      id: 'm1',
+      sender: 'boss@example.com',
+      subject: 'Sujet 1',
+    });
     expect(output.messages[1]).toMatchObject({ id: 'm2', sender: 'newsletter@promo.example' });
     expect(output.messages[2]).toMatchObject({ id: 'm3', sender: 'carol@example.com' });
   });
@@ -133,7 +160,7 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
 
     for (const tool of gmailConnector.createTools(client)) {
       expect(Object.keys(tool).sort()).toEqual(
-        ['action', 'description', 'execute', 'name', 'validateInput'].sort(),
+        ['action', 'description', 'execute', 'inputSchema', 'name', 'validateInput'].sort(),
       );
     }
   });
@@ -151,12 +178,18 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
   });
 
   it('authentification absente/invalide : l’exécution échoue proprement via ToolExecutor (status "error", jamais "executed")', async () => {
-    const client = buildClient([], new FakeAccessTokenProvider(new Error('Gmail OAuth : refresh token invalide.')));
+    const client = buildClient(
+      [],
+      new FakeAccessTokenProvider(new Error('Gmail OAuth : refresh token invalide.')),
+    );
     const registry = new ToolRegistry();
     for (const tool of gmailConnector.createTools(client)) {
       registry.register(tool);
     }
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.read': 'allow' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.read': 'allow' } }),
+    );
 
     const result = await executor.run({ tool: 'gmail.read', input: {} });
 
@@ -168,7 +201,10 @@ describe('gmailConnector — architecture (lecture seule + préparation, aucun r
 
   it('validateInput rejette un maxResults hors bornes, sans jamais appeler le client', async () => {
     const fetchFn = vi.fn();
-    const client = new GmailApiClient({ accessTokenProvider: new FakeAccessTokenProvider(), fetchFn });
+    const client = new GmailApiClient({
+      accessTokenProvider: new FakeAccessTokenProvider(),
+      fetchFn,
+    });
     const [tool] = gmailConnector.createTools(client);
 
     expect(tool!.validateInput({ maxResults: 0 }).ok).toBe(false);
@@ -191,7 +227,10 @@ describe('gmail.prepare_reply — M7.3', () => {
     const messages = [rawGmailMessage('m1', 'boss@example.com', 'Point hebdo', 'Contenu original')];
     const client = buildClient(messages);
     const registry = buildRegistry(client);
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } }),
+    );
 
     const result = await executor.run({
       tool: 'gmail.prepare_reply',
@@ -213,7 +252,10 @@ describe('gmail.prepare_reply — M7.3', () => {
     const messages = [rawGmailMessage('m1', 'boss@example.com', 'Point hebdo', 'Contenu original')];
     const client = buildClient(messages);
     const registry = buildRegistry(client);
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } }),
+    );
 
     const result = await executor.run({
       tool: 'gmail.prepare_reply',
@@ -236,7 +278,10 @@ describe('gmail.prepare_reply — M7.3', () => {
   it('messageId inconnu : échec propre via ToolExecutor (status "error", jamais "executed"), aucune mutation', async () => {
     const client = buildClient([]);
     const registry = buildRegistry(client);
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.prepare_reply': 'allow' } }),
+    );
 
     const result = await executor.run({
       tool: 'gmail.prepare_reply',
@@ -324,14 +369,20 @@ describe('gmail.prepare_reply — M7.3', () => {
       new PermissionManager({ rules: { 'gmail.prepare_reply': 'require_confirmation' } }),
     );
 
-    const result = await executor.run({ tool: 'gmail.prepare_reply', input: { messageId: 'm1', body: 'x' } });
+    const result = await executor.run({
+      tool: 'gmail.prepare_reply',
+      input: { messageId: 'm1', body: 'x' },
+    });
 
     expect(result.status).toBe('awaiting_confirmation');
   });
 });
 
 describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () => {
-  function buildSendSetup(sendDecision: 'allow' | 'deny' | 'require_confirmation', accessTokenProvider?: AccessTokenProvider) {
+  function buildSendSetup(
+    sendDecision: 'allow' | 'deny' | 'require_confirmation',
+    accessTokenProvider?: AccessTokenProvider,
+  ) {
     const fetchFn = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
       jsonResponse(200, { id: 'sent-1', threadId: 'thread-xyz' }),
     );
@@ -343,7 +394,10 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
     for (const tool of gmailConnector.createTools(client)) {
       registry.register(tool);
     }
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.send': sendDecision } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.send': sendDecision } }),
+    );
     return { executor, fetchFn };
   }
 
@@ -354,7 +408,7 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
     expect(sendTool?.name).toBe('gmail.send');
     expect(sendTool?.action).toBe('execute');
     expect(Object.keys(sendTool!).sort()).toEqual(
-      ['action', 'description', 'execute', 'name', 'validateInput'].sort(),
+      ['action', 'description', 'execute', 'inputSchema', 'name', 'validateInput'].sort(),
     );
   });
 
@@ -367,15 +421,24 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
     expect(sendTool!.validateInput({ to: '', subject: 's', body: 'b' }).ok).toBe(false);
     expect(sendTool!.validateInput({ subject: 's', body: 'b' }).ok).toBe(false);
     expect(sendTool!.validateInput({ to: 'x@example.test', subject: 1, body: 'b' }).ok).toBe(false);
-    expect(sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 42 }).ok).toBe(false);
-    expect(sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b', threadId: 7 }).ok).toBe(false);
+    expect(sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 42 }).ok).toBe(
+      false,
+    );
+    expect(
+      sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b', threadId: 7 }).ok,
+    ).toBe(false);
   });
 
   it('validateInput rejette toute propriété inconnue — jamais ignorée silencieusement', () => {
     const client = buildClient([]);
     const [, , sendTool] = gmailConnector.createTools(client);
 
-    const withCc = sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b', cc: 'y@example.test' });
+    const withCc = sendTool!.validateInput({
+      to: 'x@example.test',
+      subject: 's',
+      body: 'b',
+      cc: 'y@example.test',
+    });
     expect(withCc.ok).toBe(false);
     if (!withCc.ok) {
       expect(withCc.error).toContain('cc');
@@ -385,7 +448,12 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
     // à gmail.prepare_reply, qui ignore silencieusement les clés superflues : ici, un
     // envoi réel doit échouer plutôt que de deviner quelle valeur retenir).
     expect(
-      sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b', from: 'attaquant@evil.example' }).ok,
+      sendTool!.validateInput({
+        to: 'x@example.test',
+        subject: 's',
+        body: 'b',
+        from: 'attaquant@evil.example',
+      }).ok,
     ).toBe(false);
   });
 
@@ -393,12 +461,18 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
     const client = buildClient([]);
     const [, , sendTool] = gmailConnector.createTools(client);
 
-    expect(sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b', threadId: 't1' })).toEqual({
+    expect(
+      sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b', threadId: 't1' }),
+    ).toEqual({
       ok: true,
       value: { to: 'x@example.test', subject: 's', body: 'b', threadId: 't1' },
     });
 
-    const withoutThread = sendTool!.validateInput({ to: 'x@example.test', subject: 's', body: 'b' });
+    const withoutThread = sendTool!.validateInput({
+      to: 'x@example.test',
+      subject: 's',
+      body: 'b',
+    });
     expect(withoutThread.ok).toBe(true);
     if (withoutThread.ok) {
       expect('threadId' in (withoutThread.value as Record<string, unknown>)).toBe(false);
@@ -413,7 +487,10 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
       input: { to: 'carol@example.test', subject: 'Salut', body: 'Ça marche' },
     });
 
-    expect(result).toMatchObject({ status: 'executed', output: { id: 'sent-1', threadId: 'thread-xyz' } });
+    expect(result).toMatchObject({
+      status: 'executed',
+      output: { id: 'sent-1', threadId: 'thread-xyz' },
+    });
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -448,10 +525,16 @@ describe('gmail.send — M8-A6 (aucun appel réseau réel, fetchFn mocké)', () 
   it('erreur Gmail (HTTP refusé) : status "error" via ToolExecutor, jamais "executed", aucune fuite de credential', async () => {
     const marker = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
     const fetchFn = vi.fn(async () => jsonResponse(403, { error: 'insufficient permissions' }));
-    const client = new GmailApiClient({ accessTokenProvider: new FakeAccessTokenProvider(marker), fetchFn });
+    const client = new GmailApiClient({
+      accessTokenProvider: new FakeAccessTokenProvider(marker),
+      fetchFn,
+    });
     const registry = new ToolRegistry();
     for (const tool of gmailConnector.createTools(client)) registry.register(tool);
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.send': 'allow' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.send': 'allow' } }),
+    );
 
     const result = await executor.run({
       tool: 'gmail.send',
@@ -491,7 +574,10 @@ describe('gmail.send + ConfirmationFlow — M8-A6 (proposition → confirmation 
     for (const tool of gmailConnector.createTools(client)) {
       registry.register(tool);
     }
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.send': 'require_confirmation' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.send': 'require_confirmation' } }),
+    );
     return { executor, fetchFn };
   }
 
@@ -528,7 +614,10 @@ describe('gmail.send + ConfirmationFlow — M8-A6 (proposition → confirmation 
       payload,
     });
 
-    expect(confirmed).toMatchObject({ status: 'executed', output: { id: 'sent-1', threadId: 'thread-xyz' } });
+    expect(confirmed).toMatchObject({
+      status: 'executed',
+      output: { id: 'sent-1', threadId: 'thread-xyz' },
+    });
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
@@ -609,10 +698,20 @@ describe('gmail.send + ConfirmationFlow — M8-A6 (proposition → confirmation 
     };
     const confirmationId = proposed.confirmationRequest!.confirmationId;
 
-    const first = await confirmAndExecute({ executor, confirmationService, confirmationId, payload });
+    const first = await confirmAndExecute({
+      executor,
+      confirmationService,
+      confirmationId,
+      payload,
+    });
     expect(first.status).toBe('executed');
 
-    const second = await confirmAndExecute({ executor, confirmationService, confirmationId, payload });
+    const second = await confirmAndExecute({
+      executor,
+      confirmationService,
+      confirmationId,
+      payload,
+    });
     expect(second.status).toBe('confirmation_failed');
     expect((second as ConfirmationFailed).failureReason).toBe('already_consumed');
 
@@ -653,10 +752,16 @@ describe('gmail.send + ConfirmationFlow — M8-A6 (proposition → confirmation 
 
   it('confirmation valide + PermissionManager deny → denied, zéro appel Gmail (une confirmation ne contourne jamais PermissionManager)', async () => {
     const fetchFn = vi.fn(async () => jsonResponse(200, { id: 'sent-1' }));
-    const client = new GmailApiClient({ accessTokenProvider: new FakeAccessTokenProvider(), fetchFn });
+    const client = new GmailApiClient({
+      accessTokenProvider: new FakeAccessTokenProvider(),
+      fetchFn,
+    });
     const registry = new ToolRegistry();
     for (const tool of gmailConnector.createTools(client)) registry.register(tool);
-    const executor = new ToolExecutor(registry, new PermissionManager({ rules: { 'gmail.send': 'deny' } }));
+    const executor = new ToolExecutor(
+      registry,
+      new PermissionManager({ rules: { 'gmail.send': 'deny' } }),
+    );
     const confirmationService = new ConfirmationService();
     const account = makeAccount('acc-gmail-1');
     const payload: ConfirmationPayload = {
@@ -682,7 +787,9 @@ describe('gmail.send + ConfirmationFlow — M8-A6 (proposition → confirmation 
 
   it('aucun token/credential n’apparaît dans le ConfirmationRequest ni dans le résultat exécuté', async () => {
     const marker = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
-    const { executor, fetchFn } = buildRequireConfirmationSetup(new FakeAccessTokenProvider(marker));
+    const { executor, fetchFn } = buildRequireConfirmationSetup(
+      new FakeAccessTokenProvider(marker),
+    );
     const confirmationService = new ConfirmationService();
     const account = makeAccount('acc-gmail-1');
 
@@ -711,5 +818,95 @@ describe('gmail.send + ConfirmationFlow — M8-A6 (proposition → confirmation 
 
     expect(JSON.stringify(confirmed)).not.toContain(marker);
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Vérifie qu'un `inputSchema` de Tool est structurellement sain et cohérent
+ * avec les attentes déclarées. Ne teste pas seulement l'existence du champ.
+ */
+function assertToolSchema(
+  schema: Record<string, unknown>,
+  expected: {
+    readonly properties: readonly string[];
+    readonly required: readonly string[];
+    readonly additionalPropertiesFalse: boolean;
+  },
+): void {
+  expect(typeof schema).toBe('object');
+  expect(schema).not.toBeNull();
+  expect(schema.type).toBe('object');
+
+  const props = (schema.properties as Record<string, unknown> | undefined) ?? {};
+  expect(Object.keys(props).sort()).toEqual([...expected.properties].sort());
+
+  const required = (schema.required as string[] | undefined) ?? [];
+  expect([...required].sort()).toEqual([...expected.required].sort());
+
+  if (expected.additionalPropertiesFalse) {
+    expect(schema.additionalProperties).toBe(false);
+  } else {
+    expect(schema.additionalProperties).not.toBe(false);
+  }
+
+  // Aucun champ sensible / interne, à quelque profondeur que ce soit.
+  expect(JSON.stringify(schema)).not.toMatch(
+    /account[iI]d|token|secret|credential|refresh|oauth|api[_-]?key/,
+  );
+}
+
+describe('gmailConnector — inputSchema (cohérence avec validateInput)', () => {
+  const tools = () => gmailConnector.createTools(buildClient([]));
+
+  it('chaque Tool expose un inputSchema object structurellement sain', () => {
+    for (const tool of tools()) {
+      expect(typeof tool.inputSchema).toBe('object');
+      expect(tool.inputSchema.type).toBe('object');
+      expect(JSON.stringify(tool.inputSchema)).not.toMatch(
+        /account[iI]d|token|secret|credential|refresh|oauth|api[_-]?key/,
+      );
+    }
+  });
+
+  it('gmail.read : maxResults optionnel borné, aucune propriété requise, clés inconnues tolérées', () => {
+    const [read] = tools();
+    assertToolSchema(read!.inputSchema, {
+      properties: ['maxResults'],
+      required: [],
+      additionalPropertiesFalse: false,
+    });
+    const maxResults = (read!.inputSchema.properties as Record<string, Record<string, unknown>>)
+      .maxResults;
+    expect(maxResults.type).toBe('integer');
+    expect(maxResults.minimum).toBe(1);
+    expect(maxResults.maximum).toBe(50);
+  });
+
+  it('gmail.prepare_reply : messageId + body requis, clés inconnues tolérées (jamais additionalProperties:false)', () => {
+    const [, prepare] = tools();
+    assertToolSchema(prepare!.inputSchema, {
+      properties: ['messageId', 'body'],
+      required: ['messageId', 'body'],
+      additionalPropertiesFalse: false,
+    });
+  });
+
+  it('gmail.send : to/subject/body requis + additionalProperties:false (validateInput rejette les clés inconnues)', () => {
+    const [, , send] = tools();
+    assertToolSchema(send!.inputSchema, {
+      properties: ['to', 'subject', 'body', 'threadId'],
+      required: ['to', 'subject', 'body'],
+      additionalPropertiesFalse: true,
+    });
+    // Le schema n'introduit AUCUN accountId : le Tool n'en accepte pas.
+    expect(Object.keys(send!.inputSchema.properties as object)).not.toContain('accountId');
+  });
+
+  it('l’ajout du schema ne change pas la validation : gmail.send rejette toujours une clé inconnue', () => {
+    const [, , send] = tools();
+    expect(
+      send!.validateInput({ to: 'a@x.test', subject: 's', body: 'b', cc: 'x@y.test' }).ok,
+    ).toBe(false);
+    expect(send!.validateInput({ to: 'a@x.test', subject: 's', body: 'b' }).ok).toBe(true);
   });
 });

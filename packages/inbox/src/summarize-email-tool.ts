@@ -39,6 +39,31 @@ export function createSummarizeEmailTool(
     description: 'Résume un email déjà lu (lecture seule, aucun effet de bord).',
     action: 'read',
 
+    // Attend `{ email: EmailMessage }`. `isEmailMessageShape` exige
+    // id/sender/recipients/subject/body/receivedAt ; `threadId` reste
+    // optionnel. Ni l'entrée ni l'objet `email` ne rejettent les clés
+    // inconnues → pas d'`additionalProperties: false`. Aucun secret : les
+    // champs décrits sont ceux, publics, de `EmailMessage` (@jarvis/types).
+    inputSchema: {
+      type: 'object',
+      properties: {
+        email: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            threadId: { type: 'string' },
+            sender: { type: 'string' },
+            recipients: { type: 'array', items: { type: 'string' } },
+            subject: { type: 'string' },
+            body: { type: 'string' },
+            receivedAt: { type: 'string', description: 'Date de réception, ISO 8601.' },
+          },
+          required: ['id', 'sender', 'recipients', 'subject', 'body', 'receivedAt'],
+        },
+      },
+      required: ['email'],
+    },
+
     validateInput(input: unknown): ToolValidationResult<SummarizeEmailInput> {
       if (typeof input !== 'object' || input === null) {
         return invalid('email.summarize : objet attendu.');

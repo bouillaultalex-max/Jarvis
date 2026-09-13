@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@jarvis/connectors": "0.1.0",
     "@jarvis/core": "0.1.0",
     "@jarvis/llm": "0.1.0",
     "@jarvis/tools": "0.1.0",

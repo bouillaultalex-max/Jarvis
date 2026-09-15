@@ -50,3 +50,15 @@ Node 24.x, npm 11.x requis (voir `engines` si ajouté, ou aligner sur votre envi
 ## Claude Code + RuFlo
 
 Ce dépôt utilise Claude Code avec l'orchestration RuFlo (`claude-flow`). Voir [`CLAUDE.md`](./CLAUDE.md) pour les règles de travail, la stratégie Explore → Plan → Implement → Review, et les conventions Git.
+
+### Skill `code-review-skill`
+
+Dépendance de développement (guides de revue de code par langage/framework), **non versionnée** dans ce dépôt : seul `skills-lock.json` (source + hash) est commité. La copie du skill (`.agents/`) et son symlink (`.claude/skills/code-review-skill`) sont exclus via `.gitignore` et régénérés localement à la demande.
+
+Réinstallation :
+
+```bash
+DISABLE_TELEMETRY=1 npx skills add awesome-skills/code-review-skill --skill code-review-skill -y
+```
+
+`DISABLE_TELEMETRY=1` désactive la télémétrie anonyme de la CLI `skills` (sinon identifiants dépôt/skill envoyés pour les dépôts publics). `skills-lock.json` conserve la source (`awesome-skills/code-review-skill`), le chemin (`SKILL.md`) et un hash de contenu permettant de vérifier l'intégrité après réinstallation.

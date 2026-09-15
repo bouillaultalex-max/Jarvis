@@ -43,3 +43,7 @@ ruvector.db
 .claude-flow/harness-active-policy.json
 .claude-flow/policy/state.json
 .claude-flow/security/audit-status.json
+
+# Claude Code skills installés via `npx skills` (copie régénérable, voir README.md)
+.agents/
+.claude/skills/code-review-skill

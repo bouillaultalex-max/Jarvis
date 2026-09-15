@@ -47,6 +47,10 @@ import { parseGmailSendArgs } from './gmail-send-args.js';
 import { parsePrepareReplyArgs } from './prepare-reply-args.js';
 import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
 import { createTerminalConfirm } from './terminal-confirm.js';
+import {
+  runReadNaturalLanguageFlow,
+  type ReadNaturalLanguageFlowResult,
+} from './read-natural-language-flow.js';
 
 /**
  * Orchestration desktop du flux Gmail — M8-B2 (OAuth réel) + M8-B3
@@ -401,6 +405,46 @@ function describeReadResult(result: ToolExecutionResult): readonly string[] {
 }
 
 /**
+ * Lignes d'affichage d'un `ReadNaturalLanguageFlowResult` (VS-02d/VS-02f) —
+ * fonction de **présentation uniquement**, ne réimplémente ni
+ * l'orchestration ni la logique Gmail.
+ *
+ * Pour `read_result`, délègue entièrement à {@link describeReadResult}
+ * (inchangée) : cette dernière traite déjà correctement un
+ * `ToolExecutionResult` non `executed` (« Lecture échouée (statut). »),
+ * jamais comme un succès — aucune adaptation n'est donc nécessaire ici.
+ * Pour les cinq autres statuts, aucune lecture n'a eu lieu : le message
+ * le dit explicitement, sans jamais mentionner un email lu, une lecture
+ * réussie, ni un résultat « vérifié ».
+ */
+function describeReadNaturalLanguageResult(
+  result: ReadNaturalLanguageFlowResult,
+): readonly string[] {
+  switch (result.status) {
+    case 'ambiguous':
+      return [`Demande de lecture ambiguë, non exécutée : ${result.interpretation.explanation}`];
+    case 'unsupported':
+      return [
+        `Demande hors du périmètre de la lecture naturelle, non exécutée : ${result.interpretation.explanation}`,
+      ];
+    case 'declined':
+      return ['Lecture annulée : proposition refusée par l’utilisateur.'];
+    case 'acceptance_error':
+      return [
+        `Lecture annulée : acceptation impossible (raison : ${result.reason}, ni un refus explicite ni une exécution).`,
+      ];
+    case 'conversion_failed':
+      return [`Lecture annulée : conversion impossible (${result.reason}).`];
+    case 'read_result':
+      return describeReadResult(result.result);
+    default: {
+      const exhaustive: never = result;
+      return [`Lecture naturelle échouée (${(exhaustive as { readonly status: string }).status}).`];
+    }
+  }
+}
+
+/**
  * Flux `read` — lit les emails Gmail récents via le Tool `gmail.read`
  * existant (`packages/connectors`, inchangé), en composant exactement les
  * mêmes briques que `send`/`disconnect` : `resolveOrConnectGmailAccount()`
@@ -690,7 +734,39 @@ function parseGmailReadArgs(argv: readonly string[], command = 'read'): GmailRea
   return raw === undefined ? {} : { maxResults: Number(raw) };
 }
 
-/** Dispatch : `connect` (défaut) | `read` | `inbox` | `prepare-reply` | `send` | `disconnect`. */
+/**
+ * Parse les arguments de la sous-commande `read-natural` :
+ *
+ *   read-natural "<texte>"
+ *
+ * Contrat volontairement strict, comparable à `parseGmailReadArgs` dans sa
+ * discipline mais pas dans sa forme : **exactement un** argument, non vide,
+ * jamais assemblé ni reconstruit à partir de plusieurs (un texte réparti
+ * sur plusieurs arguments — guillemets oubliés par l'utilisateur — est
+ * rejeté explicitement, jamais deviné ni concaténé). Le découpage des
+ * guillemets est déjà fait par le shell/Node avant `process.argv` — cette
+ * fonction ne le refait jamais.
+ *
+ * Aucune analyse sémantique ici : ni nettoyage, ni reformulation du texte,
+ * ni appel à `interpretReadRequest` (VS-02a) ou à
+ * `runReadNaturalLanguageFlow` (VS-02d) — la validation du **contenu**
+ * revient entièrement à ces étapes ultérieures, jamais à ce parseur.
+ */
+function parseReadNaturalArgs(argv: readonly string[]): string {
+  if (argv.length !== 1) {
+    throw new Error(
+      'read-natural : un seul argument texte attendu, entre guillemets ' +
+        '(ex. read-natural "Lis mes 5 derniers emails").',
+    );
+  }
+  const [text] = argv;
+  if (text === undefined || text.length === 0) {
+    throw new Error('read-natural : le texte fourni est vide.');
+  }
+  return text;
+}
+
+/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -724,6 +800,19 @@ export async function dispatch(
     return;
   }
 
+  if (command === 'read-natural') {
+    // Le texte est le seul élément transmis à l'orchestrateur — jamais
+    // `argv`, jamais un nom d'outil. `io` (DesktopIo : {input?, output?})
+    // satisfait déjà structurellement `ReadInterpretationAcceptanceIo`
+    // (même forme exacte) : transmis tel quel, sans conversion.
+    const text = parseReadNaturalArgs(argv.slice(1));
+    const result = await runReadNaturalLanguageFlow(text, deps, io, write, connect);
+    for (const line of describeReadNaturalLanguageResult(result)) {
+      write(line);
+    }
+    return;
+  }
+
   if (command === 'inbox') {
     const input = parseGmailReadArgs(argv.slice(1), 'inbox');
     await runInboxFlow(deps, input, write, connect);
@@ -742,7 +831,7 @@ export async function dispatch(
   }
 
   throw new Error(
-    'Commande inconnue (attendu : connect | read | inbox | prepare-reply | send | disconnect).',
+    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect).',
   );
 }
 

@@ -11,15 +11,22 @@ boucle d'envoi confirmée (`a811027`), câblage CLI desktop `connect`/`send`
 _Après M8, **surface CLI desktop post-M8** (hors numérotation de jalon —
 exposition CLI de briques déjà existantes) : commande `disconnect`
 (`cc2e8a4`), commande `read` (`9c24cb7`), commande `inbox` (`996d716`,
-`fetchAndClassifyEmails`, s'arrête à la classification). `apps/desktop`
-expose donc cinq commandes : `connect` / `read` / `inbox` / `send` /
-`disconnect`. `apps/api` toujours non branché._
+`fetchAndClassifyEmails`, s'arrête à la classification), commande
+`prepare-reply` (`753f4d0`, câblage du Tool `gmail.prepare_reply`).
+`apps/desktop` expose donc six commandes : `connect` / `read` / `inbox` /
+`prepare-reply` / `send` / `disconnect`. `apps/api` toujours non branché._
 
 _Entre M7.4 et M8, une **fondation architecturale transversale** —
 `Connector Architecture Foundation` (commit `8506792`, voir « Functional
 milestones vs Architectural foundations » ci-dessous) — a été ajoutée :
 elle ne constitue PAS un nouveau jalon fonctionnel et ne remplace pas le M5
 Gmail historique (`fd13ffa`)._
+
+_Après la surface CLI desktop post-M8, **VS-02 — Lecture naturelle
+contrôlée** ajoute une septième commande, `read-natural "<texte>"`
+(lecture Gmail en langage naturel, périmètre readonly strictement
+contrôlé — voir « Lecture naturelle contrôlée — VS-02 » ci-dessous).
+**Implémentée, testée et committée** (`8fb7ff4` — 82 tests ciblés verts)._
 
 ## Vue d'ensemble
 
@@ -101,7 +108,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
-| `apps/desktop` | Client CLI (`connect`, `read`, `inbox`, `send`, `disconnect`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`) |
+| `apps/desktop` | Client CLI (`connect`, `read`, `inbox`, `prepare-reply`, `send`, `disconnect`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`) |
 
 ## Ce qui fonctionne
 
@@ -349,9 +356,9 @@ OAuth réelle) — voir « Surface CLI desktop post-M8 » ci-dessous. Aucun
 numéro de jalon ne lui est attribué : c'est une exposition CLI d'une brique
 existante, pas un jalon fonctionnel.
 
-### Surface CLI desktop post-M8 (`cc2e8a4`, `9c24cb7`, `996d716`)
+### Surface CLI desktop post-M8 (`cc2e8a4`, `9c24cb7`, `996d716`, `753f4d0`)
 
-Trois commits postérieurs à M8 étendent la CLI `apps/desktop` (fichier
+Quatre commits postérieurs à M8 étendent la CLI `apps/desktop` (fichier
 `apps/desktop/src/main.ts`, `dispatch()`) **sans ajouter aucune brique de
 bibliothèque** : ils câblent des capacités déjà écrites et testées dans
 `@jarvis/connectors` / `@jarvis/inbox`, en réutilisant tel quel le noyau de
@@ -379,9 +386,54 @@ nouveaux jalons fonctionnels** — aucun numéro `M8-B7`/`M9`/`OUT-07`.
   `applyUserRule`) **restent hors de son périmètre actuel**. Aucune
   persistance de préférences introduite (`InMemoryPreferenceStore`, toujours
   vide en production).
+- **`prepare-reply`** (`753f4d0`) — câblage du Tool `gmail.prepare_reply`
+  (`action: 'prepare'`, aucun effet de bord Gmail réel) : `--messageId`/
+  `--body` transmis tels quels (`parsePrepareReplyArgs`), validation de fond
+  déléguée à `gmail.prepare_reply.validateInput` via `ToolExecutor`.
+  N'appelle jamais `gmail.send`.
 
-`apps/desktop` expose donc cinq commandes : `connect` / `read` / `inbox` /
-`send` / `disconnect`.
+`apps/desktop` expose donc six commandes : `connect` / `read` / `inbox` /
+`prepare-reply` / `send` / `disconnect`.
+
+### Lecture naturelle contrôlée — VS-02 (`read-natural`, committé `8fb7ff4`)
+
+Septième commande, **implémentée, testée et committée** (`8fb7ff4` —
+`apps/desktop/src/main.ts` et les nouveaux fichiers
+`apps/desktop/src/read-intent-parser.ts`,
+`read-intent-to-tool-request.ts`, `read-interpretation-acceptance.ts`,
+`read-natural-language-flow.ts` et leurs tests). Pipeline :
+
+```
+texte libre → parser (read-intent-parser.ts)
+  → acceptation explicite (read-interpretation-acceptance.ts)
+  → conversion contrôlée en ToolRequest (read-intent-to-tool-request.ts)
+  → runReadFlow (VS-01, inchangé)
+  → PermissionManager / ToolExecutor (inchangés)
+  → gmail.read
+```
+
+Restitue distinctement six états (`ambiguous`, `unsupported`, `declined`,
+`acceptance_error`, `conversion_failed`, `read_result`) — jamais un succès
+artificiel : un `ToolExecutionResult` non `executed` reste affiché comme
+tel (délégation à `describeReadResult`, inchangée).
+
+`PermissionManager`/`ToolExecutor` **conservés sans modification** ; aucun
+outil d'écriture accessible par ce chemin (`gmail.send` structurellement
+inatteignable — le nom d'outil n'est jamais dérivé du texte utilisateur).
+Aucune intégration `AgentLoop`, `apps/api`, ni mémoire (`@jarvis/memory`) :
+**ne constitue pas** une conversation naturelle générale de Jarvis.
+
+82 tests ciblés verts (`read-intent-parser.test.ts` 20,
+`read-intent-to-tool-request.test.ts` 15,
+`read-interpretation-acceptance.test.ts` 19,
+`read-natural-language-flow.test.ts` 9, `main-read.test.ts` 6 — non
+régressé —, `main-read-natural.test.ts` 13), `typecheck`/`lint` propres.
+Aucun appel LLM, réseau réel, Gmail réel ou OAuth réel dans ces tests.
+
+Détail complet : `docs/second-readonly-vertical-slice.md`,
+`docs/second-readonly-vertical-slice-integration-study.md`,
+`docs/second-readonly-vertical-slice-cli-study.md`,
+`docs/first-readonly-vertical-slice.md`.
 
 ### Limites connues (héritées de M4, inchangées)
 
@@ -407,7 +459,8 @@ nouveaux jalons fonctionnels** — aucun numéro `M8-B7`/`M9`/`OUT-07`.
   seul `apps/desktop` consomme `@jarvis/connectors` à ce stade.
 - **`apps/desktop`** : ~~aucun flux de connexion Gmail~~ **résolu par
   M8-B2/B5** (`connect`/`send` en CLI ; étendu depuis à
-  `read`/`inbox`/`disconnect` — voir « Surface CLI desktop post-M8 »).
+  `read`/`inbox`/`prepare-reply`/`disconnect` — voir « Surface CLI desktop
+  post-M8 »).
 
 ### Prochaine étape prévue (connecteurs)
 
@@ -664,8 +717,9 @@ Décision **toujours ouverte, non tranchée à ce stade** — plusieurs
 directions possibles, aucune priorisée ici :
 - étendre la surface CLI desktop (résumé/triage via
   `summarizeEmailsNeedingAttention`, feedback via
-  `recordFeedbackForEmail`/`applyUserRule`, ou le Tool `gmail.prepare_reply`
-  encore non câblé) ;
+  `recordFeedbackForEmail`/`applyUserRule` — `gmail.prepare_reply` est
+  désormais câblé via la commande `prepare-reply`, voir « Surface CLI
+  desktop post-M8 ») ;
 - brancher `@jarvis/inbox` dans `apps/api` via une route HTTP qui déclenche
   `fetchAndClassifyEmails`/`summarizeEmailsNeedingAttention` ;
 - construire l'interface conversationnelle (NLU → `UserRuleRequest`/feedback) ;
@@ -686,13 +740,13 @@ Ce document ne tranche aucune de ces directions.
   directement (M8) **et** `@jarvis/inbox` / `@jarvis/classification` via la
   commande `inbox` (`996d716`) — `@jarvis/classification` reçoit donc de vrais
   `EmailMessage` hors tests dès qu'un compte Gmail réel est connecté en CLI.
-- `gmail.prepare_reply` (Tool `@jarvis/connectors`, M7.3) existe et est testé
-  mais n'est câblé dans **aucune** commande CLI `apps/desktop` ni route
-  `apps/api`. (`disconnectGmailAccount()` figurait ici jusqu'à `cc2e8a4` ;
-  elle est désormais câblée via la commande `disconnect`.)
 - Aucune extraction NLU de règles depuis du texte libre — `@jarvis/inbox`
   prépare les contrats (`recordFeedbackForEmail`, `applyUserRule`) mais ne
   parse aucun langage naturel, et ils ne sont câblés dans aucune commande CLI.
+  (Distinct de VS-02 « Lecture naturelle contrôlée » — voir ci-dessus —
+  qui ne couvre qu'un vocabulaire fermé de demandes de lecture `gmail.read`,
+  jamais `recordFeedbackForEmail`/`applyUserRule`, et ne constitue pas une
+  conversation naturelle générale.)
 - Aucun branchement du flux `@jarvis/inbox` dans `apps/api` : `ToolRegistry`
   de l'API reste vide de tout outil connecteur. (La commande CLI `inbox` de
   `apps/desktop`, elle, câble `fetchAndClassifyEmails` — mais s'arrête à la
@@ -723,6 +777,12 @@ Ce document ne tranche aucune de ces directions.
   l'exécution des tests. `InMemorySecretStore` (nouveau) ne dépend
   d'aucun mécanisme externe.
 - Aucun secret réel, aucun nouveau fichier `.env`.
+
+**Addendum VS-02 (committé `8fb7ff4`, non inclus dans le total de 530
+ci-dessus, non re-vérifié par une exécution complète de `npm test` à
+cette mise à jour)** : 82 tests ciblés verts (détail par fichier dans « Lecture
+naturelle contrôlée — VS-02 » ci-dessus), `npm run typecheck` et
+`npm run lint` propres sur l'ensemble du dépôt à l'issue de VS-02f.
 
 ## Commits clés
 
@@ -755,6 +815,7 @@ de briques existantes, aucun numéro `M8-B7`/`M9`/`OUT-07`) :
 - `9c24cb7` commande `read` — câblage CLI du Tool `gmail.read`
 - `996d716` commande `inbox` — câblage CLI de `fetchAndClassifyEmails`
   (`@jarvis/inbox`), s'arrête à la classification
+- `753f4d0` commande `prepare-reply` — câblage CLI du Tool `gmail.prepare_reply`
 
 Fondations architecturales (hors numérotation fonctionnelle — voir
 « Functional milestones vs Architectural foundations » en tête de

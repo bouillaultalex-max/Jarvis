@@ -47,9 +47,44 @@ CLI réutilisant le noyau M8.
   lit puis classe (`important` / `not_important` / `uncertain`). S'arrête
   **volontairement** à la classification — résumé, triage et feedback restent
   hors périmètre. (`996d716`)
+- **`prepare-reply`** — câblage CLI du Tool `gmail.prepare_reply`
+  (`--messageId`/`--body`, aucun effet de bord Gmail réel, n'appelle jamais
+  `gmail.send`). (`753f4d0`)
 
-`apps/desktop` expose donc cinq commandes : `connect` / `read` / `inbox` /
-`send` / `disconnect`.
+`apps/desktop` expose donc six commandes : `connect` / `read` / `inbox` /
+`prepare-reply` / `send` / `disconnect`.
+
+## VS-02 — Lecture naturelle contrôlée, readonly (`apps/desktop`, committé `8fb7ff4`)
+
+Septième commande CLI, **implémentée, testée et committée**
+(`8fb7ff4` — `feat(desktop): add controlled natural-language readonly flow`).
+Validée dans un périmètre strictement délimité :
+
+- **parser déterministe** (`read-intent-parser.ts`) — reconnaît un
+  vocabulaire fermé de demandes de lecture Gmail en langage naturel ;
+- **acceptation explicite** (`read-interpretation-acceptance.ts`) —
+  confirmation de compréhension au terminal, distincte d'une confirmation
+  d'exécution ;
+- **conversion contrôlée vers `gmail.read`** (`read-intent-to-tool-request.ts`)
+  — jamais un autre outil, jamais un champ d'autorisation ;
+- **orchestration** (`read-natural-language-flow.ts`) — compose les trois
+  étapes ci-dessus puis `runReadFlow` (VS-01, inchangé) ;
+- **branchement CLI minimal** : `read-natural "<texte>"`, exactement un
+  argument requis, aucun assemblage automatique de plusieurs arguments.
+
+`PermissionManager` et `ToolExecutor` sont **conservés tels quels** (aucune
+modification) ; ce chemin ne rend accessible **aucun outil d'écriture** —
+`gmail.send` reste structurellement inatteignable (le nom d'outil n'est
+jamais dérivé du texte utilisateur ni transmis par ce chemin).
+
+**Ne constitue pas** une conversation naturelle générale de Jarvis, ni une
+intégration à `AgentLoop`, à `apps/api`, ni à la mémoire (`@jarvis/memory`)
+— périmètre strictement lecture Gmail, CLI uniquement.
+
+82 tests ciblés verts, `typecheck`/`lint` propres. Détail complet :
+`docs/second-readonly-vertical-slice.md`,
+`docs/second-readonly-vertical-slice-integration-study.md`,
+`docs/second-readonly-vertical-slice-cli-study.md`.
 
 ## Fondations architecturales terminées
 
@@ -111,9 +146,10 @@ surface CLI desktop post-M8 (ci-dessus) est déjà livrée et ne préempte
 aucune de ces pistes.
 
 Capacités de bibliothèque encore **non exposées** à l'utilisateur, à noter
-pour mémoire (ne constituent pas des pistes priorisées) : le Tool
-`gmail.prepare_reply` (`@jarvis/connectors`, M7.3) et les fonctions
+pour mémoire (ne constituent pas des pistes priorisées) : les fonctions
 `summarizeEmailsNeedingAttention` / `recordFeedbackForEmail` / `applyUserRule`
 (`@jarvis/inbox`, M7) — testées, mais câblées dans aucune commande CLI
-`apps/desktop` ni route `apps/api`. (`disconnectGmailAccount()` figurait ici
-jusqu'à `cc2e8a4` ; elle est désormais câblée via la commande `disconnect`.)
+`apps/desktop` ni route `apps/api`. (Le Tool `gmail.prepare_reply` figurait
+ici jusqu'à `753f4d0` ; il est désormais câblé via la commande
+`prepare-reply`. `disconnectGmailAccount()` figurait ici jusqu'à `cc2e8a4` ;
+elle est désormais câblée via la commande `disconnect`.)

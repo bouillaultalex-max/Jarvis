@@ -21,15 +21,29 @@ Cette page ne fait que positionner chaque élément dans le temps.
 
 **Surface CLI desktop post-M8** (hors numérotation fonctionnelle — exposition
 CLI de briques déjà existantes, aucun nouveau jalon)
-- `apps/desktop` expose désormais cinq commandes :
-  `connect` / `read` / `inbox` / `send` / `disconnect`.
+- `apps/desktop` expose désormais six commandes :
+  `connect` / `read` / `inbox` / `prepare-reply` / `send` / `disconnect`.
 - `disconnect` — câblage CLI de `disconnectGmailAccount()` (`cc2e8a4`).
 - `read` — câblage CLI du Tool `gmail.read` (`9c24cb7`).
 - `inbox` — câblage CLI de `fetchAndClassifyEmails` (`@jarvis/inbox`) ;
   s'arrête volontairement à la classification (`996d716`).
+- `prepare-reply` — câblage CLI du Tool `gmail.prepare_reply`, aucun effet de
+  bord Gmail réel (`753f4d0`).
 - Toutes réutilisent le noyau M8 (`resolveAccount` → `resolveGmailApiClient`
   → `gmailConnector.createTools()` → `ToolRegistry`/`PermissionManager`/
   `ToolExecutor`), sans le modifier.
+
+**VS-02 — Lecture naturelle contrôlée (`read-natural`, committé `8fb7ff4`)**
+- VS-02 est validé comme vertical slice CLI readonly contrôlé.
+- Commande explicite `read-natural "<texte>"` — texte fourni
+  obligatoirement en argument (pas de mode interactif pour la saisie).
+- Périmètre limité à `gmail.read` ; aucune action d'écriture accessible.
+- Pas d'`AgentLoop`, pas d'`apps/api`, pas de mémoire.
+- Pas de vérification métier avancée du résultat (le statut brut de
+  `ToolExecutor` est restitué tel quel, jamais présenté comme un succès
+  vérifié).
+- Implémenté, testé et committé (`8fb7ff4`) — 82 tests ciblés verts,
+  `typecheck`/`lint` propres.
 
 **Fondation architecturale** (hors numérotation fonctionnelle)
 - Connector Architecture Foundation — `ConnectorRegistry`, `AccountStore`,

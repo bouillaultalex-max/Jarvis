@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ActionLevel, Tool } from './tool.js';
 import type { PermissionDecision, PermissionManager } from './permissions.js';
 import type { ToolRegistry } from './tool-registry.js';
@@ -71,6 +73,12 @@ export type ToolExecutionResult<TOutput = unknown> =
   | ToolDenied
   | ToolAwaitingConfirmation;
 
+/** Résultat d'une exécution tracée : identifiant d'invocation + résultat inchangé. */
+export interface ToolTrackedRun {
+  readonly invocationId: string;
+  readonly result: ToolExecutionResult;
+}
+
 /**
  * Point de passage **unique** pour exécuter un outil.
  *
@@ -100,6 +108,30 @@ export class ToolExecutor {
   }
 
   async run(request: ToolRequest): Promise<ToolExecutionResult> {
+    return this.execute(request);
+  }
+
+  /**
+   * Comme {@link ToolExecutor.run}, mais attribue à **cette** exécution un
+   * identifiant d'invocation unique, renvoyé à côté du résultat.
+   *
+   * Nécessaire à la provenance juridique (`ToolProvenance.invocationId`,
+   * `@jarvis/legal-core`) : `ToolExecutor` est le point de passage unique, donc le
+   * seul endroit qui couvre tous les appels — directs comme pilotés par un LLM — y
+   * compris ceux refusés, inconnus ou en attente de confirmation. Le comportement
+   * de `run` et la forme de `ToolExecutionResult` sont **inchangés** (l'id n'est pas
+   * ajouté au résultat).
+   *
+   * L'identifiant est un UUID v4 : unique, sans secret, valide comme identifiant
+   * opaque. Il n'est ni journalisé ni persisté ici (aucun journal d'appels n'existe).
+   */
+  async runTracked(request: ToolRequest): Promise<ToolTrackedRun> {
+    const invocationId = randomUUID();
+    const result = await this.execute(request);
+    return { invocationId, result };
+  }
+
+  private async execute(request: ToolRequest): Promise<ToolExecutionResult> {
     if (!this.registry.has(request.tool)) {
       return {
         status: 'unknown_tool',

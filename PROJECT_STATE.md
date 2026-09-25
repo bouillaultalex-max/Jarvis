@@ -1,6 +1,33 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-08 — M8 (Gmail Send) committé et terminé,
+_Dernière mise à jour : 2026-09-25 — **domaine juridique : LegalCase v3
+(Fact / Provenance / Evidence / Temporal) clôturé** (voir « Domaine juridique →
+LegalCase v3 » ci-dessous). **LegalCase v3 : COMPLETED / CLOSED.** Décisions
+d'architecture Q1–Q10, B1–B4 et U1 : **CLOSED**. `ToolExecutor.runTracked`
+(`{ invocationId, result }`) : **IMPLEMENTED / CLOSED**. Post-Implementation
+Review : **CLOSED — PASS WITH ATTENTION** (aucune violation architecturale ;
+attentions A1–A4 **non bloquantes**). Suite complète vérifiée le 2026-09-25 :
+**2196 tests / 125 fichiers verts**, `tsc --noEmit` PASS, `eslint .` PASS, tests
+d'architecture PASS. **Prochaine étape du domaine juridique : LEGAL-04 — Fact &
+Case Engine** (périmètre détaillé non décidé). **Le domaine légal reste non suivi
+par git** (et `packages/core/src/tool-executor.ts` est modifié, non committé) :
+« terminé » = implémenté et validé dans l'environnement de travail, **pas
+committé**._
+
+_Mise à jour précédente (2026-09-24, état **historique**) — **domaine juridique :
+Content Exposure clôturé** (voir la section « Domaine juridique » ci-dessous). Blocs **CLOSED** :
+LEGAL-00 → LEGAL-03B, VersionResolver, Version Resolution Integration, Resolved
+Version Retrieval, Research → Case, Content Exposure (ADR 0011 à 0021).
+À cette date, prochaine étape **alors à déterminer** (établie depuis :
+LEGAL-04 ; aucun LEGAL-03C n'est planifié). **Le domaine légal est non suivi par git** :
+« terminé » signifie implémenté et validé dans l'environnement de travail,
+**pas committé**. Suite complète vérifiée le 2026-09-24 (**historique, avant LegalCase v3**) :
+**1719 tests / 112 fichiers verts**, `eslint .` et `tsc --noEmit` propres. Les sections
+antérieures de ce document (M4 → VS-02) restent l'état historique à leur
+date, sauf indication contraire. Mise à jour précédente du domaine juridique :
+2026-09-23 (jusqu'à LEGAL-03B)._
+
+_Mise à jour précédente : 2026-09-08 — M8 (Gmail Send) committé et terminé,
 sous-jalons M8-B2 à M8-B6 : OAuth Google Authorization Code + PKCE
 (`2d088b7`), `SecretStore` de production via trousseau OS (`b5db57e`),
 boucle d'envoi confirmée (`a811027`), câblage CLI desktop `connect`/`send`
@@ -70,18 +97,26 @@ elle est substantielle en volume de code ou en tests.
 ```
 @jarvis/types           (aucune dépendance interne)
 @jarvis/llm             → @anthropic-ai/sdk
-@jarvis/core            → @jarvis/llm (types uniquement), @jarvis/types
+@jarvis/memory          (aucune dépendance interne)
+@jarvis/core            → @jarvis/llm (types uniquement), @jarvis/types, @jarvis/memory
 @jarvis/tools           → @jarvis/core, @jarvis/types
-@jarvis/connectors      → @jarvis/core, @jarvis/types
+@jarvis/connectors      → @jarvis/core, @jarvis/types, @jarvis/legifrance-client (depuis LEGAL-02B.2 ; non suivi par git)
 @jarvis/classification  → @jarvis/llm (types uniquement), @jarvis/types
 @jarvis/inbox           → @jarvis/core, @jarvis/classification, @jarvis/llm (types uniquement), @jarvis/types
                            (+ @jarvis/connectors en devDependency, tests uniquement)
 apps/api                → @jarvis/core, @jarvis/llm, @jarvis/tools, fastify
 apps/desktop            → @jarvis/connectors
+
+Domaine juridique (LEGAL-01 → Content Exposure, non suivi par git) :
+@jarvis/legal-core      (aucune dépendance interne ; feuille imposée par ESLint)
+@jarvis/legal-research  → @jarvis/core, @jarvis/legal-core
+@jarvis/legifrance-client → @jarvis/connectors (SecretStore/AccessTokenProvider ; cycle de packages avec connectors, préexistant, non traité)
 ```
 
-`@jarvis/connectors` ne dépend que de `@jarvis/core` + `@jarvis/types` :
-`@jarvis/core` ne connaît, et ne connaîtra jamais, Gmail/Discord/etc.
+`@jarvis/connectors` ne dépendait que de `@jarvis/core` + `@jarvis/types`
+jusqu'à M8 ; **depuis LEGAL-02B.2 il dépend aussi de `@jarvis/legifrance-client`**
+(voir « Domaine juridique »). `@jarvis/core` ne connaît, et ne connaîtra
+jamais, Gmail/Discord/etc.
 
 `@jarvis/classification` ne dépend ni de `@jarvis/connectors` ni de
 `@jarvis/core` : uniquement de `@jarvis/types` (pour `EmailMessage`) et des
@@ -102,11 +137,15 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 |---|---|---|
 | `@jarvis/types` | Types partagés (`JarvisMessage`, `EmailMessage`) | stable, minimal |
 | `@jarvis/llm` | Abstraction LLM + `AnthropicProvider` | fonctionnel ; clé lue en lazy au 1er appel ; `LlmResponse.toolCall?` défini mais jamais émis par `AnthropicProvider` |
-| `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` | Tools + Permissions branchés dans `AgentLoop` ; inchangé depuis M4 |
+| `@jarvis/memory` | Mémoire contrôlée : `MemoryEntry`/`MemoryCandidate`, provenance à 5 niveaux, `MemoryPromoter`/`MemoryPromotionPolicy`, `InMemoryMemoryStore`/`FileMemoryStore` | package feuille, disponible et testé ; **aucune promotion n'est câblée en production** (ni `apps/api` ni `apps/desktop` ne fournissent d'option mémoire à `AgentLoop`) ; policy de référence pour toute future intégration : `ADR-0007` |
+| `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` (+ `ToolExecutor.runTracked`, 2026-09-25 : renvoie `{ invocationId, result }` — origine traçable des `ToolProvenance` juridiques ; ajout non invasif, `run` et `ToolExecutionResult` inchangés, **pas** une refonte) | Tools + Permissions branchés dans `AgentLoop` (inchangé depuis M4) ; intègre désormais en option `@jarvis/memory` (lecture contextuelle, extraction et promotion post-tour) — voir section dédiée « Mémoire contrôlée » |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
-| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) + `gmail.send` (`action: 'execute'`, M8) ; + `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` ; + `OsCredentialSecretStore` (M8-B3, production) ; + `GmailOAuthFlow` PKCE (M8-B2) ; + `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute` (M8) | `gmail.modify`/`gmail.delete` toujours inexistants ; `gmailConnector` utilise `ConnectorRegistry`/`AccountStore`/`SecretStore` via `resolveGmailApiClient` (M8) |
+| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) + `gmail.send` (`action: 'execute'`, M8) ; + `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` ; + `OsCredentialSecretStore` (M8-B3, production) ; + `GmailOAuthFlow` PKCE (M8-B2) ; + `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute` (M8) ; + `legifranceConnector` (LEGAL-02B.2/03B, **lecture seule**, dépend de `@jarvis/legifrance-client`) : `legifrance.ping`, `legifrance.get_article`, `legifrance.search` (`action: 'read'`) | `gmail.modify`/`gmail.delete` toujours inexistants ; `gmailConnector` utilise `ConnectorRegistry`/`AccountStore`/`SecretStore` via `resolveGmailApiClient` (M8) |
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
+| `@jarvis/legal-core` | Modèle juridique pur : **LegalCase v3** (2026-09-25) — `LegalFact` immuable sans état stocké, provenance `human`/`tool`/`deterministic`/`llm`, références d'entrée typées, temporalité `point`/`interval`/`unknown`, `LegalDocument`/`LegalEvidence`, relations `fact_question`/`fact_correction`, `LegalFactValidation`, conflits/résolutions/règles, `deriveFactEpistemicState` (R1 → R7), empreintes, append-only, lecteur/validateur/écrivain v3 **strict** et lecteur/validateur **legacy v2** ; plus `LegalSource` (versionnée, temporelle), `LegalCitation` (ADR-0020), `LegalResearchItem`…, `attachSourcesAndCitations` (sur dossier v3) | **non suivi par git** ; feuille (aucune dépendance interne) ; aucun réseau ; aucun chiffrement ; **aucun contenu textuel** ; aucune migration v2 → v3 ; consommé par aucune application |
+| `@jarvis/legal-research` | `LegifranceSourceProvider`/mapping (LEGAL-02B.3) ; types et ports du Research Engine (LEGAL-03A) ; `LegifranceSearchAdapter`, `LegifranceRetrievalAdapter`, `ResearchEngine` borné (LEGAL-03B) ; `VersionResolver` pur et son intégration au moteur (ADR-0018) ; récupération bornée de la version résolue, `resolvedRetrieval` (ADR-0019) ; projection pure `projectCitations` ResearchResult → sources + citations (ADR-0020) ; contenu transitoire vérifié `RetrievedContent` et contrat de hash `computeContentHash` (ADR-0021) | **non suivi par git** ; dépend de `@jarvis/core` + `@jarvis/legal-core` uniquement ; n'importe ni `connectors` ni `legifrance-client` (ESLint + test) ; aucune application ne le consomme |
+| `@jarvis/legifrance-client` | Client PISTE/Légifrance (LEGAL-02B.1) : configuration sandbox/production, OAuth `client_credentials`, `LegifranceHttpClient`, erreurs typées | **non suivi par git** ; dépend de `@jarvis/connectors` (cycle de packages préexistant avec `connectors`) ; credentials via `SecretStore` |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
 | `apps/desktop` | Client CLI (`connect`, `read`, `inbox`, `prepare-reply`, `send`, `disconnect`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`) |
 
@@ -134,6 +173,16 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
   - `AgentLoop` n'appelle **jamais** `tool.execute()` — uniquement `ToolExecutor`.
   - `confirmedTools` est **par nom d'outil** : confirmer `A` n'autorise pas `B`.
   - Un outil bloqué (deny / confirmation / inconnu / entrée invalide / erreur) arrête le tour (`stopReason: 'tool_blocked'`).
+  - `AgentLoopOptions` accepte aussi, en option, `memory`/`memoryContextFilter`/
+    `memorySelector`/`memoryExtractor`/`memoryPromoter` (ou
+    `memoryPromotionPolicy`) (`@jarvis/memory`) — comportement historique
+    strictement inchangé en leur absence.
+  - `AgentResult` porte aussi `memoryCandidates`/`memoryPromotions`, toujours
+    `[]` si aucune option mémoire n'est fournie. Extraction best-effort après
+    la fin du tour, jamais pendant ; promotion déléguée à `MemoryPromoter`,
+    jamais décidée par `AgentLoop` lui-même (voir « Mémoire contrôlée »).
+  - **Aucune application ne fournit ces options aujourd'hui** — voir section
+    dédiée « Mémoire contrôlée » et `docs/adr/0007-memory-promotion-policy.md`.
 
 ## Invariants de sécurité vérifiés par les tests
 
@@ -146,6 +195,98 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 - `AgentLoop` ne dépasse jamais `maxIterations`.
 - `AgentLoop` passe toujours par `ToolExecutor` (les cas deny/inconnu/invalide laissent le compteur d'exécution à 0).
 - Aucun test ne nécessite de clé API ni de réseau (vérifié : suite relancée avec un hook `require` qui échoue si `@anthropic-ai/sdk` ou `undici` est chargé → 59/59 passent).
+
+## Mémoire contrôlée (`@jarvis/memory`)
+
+Package `packages/memory` (commit `acf57c7`), **feuille** : aucune
+dépendance interne. Fournit à `AgentLoop` une mémoire contextuelle
+optionnelle — lecture avant chaque appel modèle, extraction de candidats
+après la conversation, promotion conditionnelle vers un stockage durable.
+
+**A. Le package existe** et est testé indépendamment d'`AgentLoop`.
+
+**B. La promotion est disponible dans le code**, mais **la décision
+d'accepter, refuser ou exiger une confirmation appartient exclusivement à
+la `MemoryPromotionPolicy` configurée — `AgentLoop` ne décide jamais
+lui-même de l'acceptation d'une mémoire.** `AgentLoop` se contente
+d'appeler `MemoryPromoter.promote()` sur chaque candidat extrait, après la
+fin du tour :
+
+```
+Message + réponse finale de l'assistant
+      ↓  MemoryExtractor.extract()          — une seule fois, après le tour
+MemoryCandidate { kind, subject, statement, provenance }
+      ↓  validateMemoryCandidate()          — schéma fermé
+      ↓  promoteMemoryCandidate()           — exige provenance='llm_proposed' par défaut
+      ↓  MemoryPromotionPolicy.decide()     — accept / reject / confirm
+      ↓  MemoryPromoter.promote()           — applique la décision, jamais AgentLoop
+MemoryEntry (InMemoryMemoryStore ou FileMemoryStore)
+```
+
+- **Provenance à 5 niveaux**, de la plus fiable à la moins fiable :
+  `user_stated` > `user_confirmed` > `email_extracted` > `inferred` >
+  `llm_proposed`. Une sortie LLM ne peut **jamais** se déclarer
+  `user_stated` — verrouillé au niveau du parseur d'extraction, pas
+  seulement au niveau du prompt.
+- **Deux `MemoryPromotionPolicy` fournies** : `createDefaultMemoryPromotionPolicy`
+  (accepte automatiquement tout candidat structurellement propre) et
+  `createConservativeMemoryPromotionPolicy` (même filtre, mais un candidat
+  propre devient toujours `confirm` — aucune promotion automatique).
+  **`docs/adr/0007-memory-promotion-policy.md` retient
+  `createConservativeMemoryPromotionPolicy` comme policy de référence en
+  production**, pour toute application et tout mode ;
+  `createDefaultMemoryPromotionPolicy` reste réservée aux tests ou à un
+  usage explicitement maîtrisé et documenté par l'intégrateur — jamais le
+  choix implicite d'une nouvelle intégration.
+- **Stockage non destructif** : `invalidate`/`supersede` marquent ou
+  remplacent, ne suppriment jamais ; lignée traçable dans les deux sens.
+  Aucune expiration automatique.
+- Le contenu d'un email, d'un outil ou d'un document n'est jamais promu
+  directement — seule la réponse finale de l'assistant est source
+  d'extraction. Ce contenu est marqué comme donnée non fiable au niveau du
+  prompt (`AgentLoop`, extraction, résumé/réponse email) : **cette défense
+  reste fondée principalement sur la consigne donnée au modèle, pas sur un
+  contrôle structurel** — un filtre regex instruction-like/sensible
+  constitue un premier filet, pas une garantie d'exhaustivité. Aucune
+  promotion, même sous la policy conservatrice, ne contourne l'exigence de
+  confirmation humaine pour une proposition `llm_proposed` : c'est cette
+  confirmation, pas le filtrage de contenu, qui reste la garantie
+  déterminante contre une injection indirecte réussie.
+
+**C. Aucune promotion n'est câblée en production aujourd'hui.** `apps/api`
+construit `AgentLoop` sans `memory`/`memoryExtractor`/`memoryPromoter`.
+`apps/desktop` n'utilise jamais `AgentLoop`. Le seul autre consommateur,
+`EmailReplyWorkflow` (`@jarvis/inbox`), ne fait que **lire** la mémoire
+(`list()`), jamais écrire, et n'est câblé dans aucune commande CLI ni route
+API. Le mécanisme complet n'est aujourd'hui exercé que par les tests.
+
+**D. Garanties déjà présentes dans le code** : verrouillage de provenance
+(ci-dessus) ; aucune écriture mémoire en cours de tour, uniquement après ;
+aucune réinjection d'une mémoire fraîchement promue dans le tour courant ;
+aucune mémoire jamais traitée comme message système, y compris un contenu
+instruction-like promu sous une policy permissive ; jeton `user_confirmed`
+non falsifiable depuis l'extérieur du package.
+
+**E. Travaux encore nécessaires avant toute extension de l'autonomie** :
+- filtre de sensibilité limité à des formes credential-shaped (clé API,
+  jeton, mot de passe) — aucune classification dédiée aux données
+  personnelles, financières ou médicales ;
+- aucune détection de contradiction entre une mémoire existante et un
+  nouveau candidat, aucune déduplication ;
+- `MemoryStore.supersede()` n'a aujourd'hui **aucun garde-fou codé**
+  empêchant de dégrader silencieusement la provenance d'une mémoire
+  existante — seule une règle documentée (`ADR-0007`) l'interdit, rien ne
+  l'empêche encore techniquement ;
+- `FileMemoryStore` persiste en JSON **non chiffré**, sans restriction de
+  permissions dédiée ;
+- aucun chemin utilisateur (CLI/API) pour corriger ou supprimer une mémoire
+  promue.
+
+Décisions d'architecture : `docs/adr/0006-confirmation-fingerprint-for-execute-actions.md`
+(confirmation des actions `execute`, prérequis avant tout branchement
+`AgentLoop` → `ToolExecutor` autonome) et
+`docs/adr/0007-memory-promotion-policy.md` (policy de promotion de
+référence, conditions préalables à toute promotion automatique élargie).
 
 ## Architecture connecteurs (`@jarvis/connectors`)
 
@@ -346,7 +487,7 @@ obligatoire.
   refresh token est rejeté (`invalid_grant`) ou si l'API Gmail refuse
   l'envoi, jusqu'au message affiché par la CLI.
 
-**530 tests / 50 fichiers** au total (voir « Vérifications » ci-dessous).
+**530 tests / 50 fichiers** au total à l'issue de M8 (état historique ; total courant vérifié le 2026-09-25 : **2196 tests / 125 fichiers**, domaine juridique et LegalCase v3 inclus — voir « Vérifications » ci-dessous).
 Décisions architecturales de M8 formalisées dans `docs/adr/0001` à `0005`.
 
 `disconnectGmailAccount()` (`packages/connectors/src/gmail/gmail-connection.ts`)
@@ -441,6 +582,8 @@ Détail complet : `docs/second-readonly-vertical-slice.md`,
   encore de bloc `tool_result` structuré).
 - Une entrée dans `confirmedTools` vaut pour **tout le tour** : si le modèle
   rappelle le même outil confirmé plusieurs fois dans un tour, chaque appel passe.
+  Décision actée pour toute future action `execute` : voir
+  `docs/adr/0006-confirmation-fingerprint-for-execute-actions.md`.
 - `apps/api` n'expose pas encore outils / confirmations via HTTP.
 
 ### Volontairement repoussé (décisions à trancher plus tard)
@@ -469,6 +612,392 @@ Foundation` (flux de connexion initiale, stockage sécurisé du refresh
 token, modèle de confirmation utilisateur) sont **toutes tranchées et
 implémentées par M8** (voir section dédiée ci-dessus). Point encore ouvert,
 non prioritaire : `apps/api` reste sans aucun outil connecteur branché.
+
+## Domaine juridique (LEGAL-00 → LegalCase v3)
+
+**Statut au 2026-09-25** : blocs **CLOSED** — LEGAL-00 → LEGAL-03B ;
+VersionResolver ; Version Resolution Integration ; Resolved Version Retrieval ;
+Research → Case ; Content Exposure ; **LegalCase v3 (Fact / Provenance / Evidence /
+Temporal)** ; **`ToolExecutor.runTracked`** ; **Post-Implementation Review**
+(PASS WITH ATTENTION). Prochaine étape : **LEGAL-04 — Fact & Case Engine**
+(périmètre détaillé non décidé ; aucun LEGAL-03C n'est planifié). **Tout le
+domaine légal est non suivi par git** : « terminé » = implémenté et validé dans
+l'environnement de travail, **pas committé**. Spécification fondatrice :
+`LEGAL_SPECIFICATION.md` (LEGAL-00). Décisions d'architecture :
+`docs/adr/0011` à `0021` — ADR-0018 (VersionResolver), ADR-0019 (récupération de
+la version résolue), ADR-0020 (vertical slice Research → Case), ADR-0021
+(Content Exposure).
+
+### Jalons
+
+| Jalon | Contenu | Statut |
+|---|---|---|
+| LEGAL-00 | Spécification canonique et règles de gouvernance (`LEGAL_SPECIFICATION.md`) | terminé |
+| LEGAL-01 | Modèle de données `LegalCase` (`@jarvis/legal-core`) | terminé |
+| LEGAL-01REV | Revue d'architecture du modèle | terminé |
+| LEGAL-02A | `LegalSource` versionnée/temporelle, `LegalCitation`, chaîne d'audit Conclusion → Argument → Analysis → Citation → Source, format de fichier v2 | terminé |
+| LEGAL-02B.1 | Client PISTE/Légifrance : configuration, OAuth `client_credentials`, client HTTP, erreurs (`@jarvis/legifrance-client`) | terminé |
+| LEGAL-02B.2 | Connecteur Légifrance en lecture seule : `legifrance.ping`, `legifrance.get_article` | terminé |
+| LEGAL-02B.2.1 / 02B.2.2 | Vérification et exploration réelles du contrat `getArticle` en Sandbox (résilience) | terminés — **aucun script ni rapport archivé dans le dépôt** |
+| LEGAL-02B.3 | `LegifranceSourceProvider.getArticle` + mapping vers `LegalSource` | terminé |
+| LEGAL-03A | Architecture du Research Engine : types, ports, ADR 0011–0017 | terminé |
+| LEGAL-03B | Tool `legifrance.search`, adaptateurs de recherche et de récupération, `ResearchEngine` borné | terminé / clôturé |
+| VersionResolver | Résolution temporelle **pure** `resolveVersion`/`versionResolver` : convention de bords conservatrice, complétude d'historique `complete \| unknown` **déclarée par l'appelant** (jamais déduite), `none_applicable` seulement si `complete` (ADR-0018) | terminé / clôturé |
+| Version Resolution Integration | Regroupement des candidats par article (`identifierKey`), `assembleVersionHistory`, un appel du resolver par groupe, `ResearchCandidate.versionResolution` ; `none_applicable` → rejet `no_applicable_version` ; `asOf` validé avant tout appel réseau (ADR-0018) | terminé / clôturé |
+| Resolved Version Retrieval | `resolvedRetrieval` (`initial` \| `shared` \| `retrieved`) ; capacité optionnelle `canRetrieveVersion?`/`retrieveVersion?` sur `RetrievalPort` ; **un seul saut**, sans récursion ; même budget `maxRetrievedSources` ; identité contrôlée (`malformed_response`) ; rejets porteurs de `targetVersionId` ; aucune `SearchReference` fabriquée (ADR-0019) | terminé / clôturé |
+| Research → Case | `projectCitations` (pure) : `ResearchResult` → `LegalSource` + `LegalCitation` de niveau source ; `LegalCitation.contentHash?` et `eligibility?` ; `ResearchCandidate.historyCompleteness?` ; `attachSourcesAndCitations` (`legal-core`) ; format de fichier v2 inchangé ; aucun `LegalResearchItem` (ADR-0020) | terminé / clôturé |
+| Content Exposure | Contenu juridique (`texte`) **transitoire et vérifié** : `RetrievedContent` opaque, `content?` sur `RetrievalResult` et `VersionTargetResult`, hash normatif `computeContentHash` (SHA-256, UTF-8, sans normalisation), recontrôle d'intégrité par l'adaptateur ; aucun appel réseau de plus ; aucune persistance (ADR-0021) | terminé / clôturé |
+| LegalCase v3 — Fact / Provenance / Evidence / Temporal | Décisions Q1–Q10, B1–B4, U1 **CLOSED** ; modèle **implémenté** dans `@jarvis/legal-core` (voir « LegalCase v3 » ci-dessous) : `LegalFact` immuable, état épistémique **dérivé** (R1 → R7), provenance, références d'entrée, temporalité, document/pièce, relations, validations, conflits/résolutions/règles, empreintes, append-only, lecteur legacy v2 / lecteur-validateur-écrivain v3 strict, **aucune migration implicite** | **COMPLETED / CLOSED** (2026-09-25) |
+| `ToolExecutor.runTracked` | `@jarvis/core` : `{ invocationId, result }`, UUID v4 par exécution, tous statuts couverts ; `run` et `ToolExecutionResult` inchangés | **IMPLEMENTED / CLOSED** (2026-09-25) |
+| Post-Implementation Review LegalCase v3 | Conformité au contrat gelé : aucune violation ; quatre attentions non bloquantes A1–A4 ; 125 fichiers / 2196 tests, `tsc` et `eslint` PASS | **CLOSED — PASS WITH ATTENTION** (2026-09-25) |
+
+(Explorations réelles LEGAL-03.0 / 03.0A : leurs conclusions figurent dans les
+ADR 0011–0017 sous forme de faits [OBSERVÉ] ; les sorties brutes n'ont pas été
+archivées.)
+
+### Architecture
+
+**Architecture cible** (vision) :
+
+```
+LegalQuestion
+→ Query planning
+→ SearchQuery
+→ SearchPort
+→ SearchResultPage
+→ SearchReference
+→ déduplication / budget
+→ ResearchCandidate
+→ RetrievalPort
+→ RetrievalResult
+→ VersionResolver
+→ LegalResearchItem / LegalCitation
+```
+
+**Implémenté aujourd'hui** :
+
+```
+SearchQuery (construite à la main : aucun query planning)
+→ SearchPort → SearchResultPage → SearchReference
+→ déduplication / budget → ResearchCandidate
+→ RetrievalPort → RetrievalResult (+ contenu transitoire vérifié)
+→ regroupement authority + identifier → VersionHistory (complétude `unknown`)
+→ VersionResolver → versionResolution
+→ [un saut] retrieveVersion → VersionTargetResult (+ contenu) → resolvedRetrieval
+→ ResearchResult                                     (transitoire, non persisté)
+── projectCitations(result, question)   [pure]
+→ LegalSource + LegalCitation (eligibility : questionId, asOf, resolved, historyCompleteness)
+── attachSourcesAndCitations(case, …)   [pure, revalidée]
+→ LegalCase (v3)
+```
+
+(Avant le 2026-09-25 le dossier était au format v2 ; la v2 est désormais **legacy**,
+lecture seule — voir « LegalCase v3 ».)
+
+Une `LegalCitation` produite ici signifie « source **retrouvée et applicable** »
+(éligible), **pas** pertinente pour la question ni utilisée comme preuve dans un
+raisonnement. Une résolution `resolved` sur un historique `unknown` reste une
+résolution « au mieux » : l'incertitude est conservée dans la citation.
+
+**Non implémenté** : **production de faits (Fact & Case Engine : aucun producteur ni extracteur de faits — prochaine étape LEGAL-04)** ; query planning ; production de `LegalResearchItem` ;
+analyse juridique (ANALYZE), VERIFY, PREPARE ; production de `LegalArgument` / `LegalAnalysisNote` / `LegalConclusion` (types et validation existent, aucun producteur) ; producteurs d'`actorId` / `interactionId` ; métadonnées LLM (`@jarvis/llm` n'expose ni fournisseur, ni modèle, ni identifiant d'appel) ; **pertinence** et
+**« evidence-used »** (aucun marqueur, aucun producteur) ; persistance de la
+provenance de recherche (rejets, lacunes et provenance technique restent dans le
+`ResearchResult`, hors `LegalCase`) ; persistance, chiffrement, rechargement ou
+artefact du contenu et persistance du dossier (aucun Case Store ; le texte est transitoire) ; `texteHtml` (non exposé) ;
+transitions de workflow ; composition root de production et permissions de
+production complètes pour les Tools `legifrance.*` ; multi-source ; intégration
+LLM dans le domaine juridique.
+
+### Composants implémentés
+
+- **`@jarvis/legal-core`** : modèle **LegalCase v3** (voir sous-section dédiée
+  ci-dessous), validation runtime stricte, lecteur/écrivain v3, lecteur et
+  validateur legacy v2. Aucun réseau, aucun chiffrement au repos, aucune
+  transition de statut appliquée (la validation ne vérifie que l'appartenance à la
+  liste des étapes). Depuis ADR-0020 : `LegalCitation.contentHash?` et
+  `eligibility?` (`questionId` doit désigner une `LegalQuestion` du dossier ;
+  `asOf` explicite ; `resolution: 'resolved'` ; `historyCompleteness: 'complete' |
+  'unknown'`) et `attachSourcesAndCitations` (pur, immuable, idempotent ; dédup par
+  identité logique `authority` + `identifier` + `version` ; revalide le dossier —
+  **désormais un dossier v3**). **Aucun contenu textuel** dans `LegalSource` ni
+  `LegalCitation`.
+- **`@jarvis/legifrance-client`** : configuration sandbox/production (jamais de
+  défaut), OAuth, client HTTP injectable, erreurs sans secret. Credentials via
+  le `SecretStore` existant (clés `legifrance.<env>.clientId` / `clientSecret`).
+- **Connecteur Légifrance** (`packages/connectors/src/legifrance/`,
+  dépend de `legifrance-client`) : trois Tools `read` — `legifrance.ping`,
+  `legifrance.get_article`, `legifrance.search`. Aucun Tool `prepare`/`execute`.
+  - `legifrance.search` : entrée structurée ; un seul fond, `CODE_DATE` ;
+    `dateVersion` obligatoire (filtre `DATE_VERSION`) ; `typePagination` =
+    `DEFAUT` (jamais `ARTICLE`) ; `sort` = `PERTINENCE` ; le connecteur
+    construit le payload HTTP ; sortie technique.
+- **`@jarvis/legal-research`** :
+  - types : `SearchQuery`, `SearchProvenance`, `SearchReference`,
+    `SearchResultPage`, `SearchMetadata`, `SearchSkippedItem`,
+    `RetrievalRequest`, `RetrievalResult`, `ResearchBudget`,
+    `ResearchCandidate`, `ResearchRejection`, `ResearchGap`, `ResearchResult`,
+    `EffectivePeriod`, `SourceVersionRef`, `VersionResolution`, `VersionHistory`,
+    `VersionCompleteness` (+ `SearchMatchMode`, `SearchField`,
+    `SearchPageRequest`, `ResearchProviderErrorReason`, etc.) ;
+    ajouts LEGAL-03B au contrat 03A : `ResearchSkippedItem`,
+    `ResearchResult.skipped`, `ResearchGap.budget` ; ajouts ADR-0019 à 0021 :
+    `VersionTargetRequest`, `VersionTargetResult`, `ResolvedRetrieval`,
+    `ResearchCandidate.resolvedRetrieval?` / `historyCompleteness?`,
+    `ResearchRejection.targetVersionId?`, `RetrievalResult.content?`,
+    `VersionTargetResult.content?`, `RetrievedContent`, `ContentIntegrityError` ;
+  - ports : `SearchPort`, `RetrievalPort` (avec la capacité **optionnelle**
+    `canRetrieveVersion?`/`retrieveVersion?`, ADR-0019), `VersionResolver`
+    (implémenté) ; erreur `ResearchProviderError` ;
+  - `LegifranceSearchAdapter` : construit l'entrée du Tool, passe **exclusivement**
+    par `ToolExecutor`, parse `results → sections → extracts`. Pour `CODE_DATE`,
+    `resultId` = `titles[0].id` lorsqu'il est présent ; l'absence de `resultId`
+    ne détruit pas les extraits exploitables ; aucun identifiant inventé ;
+    aucune `LegalSource` créée pendant Search ; `sourceTypes` non vide refusé
+    explicitement ; `asOf` obligatoire ;
+  - `LegifranceRetrievalAdapter` : enveloppe `LegifranceSourceProvider.getArticle` ;
+    pas de HTTP, pas de `SecretStore` ; retourne `LegalSource` + versions +
+    version précédente ; **capture le texte pendant l'appel existant** et
+    l'expose comme `content` vérifié (`RetrievedContent`), jamais dans
+    `LegalSource` ; `retrieveVersion` passe par le même `fetchArticle` ;
+    un contenu dont le hash diffère de `source.contentHash` est refusé
+    (`malformed_response`) ;
+  - `ResearchEngine` : agrégation des pages, déduplication par `referenceKey`
+    avec conservation de toutes les occurrences (`sightings`), budgets de
+    recherche/candidats/récupération (obligatoires, sans valeur par défaut),
+    rejets, lacunes (`no_search_result`, `unexposed_articles`,
+    `budget_truncated`), éléments écartés (`skipped`), arrêt borné ; résolution
+    de version par groupe d'article et récupération bornée de la version résolue
+    (un saut, même budget). Pas de ranking métier, pas de query planning ;
+  - **`VersionResolver`** (ADR-0018) : `resolveVersion`/`versionResolver`, pur,
+    sans horloge ; `asOf` ISO 8601 (date seule ou avec décalage explicite) ;
+    date sur une borne → `indeterminate`/`boundary_date` ; plusieurs versions →
+    `ambiguous_overlap` ; `none_applicable` uniquement si l'historique est
+    déclaré `complete`, ce que le moteur ne fait jamais par lui-même ;
+  - **Resolved Version Retrieval** (ADR-0019) : voir jalons ; `resolvedRetrieval`
+    présent si et seulement si la résolution est `resolved` **et** la source de
+    cette version est disponible ; absent pour `indeterminate`, `none_applicable`,
+    `asOf` absent, échec de la cible, budget épuisé ;
+  - **`projectCitations`** (ADR-0020) : éligibilité déterministe (candidat
+    hydraté + `resolved` + `resolvedRetrieval` + source valide et cohérente),
+    déduplication `authority` + `identifier` + `version`, `id` de citation
+    déterministe, sans réseau ni LLM ; les rejets, lacunes et éléments écartés
+    restent dans le `ResearchResult` ;
+  - **Contenu** (ADR-0021) : `RetrievedContent` — constructeur privé, texte en
+    champ privé (`revealText()`), absent de `JSON.stringify`, du spread, de
+    `structuredClone`, de `util.inspect` ; `computeContentHash`/`verifyContentHash`
+    = SHA-256 des octets UTF-8 de `texte` tel que reçu, **sans normalisation** ;
+    texte `null`/vide/blanc → `malformed_response` (inchangé).
+
+### LegalCase v3 — Fact / Provenance / Evidence / Temporal (COMPLETED / CLOSED, 2026-09-25)
+
+Décisions d'architecture **Q1–Q10, B1–B4 et U1 : CLOSED** (gelées avant
+implémentation). Modèle **implémenté** dans `@jarvis/legal-core` ; **125 fichiers /
+2196 tests verts** (dont `legal-core` 567, `core` 142), `tsc --noEmit` PASS,
+`eslint .` PASS, tests d'architecture PASS. Post-Implementation Review : **CLOSED —
+PASS WITH ATTENTION** (aucune violation ; conclusion : LegalCase v3 conforme).
+
+**Format.** `LegalCase` v3 = 25 champs racine, **clés fermées**. Les modules du modèle
+Fact sont dédiés (un module = une responsabilité) ; `legal-case.ts` ne porte que la
+racine. Les listes `facts`, `documents`, `evidence`, `relations`, `factValidations`,
+`conflicts`, `resolutionProposals`, `ruleExecutions`, `resolutions` sont **append-only**.
+
+- **`LegalFact` immuable** : `id`, `statement`, `temporal`, `provenance`, `recordedAt`.
+  Clés fermées ; **aucun** `status` / `certainty` / `epistemicState` / `confidence` ;
+  pas de `sourceRef` (v2). Une correction crée un **nouveau** fait + une relation.
+- **Provenance** : `origin` ∈ `human` / `tool` / `deterministic` / `llm` (discriminant
+  unique ; **`document` n'est pas un origin**) ; variantes à clés fermées (`human` :
+  `actorId`, `interactionId` ; `tool` : `toolName`, `invocationId`, `connectorId`,
+  `accountId?` conditionnel — jamais `Account.accountIdentifier` ; `deterministic` :
+  `operationId`, `operationVersion`, `executionId` ; `llm` : `provider`, `model`,
+  `invocationId`, `instructionVersion`). Identifiants opaques (format restreint).
+- **Références d'entrée** (`inputReferences`) : `evidence`, `document`,
+  `tool_invocation`, `source`, `fact`, `question`. **Substantielles** : `evidence`,
+  `document`, `tool_invocation`, `source`, `fact` ; **`question` ne l'est pas** ;
+  **`fact` l'est inconditionnellement** (critère syntaxique sur le `kind`, aucune
+  récursion Fact → Fact). Les références à un fait ou une pièce sont **épinglées** par
+  empreinte ; les cycles sont refusés.
+- **Temporalité** : `point` / `interval` / `unknown`, précision `day` / `month` /
+  `year` **par borne**, intervalles **fermés** (aucun intervalle ouvert), parseur strict
+  (jamais `Date.parse`), **aucune conversion de précision** (`2025` ≠ `2025-01-01`,
+  `2025-03` ≠ `2025-03-01`), jamais un `asOf`. `start <= end` : règle du possible.
+- **Document / pièce** : `LegalDocument` (`provided` / `drafted`, `contentHash?`,
+  provenance) ; `LegalEvidence` **documentaire** (`documentId` + localisation,
+  document `provided` seulement) ou **non documentaire** (provenance jamais `llm`).
+  Relation pièce → fait uniquement par `inputReferences` (« produit à partir de »,
+  pas « prouve »).
+- **Relations** : `fact_question` (N:N, jamais `llm` ; seule source de la pertinence
+  d'un conflit pour une question) ; `fact_correction` (humain ou déterministe).
+- **`LegalFactValidation`** : événement séparé, immuable, `confirm` / `reject`,
+  humain, épinglé sur le fait ; « dernière validation effective » = dernière par
+  position dans la liste.
+- **Conflits / résolutions / règles** : conflit **sans `questionId`** ; propositions
+  LLM dans une liste et un type séparés (**aucun effet** sur l'état) ; résolutions
+  `retain` / `discard` / `retain_multiple`, une seule effective par conflit
+  (`supersedesResolutionId`), une résolution déterministe ne remplace pas une
+  résolution humaine ; catalogue de règles versionnées, whitelistées, pures, sans
+  score (contrat et registre ; aucune règle concrète définie).
+- **État épistémique dérivé** : `deriveFactEpistemicState(fact, question, ctx)` —
+  pure, sans I/O ni horloge ni LLM, `RangeError` si le fait n'est pas lié à la
+  question. Ordre **strict** : R1 conflit non résolu pertinent → `contradictory` ;
+  R2 résolution effective `retain` → `established` ; R3 fait corrigé → `alleged` ;
+  R4 dernière validation `reject` → `alleged` ; R5 dernière validation `confirm` →
+  `established` ; R6 référence substantielle → `alleged` ; R7 aucune → `unknown`.
+  `discard` et `retain_multiple` n'ont pas de règle propre.
+- **Empreintes** : canonicalisation versionnée (v1, promotion de l'ancien
+  `stableStringify`), SHA-256, stockées dans l'objet qui référence ; elles ne prouvent
+  **pas** l'intégrité d'un fichier externe.
+- **Append-only** : `checkAppendOnly`, `assertAppendOnly`, `appendToLegalCase` (ids
+  uniques, ordre conservé, aucun remplacement ni suppression silencieux ; whitelist
+  des règles vérifiée à l'ajout).
+- **v2 legacy / v3 strict** : `parseLegacyLegalCaseFile` + `validateLegalCaseV2`
+  (figés, lecture seule, aucun écrivain v2) ; `parseLegalCaseFile` (strict),
+  `validateLegalCaseV3`, `serializeLegalCaseFile` (valide avant d'écrire). Un fichier
+  v2 est refusé par le lecteur strict (`legacy_version`), un fichier v3 par le lecteur
+  legacy ; **aucune migration implicite**, aucune conversion v2 → v3 (elle
+  inventerait provenance, temporalité et état).
+- **`ToolExecutor.runTracked(request)`** (`@jarvis/core`) → `{ invocationId, result }` :
+  fournit une origine traçable aux `ToolProvenance` (UUID v4 par exécution, tous
+  statuts couverts). Ajout non invasif : `run` et `ToolExecutionResult` inchangés ;
+  ce n'est **pas** une refonte de `ToolExecutor`.
+
+**Frontières.** `legal-core` reste une feuille : aucun `@jarvis/*`, seul module node
+`node:crypto`, modules purs sans horloge ni aléa ni I/O (test d'architecture) ;
+provenance = donnée, jamais dépendance vers le producteur.
+
+**Non fait volontairement** (hors périmètre de ce bloc) : production de faits,
+métadonnées `@jarvis/llm`, producteurs d'`actorId` / `interactionId`, Case Store,
+chiffrement, migration v2 → v3, ANALYZE / VERIFY / PREPARE.
+
+### Principes établis
+
+- Search = découverte ; Retrieval = hydratation. `SearchReference` n'est pas une
+  `LegalSource` ; une `LegalSource` n'est jamais construite depuis un résultat
+  de recherche.
+- `dateVersion` n'est pas `effectiveFrom` ; aucune `publicationDate` n'est
+  fabriquée ; `consultedAt` n'est jamais une date de validité juridique.
+- Clés d'identité : `referenceKey` = `authority` + `candidateId` (avant
+  récupération) ; `sourceKey` = `authority` + `identifier` + `version` (après).
+  `cid` seul n'est **pas** une clé de déduplication correcte (il fusionnerait
+  des versions) ; `contentHash` ne participe pas à l'identité juridique.
+- `ToolExecutor` reste l'unique point d'exécution ; `legal-research` n'importe ni
+  `@jarvis/connectors` ni `@jarvis/legifrance-client` ni `SecretStore`, et
+  n'utilise pas `fetch` (ESLint + test exécutable).
+- La résolution temporelle est implémentée (ADR-0018) ; « aucune version
+  applicable » est une réponse légitime mais ne peut survenir que sur un
+  historique déclaré `complete`, ce que le moteur n'établit jamais : un `resolved`
+  reste « au mieux » (`historyCompleteness: 'unknown'`).
+- Trois notions distinctes : *retrouvée* (récupérée), *applicable* (résolue à
+  `asOf`), *éligible à la citation* = les deux, vérifiée structurellement. La
+  pertinence et l'usage comme preuve appartiennent à ANALYZE et ne sont pas
+  représentés.
+- Le texte juridique est **transitoire** : porté par les résultats de
+  récupération, jamais par `LegalSource`, `LegalCitation` ni `LegalCase`.
+- Aucun appel réseau dans les tests.
+
+### Faits observés en Sandbox PISTE (LEGAL-03.0 / 03.0A)
+
+Observations, **pas des décisions** (détail et limites : ADR 0011–0017) :
+
+- `/search` sur `CODE_DATE` pagine des **résultats = codes instantanés**, pas des articles ;
+  sans filtre de date l'ordre est instable et les mêmes articles se répètent.
+- `typePagination: ARTICLE` est accepté (HTTP 200) mais n'est pas appliqué.
+- Un résultat expose peu d'extraits (3 au plus observé) et `moreArticlesCount`.
+- Article multi-version observé (L3121-27) : `cid` = `id` de la version 1.0 ;
+  `id` et `versionArticle` changent ; `getArticle(cid)` renvoie la 1.0 ; les
+  bornes de versions peuvent laisser un trou (2 910 jours).
+- Sentinelle « pas de borne » `2999-01-01` ; `datePublication` d'un résultat vaut
+  cette sentinelle ; `dateVersion` d'un extrait = début (en vigueur) ou fin (abrogé).
+
+### Dette technique connue
+
+- **Test préexistant instable** : `packages/legal-research/src/legifrance-source-mapping.test.ts`,
+  test « 14. lienCitations… ». Il appelle le mapper deux fois sans horloge
+  injectée, donc `consultedAt` diffère quand l'horloge change de milliseconde
+  (échec intermittent, observé d'environ 1 exécution sur 4 à 1 sur 16). **Non
+  modifié, non corrigé** ; dette indépendante des blocs LEGAL.
+- `LegalSourceProvider` (LEGAL-02B.3) reste typé Légifrance (retourne
+  `MapLegifranceArticleResult`) ; conservé tel quel (ADR-0015).
+- Cycle de packages `connectors` ↔ `legifrance-client`, préexistant, non traité.
+- Credentials Sandbox : sous WSL, le `SecretStore` est le trousseau noyau
+  (volatile, perdu au redémarrage de la VM) ; aucun script d'initialisation
+  n'existe dans le dépôt.
+
+### Points OUVERTS (aucun n'est une décision)
+
+Autres fonds Légifrance · longueur et rôle de `titles[]` · stabilité du ranking
+sous filtre · `pageSize` maximal · articles au-delà des extraits exposés ·
+fuseau et bornes exactes de `DATE_VERSION` (inclusivité réelle des bornes du
+resolver non observée) · support de `sourceTypes` (le **refus explicite** est
+décidé ; le support reste ouvert) · `any_term` (`UN_DES_MOTS`, documenté,
+jamais observé) · composition root de production · permissions de production
+(`PermissionManager` refuse par défaut) · rôle, lien à la question et niveau de
+synthèse de `LegalResearchItem` (aucun producteur) · stockage durable du
+contenu, rechargement ou artefact, chiffrement · `reliability`
+Sandbox/production · cache · multi-source · erreurs structurées
+(`ToolFailed.reason` reste une chaîne) · correctif du test instable · origine
+de `asOf` d'une question (faits datés, saisie explicite) · une même version
+citée à deux `asOf` pour une même question donne deux citations (fusion
+éventuelle non décidée) · périmètre détaillé de **LEGAL-04 — Fact & Case Engine**
+(prochaine étape, non décidé) · producteurs d'`actorId` / `interactionId`,
+métadonnées `@jarvis/llm`, câblage de `connectorId` (`describeCapabilities`) ·
+persistance et chiffrement du dossier (aucun Case Store).
+
+### Points d'attention des derniers blocs (conservés, NON résolus)
+
+Issus des mini-reviews de Research → Case et de Content Exposure ; aucun n'est
+bloquant, aucun n'est corrigé :
+
+1. **`RetrievedContent`** : « vérifié par construction » n'est vrai qu'au typage
+   (constructeur `private` et `readonly` sont des notions TypeScript) ;
+   contournable à l'exécution. Les consommateurs doivent appeler `assertMatches`
+   et ne pas se fier au champ `contentHash`.
+2. **Lien contenu ↔ source** : ni le moteur ni le type ne l'imposent pour un port
+   autre que Légifrance ; seul l'adaptateur Légifrance le contrôle.
+3. **Hash** : un surrogate Unicode isolé est encodé comme U+FFFD (deux chaînes
+   distinctes peuvent avoir le même hash) ; l'algorithme n'est pas inscrit dans
+   la valeur du hash.
+4. **Rétention transitoire** : le contenu est retenu pour toutes les versions
+   récupérées, y compris non applicables, jusqu'à la fin du run.
+5. **`AgentLoop`** : si un Tool Légifrance était branché, `JSON.stringify` de sa
+   sortie brute enverrait `texte` au modèle (chemin antérieur à Content
+   Exposure ; rien n'est branché aujourd'hui).
+6. **Articles à texte vide** : irrécupérables (`malformed_response`) ; le format
+   réel de `texte` (HTML éventuel, entités, fins de ligne) n'a jamais été
+   observé, donc la stabilité du hash à un rechargement est non vérifiée.
+7. **JSDoc de `LegalCitation`** : le commentaire de classe parle encore d'une
+   « mobilisation dans un raisonnement » ; il est à aligner avec « source
+   éligible » (ADR-0020).
+8. **Collisions de vocabulaire** : `LegalEvidence` désigne une pièce du dossier,
+   pas l'usage comme preuve ; `resolvedRetrieval.mode = 'retrieved'` désigne un
+   saut, pas l'état « retrouvée ».
+9. **Exhaustivité** : `unknown` ne doit jamais être promu en `complete` ;
+   l'absence de donnée n'est pas `unknown`.
+10. **`attachSourcesAndCitations`** : parmi des doublons d'identité logique déjà
+    présents dans un dossier, il réutilise la **dernière** source.
+11. **Test instable préexistant** `legifrance-source-mapping.test.ts` (n°14),
+    maintenu, non corrigé.
+
+### Attentions de LegalCase v3 (Post-Implementation Review — PASS WITH ATTENTION, NON bloquantes)
+
+Issues de la review post-implémentation ; **aucune n'est une violation**, aucune
+n'est un blocker, aucune n'est corrigée à ce jour :
+
+- **A1 — Protection des documents `drafted`.** Une `LegalEvidence` documentaire
+  bloque un document `drafted` comme fondement, mais une `inputReference` directe de
+  kind `document` peut encore référencer un document `drafted`.
+- **A2 — Comportements vérifiés par sonde, sans test dédié** : une référence
+  `question` sans relation `fact_question` ne crée aucune pertinence (la dérivation
+  lève `RangeError`) ; `discard` combiné à `confirm` donne `established` (R5, ordre
+  R1 → R7 appliqué à la lettre).
+- **A3 — Couverture dédiée du legacy v2 limitée** : les anciens tests de validation
+  ciblent le validateur v3 ; le validateur et le lecteur legacy ont peu de tests
+  dédiés (le code legacy est le code d'origine déplacé sans modification).
+- **A4 — Limites préexistantes** : certaines entités conservées de la v2 (sources,
+  citations, arguments…) ont des clés ouvertes ; `createdAt` / `updatedAt` du dossier
+  ne sont validés que comme chaînes non vides ; `tool_invocation` n'est vérifié qu'en
+  forme (aucun journal d'appels) ; l'append-only n'est pas imposé directement par le
+  lecteur ni l'écrivain.
 
 ## Moteur de classification d'emails (`@jarvis/classification`)
 
@@ -751,8 +1280,14 @@ Ce document ne tranche aucune de ces directions.
   de l'API reste vide de tout outil connecteur. (La commande CLI `inbox` de
   `apps/desktop`, elle, câble `fetchAndClassifyEmails` — mais s'arrête à la
   classification : ni résumé, ni triage, ni feedback.)
-- Pas de mémoire persistante, pas de streaming, pas de WebSocket.
-- Pas d'outil filesystem / shell / réseau générique.
+- ~~Pas de mémoire persistante~~ **`@jarvis/memory` existe** (mémoire
+  contrôlée, `FileMemoryStore` pour la persistance locale) mais **n'est
+  câblée dans aucune application** — voir « Mémoire contrôlée
+  (`@jarvis/memory`) » ci-dessus et
+  `docs/adr/0007-memory-promotion-policy.md`. Pas de streaming, pas de
+  WebSocket.
+- Pas d'outil filesystem / shell / réseau générique. (Les Tools `legifrance.*` appellent un client HTTP dédié à Légifrance, pas un outil réseau générique.)
+- Domaine juridique (état au 2026-09-25, LegalCase v3 clos) : ni production de faits (Fact & Case Engine — prochaine étape LEGAL-04), ni query planning, ni production de `LegalResearchItem`, `LegalArgument`, `LegalAnalysisNote` ou `LegalConclusion`, ni analyse juridique (ANALYZE), VERIFY ou PREPARE, ni Case Store ni chiffrement du dossier, ni pertinence ou « evidence-used », ni persistance de la provenance de recherche, ni persistance, chiffrement ou rechargement du contenu (le texte est transitoire) ; aucune application (`apps/api`, `apps/desktop`) ne consomme les packages légaux ; pas de composition root de production pour Légifrance. Voir « Domaine juridique ».
 
 ## Vérifications (après M4 + connecteurs + classification + Gmail M5 + inbox M6 + M7 + Connector Architecture Foundation + M8 + surface CLI desktop post-M8)
 
@@ -777,6 +1312,25 @@ Ce document ne tranche aucune de ces directions.
   l'exécution des tests. `InMemorySecretStore` (nouveau) ne dépend
   d'aucun mécanisme externe.
 - Aucun secret réel, aucun nouveau fichier `.env`.
+
+**Addendum LegalCase v3 (2026-09-25, vérifié par exécution — état courant)** : suite
+complète **2196 tests / 125 fichiers verts** (`npx vitest run`), `tsc --noEmit`
+PASS, `eslint .` PASS, tests d'architecture PASS (dont le garde-fou `legal-core`).
+Par package : `@jarvis/legal-core` 567 (19 fichiers), `@jarvis/legal-research` 415,
+`@jarvis/core` 142 (dont 6 tests de `runTracked`), `@jarvis/legifrance-client` 41.
+Post-Implementation Review : **PASS WITH ATTENTION**. Aucun appel réseau dans ces
+tests. Le test préexistant instable reste connu (voir « Dette technique connue »).
+
+**Addendum domaine juridique (2026-09-24, vérifié par exécution — état historique,
+avant LegalCase v3)** : suite
+complète **1719 tests / 112 fichiers verts** (`npx vitest run`), `eslint .` et
+`tsc --noEmit` sans erreur. Les chiffres « 530 tests / 50 fichiers » ci-dessus
+sont l'état historique à l'issue de M8 et **ne sont plus le total courant**.
+Domaine légal : `@jarvis/legal-core` 96, `@jarvis/legal-research` 415,
+`@jarvis/legifrance-client` 41, connecteur Légifrance 66. Aucun appel réseau
+réel dans ces tests (`fetchFn` factice côté connecteur ; aucun `fetch` dans
+`legal-research`, vérifié par un test de frontières). **Un test préexistant est
+instable** — voir « Domaine juridique → Dette technique connue ».
 
 **Addendum VS-02 (committé `8fb7ff4`, non inclus dans le total de 530
 ci-dessus, non re-vérifié par une exécution complète de `npm test` à
@@ -824,3 +1378,12 @@ document) :
 - `8506792` **Connector Architecture Foundation** — `ConnectorRegistry`,
   `AccountStore`, `SecretStore`/`InMemorySecretStore`, `Capability`. Ne
   remplace pas et ne renumérote pas le M5 fonctionnel (`fd13ffa`).
+
+Domaine juridique (LEGAL-00 → LegalCase v3) : **aucun commit**. Les packages
+`@jarvis/legal-core`, `@jarvis/legal-research`, `@jarvis/legifrance-client`,
+`packages/connectors/src/legifrance/`, les ADR `0011` à `0021`,
+`LEGAL_SPECIFICATION.md` et `AUDIT_STATE.md` sont **non suivis par git**
+(état au 2026-09-25) ; `packages/core/src/tool-executor.ts` (`runTracked`) est un
+fichier suivi **modifié, non committé**, comme `tool-executor-invocation.test.ts`
+(non suivi). Tant qu'ils ne sont pas committés, aucune sauvegarde
+durable n'est garantie par le dépôt.

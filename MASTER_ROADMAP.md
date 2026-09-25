@@ -4,6 +4,8 @@ Vue d'ensemble condensée. Le détail (raisons, invariants, tests) vit dans
 `PROJECT_STATE.md` ; le détail actionnable vit dans `MASTER_BACKLOG.md`.
 Cette page ne fait que positionner chaque élément dans le temps.
 
+_Dernière mise à jour : 2026-09-25 (domaine juridique : LegalCase v3 clôturé ; prochaine étape LEGAL-04 — Fact & Case Engine)._
+
 ## DONE
 
 **Jalons fonctionnels**
@@ -49,10 +51,81 @@ CLI de briques déjà existantes, aucun nouveau jalon)
 - Connector Architecture Foundation — `ConnectorRegistry`, `AccountStore`,
   `SecretStore`, `Capability` (`8506792`)
 
+**Domaine juridique (LEGAL)** — implémenté et validé, **non suivi par git**
+(« terminé » ≠ committé). Détail : `PROJECT_STATE.md` → « Domaine juridique »,
+`LEGAL_SPECIFICATION.md`, `docs/adr/0011` à `0021`.
+- LEGAL-00 — spécification canonique et gouvernance — terminé
+- LEGAL-01 — modèle `LegalCase` (`@jarvis/legal-core`) — terminé
+- LEGAL-01REV — revue d'architecture du modèle — terminé
+- LEGAL-02A — `LegalSource` versionnée/temporelle, `LegalCitation`, chaîne d'audit — terminé
+- LEGAL-02B.1 — client PISTE/Légifrance (`@jarvis/legifrance-client`) — terminé
+- LEGAL-02B.2 — connecteur Légifrance en lecture seule (`legifrance.ping`, `legifrance.get_article`) — terminé
+- LEGAL-02B.2.1 — vérification réelle du contrat Sandbox — terminé
+- LEGAL-02B.2.2 — exploration Sandbox / résilience — terminé
+- LEGAL-02B.3 — `LegifranceSourceProvider` + mapping vers `LegalSource` — terminé
+- LEGAL-03A — architecture du Research Engine : types, ports, ADR — terminé
+- LEGAL-03B — Tool `legifrance.search`, `LegifranceSearchAdapter`,
+  `LegifranceRetrievalAdapter`, `ResearchEngine` borné — terminé / clôturé
+- VersionResolver — résolution temporelle pure (ADR-0018) — **CLOSED**
+- Version Resolution Integration — résolution par article dans le `ResearchEngine`
+  (`versionResolution`, `historyCompleteness`) (ADR-0018) — **CLOSED**
+- Resolved Version Retrieval — `resolvedRetrieval`, un seul saut, budget partagé
+  (ADR-0019) — **CLOSED**
+- Research → Case — `projectCitations`, `attachSourcesAndCitations`,
+  `LegalCitation.eligibility` : une citation = source retrouvée **et** applicable
+  (ADR-0020) — **CLOSED**
+- Content Exposure — contenu juridique (`texte`) transitoire et vérifié,
+  `RetrievedContent`, hash normatif SHA-256/UTF-8 sans normalisation (ADR-0021)
+  — **CLOSED**
+- **LegalCase v3 — Fact / Provenance / Evidence / Temporal** (`@jarvis/legal-core`) —
+  **CLOSED / COMPLETED** (2026-09-25). Décisions d'architecture Q1–Q10, B1–B4 et U1
+  **CLOSED** (gelées avant implémentation) ; modèle **implémenté** :
+  - `LegalFact` **immuable** (`id`, `statement`, `temporal`, `provenance`,
+    `recordedAt`) ; **aucun état stocké** — l'état épistémique
+    (`established` / `alleged` / `contradictory` / `unknown`) est **dérivé** par
+    `deriveFactEpistemicState` (pure, R1 → R7) ;
+  - provenance `origin` ∈ `human` / `tool` / `deterministic` / `llm` (`document` n'est
+    **pas** un origin : c'est une `inputReference`) ; références d'entrée
+    **substantielles** : `evidence`, `document`, `tool_invocation`, `source`, `fact`
+    (`fact` inconditionnellement, sans récursion) ; `question` non substantielle ;
+  - temporalité `point` / `interval` / `unknown` (précision `day` / `month` / `year`
+    par borne, intervalles fermés, parseur strict, aucune conversion de précision) ;
+  - `LegalDocument` et `LegalEvidence` (documentaire / non documentaire) ;
+  - relations `fact_question` (N:N) et `fact_correction` ; `LegalFactValidation`
+    (`confirm` / `reject`) ; conflits, propositions LLM, exécutions de règles
+    déterministes, résolutions (`retain` / `discard` / `retain_multiple`) ;
+  - empreintes (canonicalisation versionnée, SHA-256) et **append-only** ciblé ;
+  - **v2 legacy** (lecteur et validateur figés, lecture seule) / **v3 strict**
+    (lecteur, validateur, écrivain) ; **aucune migration implicite**.
+- **`ToolExecutor.runTracked`** (`@jarvis/core`) — **implémenté** : renvoie
+  `{ invocationId, result }` pour fournir une origine traçable aux
+  `ToolProvenance`. Ajout non invasif : `run` et `ToolExecutionResult` inchangés ;
+  ce n'est **pas** une refonte de `ToolExecutor`.
+- **Post-Implementation Review LegalCase v3** — **CLOSED**, verdict
+  **PASS WITH ATTENTION** : aucune violation architecturale, LegalCase v3 conforme.
+  Quatre attentions **non bloquantes** (A1–A4, détail : `MASTER_BACKLOG.md`).
+- **Non implémenté à ce jour** : production de faits (**Fact & Case Engine** :
+  aucun producteur ni extracteur de faits) ; query planning ; `LegalResearchItem`
+  (production) ; ANALYZE, VERIFY, PREPARE ; `LegalArgument` / `LegalAnalysisNote` /
+  `LegalConclusion` (types et validation existent, **aucun producteur**) ; pertinence,
+  « evidence-used » ; persistance de la provenance de recherche ;
+  persistance / chiffrement / rechargement du contenu et du dossier (aucun Case
+  Store) ; `texteHtml` ; transitions de workflow ; composition root et permissions
+  de production complètes ; multi-source ; intégration LLM dans le domaine
+  juridique (`@jarvis/llm` n'expose pas fournisseur, modèle ni identifiant d'appel) ;
+  producteurs d'`actorId` / `interactionId`.
+
 Détail complet de M8 (contexte, invariants, tests) : `PROJECT_STATE.md` →
 « Envoi Gmail confirmé (M8) » et `docs/adr/0001` à `0005`.
 
-530 tests / 50 fichiers au total (`npm test`).
+2196 tests / 125 fichiers au total (`npm test`, vérifié le 2026-09-25 ; inclut le domaine juridique et LegalCase v3), tous verts ; `eslint .` et `tsc --noEmit` propres ; tests d'architecture verts. Un test préexistant
+instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE.md`). _(Historique : 1719 tests / 112 fichiers au 2026-09-24, avant LegalCase v3 ; 530 tests / 50 fichiers à l'issue de M8/VS-02.)_
+
+## NEXT
+
+- **Domaine juridique — LEGAL-04 — Fact & Case Engine** : prochaine étape établie,
+  qui s'appuie sur le modèle LegalCase v3 désormais clos. Le périmètre détaillé n'est
+  **pas** décidé à ce jour (aucun sous-ticket). Aucun LEGAL-03C n'est planifié.
 
 ## LATER
 
@@ -65,3 +138,19 @@ Détail complet de M8 (contexte, invariants, tests) : `PROJECT_STATE.md` →
   `applyUserRule` en langage naturel) — non commencé.
 - Branchement de `@jarvis/inbox` dans `apps/api` (route HTTP) — non
   commencé, non priorisé face aux autres pistes.
+- Branchement `AgentLoop` → `ToolExecutor` pour une action `execute`
+  (ex. `gmail.send` piloté par le LLM) — non commencé ; conditions
+  préalables actées par `docs/adr/0006-confirmation-fingerprint-for-execute-actions.md`.
+- Activation de la promotion mémoire (`@jarvis/memory`) dans une
+  application — non commencé ; policy de référence actée par
+  `docs/adr/0007-memory-promotion-policy.md`.
+- **Domaine juridique — autres points ouverts** (non planifiés, non décidés ;
+  l'ordre relatif à LEGAL-04 n'est pas établi) : query planning, `LegalResearchItem` (rôle, lien à la question,
+  synthèse), ANALYZE / VERIFY / PREPARE, pertinence et « evidence-used », stockage
+  durable / rechargement / chiffrement du contenu et du dossier, `texteHtml`, autres
+  fonds Légifrance, multi-source, cache, composition root et permissions de
+  production, `reliability` Sandbox/production, erreurs structurées, correctif du
+  test instable préexistant. Liste complète, **11 points d'attention** des blocs
+  Research → Case / Content Exposure et **attentions A1–A4** de LegalCase v3 :
+  `PROJECT_STATE.md` → « Domaine juridique → Points OUVERTS » et
+  `MASTER_BACKLOG.md`.

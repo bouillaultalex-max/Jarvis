@@ -174,7 +174,7 @@ Pour éviter toute dérive de périmètre lors de l'implémentation :
 - Pas de facturation/gestion de mandat d'avocat — JARVIS ne se substitue
   jamais à un professionnel du droit, il prépare et documente.
 
-## 7. État d'implémentation (mise à jour 2026-09-25)
+## 7. État d'implémentation (mise à jour 2026-09-26)
 
 Ce paragraphe distingue explicitement la **vision** (§1 à §6 ci-dessus), les
 **composants actuellement implémentés** et les **limites actuelles**. Il ne
@@ -184,16 +184,21 @@ ADR-0019 version résolue, ADR-0020 Research → Case, ADR-0021 Content Exposure
 pour LegalCase v3, les décisions d'architecture Q1–Q10, B1–B4 et U1 (**CLOSED**,
 résumées au §7.4 ; aucun ADR dédié n'a été créé).
 
-**Versionnement.** Le domaine légal est **non suivi par git** ; « implémenté »
-signifie implémenté et validé dans l'environnement de travail (2196 tests /
-125 fichiers verts, `eslint` et `tsc` propres au 2026-09-25 ; 1719 tests /
-112 fichiers au 2026-09-24, avant LegalCase v3), pas committé.
+**Versionnement (2026-09-26).** Le domaine légal est **versionné**. `legal-core`,
+`runTracked` et cette spécification sont dans `85e7e6e` (présent sur `origin/main`) ;
+`legifrance-client`, le connecteur Légifrance, `legal-research` et les règles ESLint
+sont dans `979fa19`, les ADR 0011 à 0021 dans `8407ac0` (**locaux, non poussés**),
+plus un correctif CI dans `e9b3357`. « Implémenté » signifie implémenté, versionné et
+testé : 2193 tests / 125 fichiers verts, `eslint` et `tsc` propres sur un clone propre
+de `HEAD` (2196 dans l'arbre de travail, +3 tests d'un POC non commité) ; **rien n'est
+validé en production**. `AUDIT_STATE.md` reste non suivi.
 
 **Blocs CLOSED** : LEGAL-00 → LEGAL-03B ; VersionResolver ; Version Resolution
 Integration ; Resolved Version Retrieval ; Research → Case ; Content Exposure ;
 **LegalCase v3 (Fact / Provenance / Evidence / Temporal)** ; `ToolExecutor.runTracked` ;
-Post-Implementation Review (**PASS WITH ATTENTION**). Prochaine étape :
-**LEGAL-04 — Fact & Case Engine** (périmètre détaillé non décidé).
+Post-Implementation Review (**PASS WITH ATTENTION**) ; **LEGAL-04.0** (baseline Git et
+décisions d'architecture D1–D10, voir `PROJECT_STATE.md`). Prochaine étape :
+**LEGAL-04.1** (Fact & Case Engine ; non commencée).
 
 ### 7.1 Architecture cible (vision)
 

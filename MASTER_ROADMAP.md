@@ -4,7 +4,7 @@ Vue d'ensemble condensée. Le détail (raisons, invariants, tests) vit dans
 `PROJECT_STATE.md` ; le détail actionnable vit dans `MASTER_BACKLOG.md`.
 Cette page ne fait que positionner chaque élément dans le temps.
 
-_Dernière mise à jour : 2026-09-25 (domaine juridique : LegalCase v3 clôturé ; prochaine étape LEGAL-04 — Fact & Case Engine)._
+_Dernière mise à jour : 2026-09-26 (domaine juridique : baseline Git établie, LEGAL-04.0 terminé ; prochaine étape LEGAL-04.1 — Fact & Case Engine)._
 
 ## DONE
 
@@ -51,9 +51,12 @@ CLI de briques déjà existantes, aucun nouveau jalon)
 - Connector Architecture Foundation — `ConnectorRegistry`, `AccountStore`,
   `SecretStore`, `Capability` (`8506792`)
 
-**Domaine juridique (LEGAL)** — implémenté et validé, **non suivi par git**
-(« terminé » ≠ committé). Détail : `PROJECT_STATE.md` → « Domaine juridique »,
-`LEGAL_SPECIFICATION.md`, `docs/adr/0011` à `0021`.
+**Domaine juridique (LEGAL)** — implémenté, **versionné** et testé (« terminé » ≠
+validé en production). `legal-core` : `85e7e6e` (sur `origin/main`) ; fondations
+Légifrance/recherche : `979fa19` ; ADR 0011 à 0021 : `8407ac0` ; correctif CI :
+`e9b3357` — **ces trois derniers sont locaux, non poussés**. Détail :
+`PROJECT_STATE.md` → « Domaine juridique », `LEGAL_SPECIFICATION.md`,
+`docs/adr/0011` à `0021`.
 - LEGAL-00 — spécification canonique et gouvernance — terminé
 - LEGAL-01 — modèle `LegalCase` (`@jarvis/legal-core`) — terminé
 - LEGAL-01REV — revue d'architecture du modèle — terminé
@@ -104,6 +107,9 @@ CLI de briques déjà existantes, aucun nouveau jalon)
 - **Post-Implementation Review LegalCase v3** — **CLOSED**, verdict
   **PASS WITH ATTENTION** : aucune violation architecturale, LegalCase v3 conforme.
   Quatre attentions **non bloquantes** (A1–A4, détail : `MASTER_BACKLOG.md`).
+- **LEGAL-04.0 — baseline Git et décisions d'architecture** — **terminé**
+  (2026-09-26) : audit Git, trois commits (`979fa19`, `8407ac0`, `e9b3357`, **locaux,
+  non poussés**), décisions D1–D10 validées (détail : `PROJECT_STATE.md`).
 - **Non implémenté à ce jour** : production de faits (**Fact & Case Engine** :
   aucun producteur ni extracteur de faits) ; query planning ; `LegalResearchItem`
   (production) ; ANALYZE, VERIFY, PREPARE ; `LegalArgument` / `LegalAnalysisNote` /
@@ -118,14 +124,16 @@ CLI de briques déjà existantes, aucun nouveau jalon)
 Détail complet de M8 (contexte, invariants, tests) : `PROJECT_STATE.md` →
 « Envoi Gmail confirmé (M8) » et `docs/adr/0001` à `0005`.
 
-2196 tests / 125 fichiers au total (`npm test`, vérifié le 2026-09-25 ; inclut le domaine juridique et LegalCase v3), tous verts ; `eslint .` et `tsc --noEmit` propres ; tests d'architecture verts. Un test préexistant
+2193 tests / 125 fichiers sur un clone propre de `HEAD` (vérifié le 2026-09-26 ; 2196 dans l'arbre de travail, +3 tests d'un POC non commité ; inclut le domaine juridique), tous verts ; `eslint .` et `tsc --noEmit` propres ; tests d'architecture verts. Un test préexistant
 instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE.md`). _(Historique : 1719 tests / 112 fichiers au 2026-09-24, avant LegalCase v3 ; 530 tests / 50 fichiers à l'issue de M8/VS-02.)_
 
 ## NEXT
 
-- **Domaine juridique — LEGAL-04 — Fact & Case Engine** : prochaine étape établie,
-  qui s'appuie sur le modèle LegalCase v3 désormais clos. Le périmètre détaillé n'est
-  **pas** décidé à ce jour (aucun sous-ticket). Aucun LEGAL-03C n'est planifié.
+- **Domaine juridique — LEGAL-04.1 (Fact & Case Engine)** : prochaine étape, après
+  LEGAL-04.0 (terminé) ; **non commencée**, son package n'existe pas. Elle s'appuie sur
+  LegalCase v3 et sur les décisions D1–D10 (nouveau package dépendant uniquement de
+  `@jarvis/legal-core`). Aucun LEGAL-03C n'est planifié. Les commits de baseline sont
+  à pousser (décision d'Alexandre).
 
 ## LATER
 

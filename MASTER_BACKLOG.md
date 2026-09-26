@@ -7,7 +7,7 @@ une décision explicitement ouverte dans `PROJECT_STATE.md`.
 
 Voir aussi `MASTER_ROADMAP.md` pour la vue synthétique DONE / LATER.
 
-_Dernière mise à jour : 2026-09-25 (domaine juridique : LegalCase v3 clôturé ; prochaine étape LEGAL-04 — Fact & Case Engine)._
+_Dernière mise à jour : 2026-09-26 (domaine juridique : baseline Git établie, LEGAL-04.0 terminé ; prochaine étape LEGAL-04.1 — Fact & Case Engine)._
 
 ## Jalons fonctionnels terminés
 
@@ -110,7 +110,9 @@ intégration à `AgentLoop`, à `apps/api`, ni à la mémoire (`@jarvis/memory`)
 
 ## Domaine juridique (LEGAL-00 → LegalCase v3) — terminé
 
-Implémenté et validé, **non suivi par git** (aucun commit). Détail :
+Implémenté, **versionné** et testé (`legal-core` : `85e7e6e`, sur `origin/main` ;
+Légifrance/recherche : `979fa19`, ADR : `8407ac0`, correctif CI : `e9b3357` — **ces
+trois derniers sont locaux, non poussés**). Pas validé en production. Détail :
 `PROJECT_STATE.md` → « Domaine juridique », `LEGAL_SPECIFICATION.md`,
 `docs/adr/0011` à `0021`. Cocher = **effectivement implémenté**.
 
@@ -183,6 +185,13 @@ Implémenté et validé, **non suivi par git** (aucun commit). Détail :
   Validation : 125 fichiers / 2196 tests verts, `tsc` et `eslint` propres, tests
   d'architecture verts. Attentions **A1–A4 non bloquantes** : voir « Domaine
   juridique — points ouverts ».
+- [x] **LEGAL-04.0 — baseline Git et décisions d'architecture** (2026-09-26) — audit
+  Git, commits `979fa19`, `8407ac0`, `e9b3357` (**locaux, non poussés**), décisions
+  D1–D10 validées (détail : `PROJECT_STATE.md`). Validation sur un clone propre de
+  `HEAD` : 125 fichiers / 2193 tests verts, `tsc` et `eslint` propres (2196 dans
+  l'arbre de travail, +3 tests d'un POC non commité).
+- [ ] **LEGAL-04.1** — prochaine étape (Fact & Case Engine, nouveau package dépendant
+  uniquement de `@jarvis/legal-core`) : **non commencée**, le package n'existe pas.
 
 Dette technique connue (non planifiée) : test préexistant instable
 `legifrance-source-mapping.test.ts` (« 14. lienCitations… », horloge non
@@ -225,9 +234,8 @@ générique). Ils sont désormais tous résolus et implémentés par M8 :
 ## Domaine juridique — points ouverts (NON planifiés, NON décidés)
 
 Aucune de ces entrées n'est une tâche planifiée ni une décision. La prochaine
-étape légale établie est **LEGAL-04 — Fact & Case Engine** (périmètre détaillé non
-décidé, aucun sous-ticket ; pas de LEGAL-03C). L'ordre relatif des points ci-dessous
-à LEGAL-04 n'est pas établi.
+étape légale établie est **LEGAL-04.1** (Fact & Case Engine ; LEGAL-04.0 terminé ;
+pas de LEGAL-03C). L'ordre relatif des points ci-dessous à LEGAL-04.1 n'est pas établi.
 
 **NON IMPLÉMENTÉS** (à ne pas présenter comme faits) :
 

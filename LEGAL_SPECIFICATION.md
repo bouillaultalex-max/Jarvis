@@ -187,9 +187,9 @@ résumées au §7.4 ; aucun ADR dédié n'a été créé).
 **Versionnement (2026-09-26).** Le domaine légal est **versionné**. `legal-core`,
 `runTracked` et cette spécification sont dans `85e7e6e` (présent sur `origin/main`) ;
 `legifrance-client`, le connecteur Légifrance, `legal-research` et les règles ESLint
-sont dans `979fa19`, les ADR 0011 à 0021 dans `8407ac0` (**locaux, non poussés**),
-plus un correctif CI dans `e9b3357`. « Implémenté » signifie implémenté, versionné et
-testé : 2193 tests / 125 fichiers verts, `eslint` et `tsc` propres sur un clone propre
+sont dans `979fa19`, les ADR 0011 à 0021 dans `8407ac0`, plus un correctif CI dans
+`e9b3357` ; ces commits sont **publiés sur `origin/main`** (2026-09-26).
+« Implémenté » signifie implémenté, versionné et testé : 2193 tests / 125 fichiers verts, `eslint` et `tsc` propres sur un clone propre
 de `HEAD` (2196 dans l'arbre de travail, +3 tests d'un POC non commité) ; **rien n'est
 validé en production**. `AUDIT_STATE.md` reste non suivi.
 

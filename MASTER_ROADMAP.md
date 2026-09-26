@@ -52,9 +52,9 @@ CLI de briques déjà existantes, aucun nouveau jalon)
   `SecretStore`, `Capability` (`8506792`)
 
 **Domaine juridique (LEGAL)** — implémenté, **versionné** et testé (« terminé » ≠
-validé en production). `legal-core` : `85e7e6e` (sur `origin/main`) ; fondations
-Légifrance/recherche : `979fa19` ; ADR 0011 à 0021 : `8407ac0` ; correctif CI :
-`e9b3357` — **ces trois derniers sont locaux, non poussés**. Détail :
+validé en production). `legal-core` : `85e7e6e` ; fondations Légifrance/recherche :
+`979fa19` ; ADR 0011 à 0021 : `8407ac0` ; correctif CI : `e9b3357` ; synchronisation
+documentaire : `38fb0fc` — **tous publiés sur `origin/main`** (2026-09-26). Détail :
 `PROJECT_STATE.md` → « Domaine juridique », `LEGAL_SPECIFICATION.md`,
 `docs/adr/0011` à `0021`.
 - LEGAL-00 — spécification canonique et gouvernance — terminé
@@ -108,8 +108,8 @@ Légifrance/recherche : `979fa19` ; ADR 0011 à 0021 : `8407ac0` ; correctif CI 
   **PASS WITH ATTENTION** : aucune violation architecturale, LegalCase v3 conforme.
   Quatre attentions **non bloquantes** (A1–A4, détail : `MASTER_BACKLOG.md`).
 - **LEGAL-04.0 — baseline Git et décisions d'architecture** — **terminé**
-  (2026-09-26) : audit Git, trois commits (`979fa19`, `8407ac0`, `e9b3357`, **locaux,
-  non poussés**), décisions D1–D10 validées (détail : `PROJECT_STATE.md`).
+  (2026-09-26) : audit Git, trois commits (`979fa19`, `8407ac0`, `e9b3357`, **publiés
+  sur `origin/main`**), décisions D1–D10 validées (détail : `PROJECT_STATE.md`).
 - **Non implémenté à ce jour** : production de faits (**Fact & Case Engine** :
   aucun producteur ni extracteur de faits) ; query planning ; `LegalResearchItem`
   (production) ; ANALYZE, VERIFY, PREPARE ; `LegalArgument` / `LegalAnalysisNote` /
@@ -132,8 +132,8 @@ instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE
 - **Domaine juridique — LEGAL-04.1 (Fact & Case Engine)** : prochaine étape, après
   LEGAL-04.0 (terminé) ; **non commencée**, son package n'existe pas. Elle s'appuie sur
   LegalCase v3 et sur les décisions D1–D10 (nouveau package dépendant uniquement de
-  `@jarvis/legal-core`). Aucun LEGAL-03C n'est planifié. Les commits de baseline sont
-  à pousser (décision d'Alexandre).
+  `@jarvis/legal-core`). Aucun LEGAL-03C n'est planifié. La baseline est publiée
+  (`main` synchronisée avec `origin/main`).
 
 ## LATER
 

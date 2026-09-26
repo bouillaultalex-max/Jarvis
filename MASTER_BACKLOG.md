@@ -110,9 +110,9 @@ intégration à `AgentLoop`, à `apps/api`, ni à la mémoire (`@jarvis/memory`)
 
 ## Domaine juridique (LEGAL-00 → LegalCase v3) — terminé
 
-Implémenté, **versionné** et testé (`legal-core` : `85e7e6e`, sur `origin/main` ;
-Légifrance/recherche : `979fa19`, ADR : `8407ac0`, correctif CI : `e9b3357` — **ces
-trois derniers sont locaux, non poussés**). Pas validé en production. Détail :
+Implémenté, **versionné** et testé (`legal-core` : `85e7e6e` ; Légifrance/recherche :
+`979fa19`, ADR : `8407ac0`, correctif CI : `e9b3357`, synchronisation documentaire :
+`38fb0fc` — **tous publiés sur `origin/main`**, 2026-09-26). Pas validé en production. Détail :
 `PROJECT_STATE.md` → « Domaine juridique », `LEGAL_SPECIFICATION.md`,
 `docs/adr/0011` à `0021`. Cocher = **effectivement implémenté**.
 
@@ -186,7 +186,7 @@ trois derniers sont locaux, non poussés**). Pas validé en production. Détail 
   d'architecture verts. Attentions **A1–A4 non bloquantes** : voir « Domaine
   juridique — points ouverts ».
 - [x] **LEGAL-04.0 — baseline Git et décisions d'architecture** (2026-09-26) — audit
-  Git, commits `979fa19`, `8407ac0`, `e9b3357` (**locaux, non poussés**), décisions
+  Git, commits `979fa19`, `8407ac0`, `e9b3357` (**publiés sur `origin/main`**), décisions
   D1–D10 validées (détail : `PROJECT_STATE.md`). Validation sur un clone propre de
   `HEAD` : 125 fichiers / 2193 tests verts, `tsc` et `eslint` propres (2196 dans
   l'arbre de travail, +3 tests d'un POC non commité).

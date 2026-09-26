@@ -14,7 +14,12 @@ export type { Connector } from './connector.js';
  * de contrôle, inchangés.
  */
 export { ToolRegistry, ToolExecutor, PermissionManager } from '@jarvis/core';
-export type { ToolExecutionResult, ToolRequest, PermissionDecision, PermissionPolicy } from '@jarvis/core';
+export type {
+  ToolExecutionResult,
+  ToolRequest,
+  PermissionDecision,
+  PermissionPolicy,
+} from '@jarvis/core';
 
 export type { Capability } from './capability.js';
 export { describeCapabilities } from './capability.js';
@@ -39,10 +44,7 @@ export {
   AccountStoreCorruptedError,
 } from './errors.js';
 
-export type {
-  InMemoryMessage,
-  InMemorySentMessage,
-} from './in-memory/in-memory-client.js';
+export type { InMemoryMessage, InMemorySentMessage } from './in-memory/in-memory-client.js';
 export { InMemoryMailClient } from './in-memory/in-memory-client.js';
 
 export { InMemorySecretStore } from './in-memory/in-memory-secret-store.js';
@@ -158,3 +160,14 @@ export type {
   CompleteGmailOAuthOptions,
 } from './gmail/gmail-oauth-flow.js';
 export { GmailOAuthFlow } from './gmail/gmail-oauth-flow.js';
+
+export type {
+  LegifrancePingInput,
+  LegifrancePingOutput,
+  LegifranceGetArticleInput,
+  LegifranceGetArticleOutput,
+  LegifranceArticleVersionSummary,
+  LegifranceModificationLink,
+  LegifranceCitationLink,
+} from './legifrance/legifrance-connector.js';
+export { legifranceConnector } from './legifrance/legifrance-connector.js';

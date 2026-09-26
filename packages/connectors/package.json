@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@jarvis/core": "0.1.0",
+    "@jarvis/legifrance-client": "0.1.0",
     "@jarvis/types": "0.1.0",
     "@napi-rs/keyring": "2.0.0"
   }

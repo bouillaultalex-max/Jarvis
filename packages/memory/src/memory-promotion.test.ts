@@ -61,8 +61,8 @@ describe('createDefaultMemoryPromotionPolicy', () => {
       'Son password est « hunter2 ».',
       'Le mot de passe wifi a changé.',
       'Bearer eyJhbGciOiJIUzI1NidummYtokenvalue12345',
-      '-----BEGIN RSA PRIVATE KEY-----',
-      'Sa valeur est AKIA1234567890ABCDEF1234567890ABCDEFXYZ99',
+      '-----BEGIN TEST PRIVATE KEY-----',
+      'Sa valeur est TESTKEY1234567890ABCDEF1234567890ABCDEFXYZ99',
     ]) {
       expect(policy.decide(candidate({ statement })).action).toBe('reject');
     }

@@ -1,6 +1,22 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-26 — **domaine juridique : baseline Git établie,
+_Dernière mise à jour : 2026-09-26 — **domaine juridique : LEGAL-04.1 (Fact & Case
+Engine, premier jalon) implémentée et validée pour commit.** Nouveau package
+`@jarvis/legal-case-engine` (dépendance runtime unique : `@jarvis/legal-core`, **non
+modifié**), livré dans un commit dédié (`feat(legal): add legal case engine`) ; son état
+de publication se lit dans Git et n'est pas figé ici. Il fournit l'ajout d'une question
+ouverte, l'enregistrement atomique d'un fait rapporté (fait, pièce non documentaire et
+liens de question), des contrôles chronologiques à l'écriture et la recherche
+**consultative** de faits équivalents ; il ne fait ni persistance, ni validation humaine,
+ni correction de faits, ni projection des faits écartés, ni proposition LLM (voir
+« LEGAL-04.1 » dans « Domaine juridique »). Résultats vérifiés par exécution le
+2026-09-26 avant le commit : package **285 tests / 10 fichiers**, suite complète
+**2481 tests / 135 fichiers** dans l'arbre de travail (dont 3 tests du POC
+`situation-poc`, non commité), `tsc --noEmit`, `eslint .` et Prettier verts. **Rien
+n'est validé en production** et aucune application ne consomme ce package._
+
+_Mise à jour précédente (2026-09-26, baseline Git, état **historique** — LEGAL-04.1 l'a
+remplacée) — **domaine juridique : baseline Git établie,
 LEGAL-04.0 terminé.** Le domaine légal est désormais **versionné** :
 `@jarvis/legal-core` (LegalCase v3), `ToolExecutor.runTracked` et
 `LEGAL_SPECIFICATION.md` sont dans `85e7e6e` (présent sur `origin/main`) ;
@@ -131,6 +147,7 @@ apps/desktop            → @jarvis/connectors
 Domaine juridique (LEGAL-01 → Content Exposure ; `legal-core` versionné depuis `85e7e6e`, le reste depuis `979fa19` — publié sur `origin/main`) :
 @jarvis/legal-core      (aucune dépendance interne ; feuille imposée par ESLint)
 @jarvis/legal-research  → @jarvis/core, @jarvis/legal-core
+@jarvis/legal-case-engine → @jarvis/legal-core (seule dépendance, LEGAL-04.1 ; imposée par ESLint et tests)
 @jarvis/legifrance-client → @jarvis/connectors (SecretStore/AccessTokenProvider ; cycle de packages avec connectors, préexistant, non traité)
 ```
 
@@ -166,6 +183,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `@jarvis/legal-core` | Modèle juridique pur : **LegalCase v3** (2026-09-25) — `LegalFact` immuable sans état stocké, provenance `human`/`tool`/`deterministic`/`llm`, références d'entrée typées, temporalité `point`/`interval`/`unknown`, `LegalDocument`/`LegalEvidence`, relations `fact_question`/`fact_correction`, `LegalFactValidation`, conflits/résolutions/règles, `deriveFactEpistemicState` (R1 → R7), empreintes, append-only, lecteur/validateur/écrivain v3 **strict** et lecteur/validateur **legacy v2** ; plus `LegalSource` (versionnée, temporelle), `LegalCitation` (ADR-0020), `LegalResearchItem`…, `attachSourcesAndCitations` (sur dossier v3) | versionné (`85e7e6e`, présent sur `origin/main`) ; feuille (aucune dépendance interne) ; aucun réseau ; aucun chiffrement ; **aucun contenu textuel** ; aucune migration v2 → v3 ; consommé par aucune application |
 | `@jarvis/legal-research` | `LegifranceSourceProvider`/mapping (LEGAL-02B.3) ; types et ports du Research Engine (LEGAL-03A) ; `LegifranceSearchAdapter`, `LegifranceRetrievalAdapter`, `ResearchEngine` borné (LEGAL-03B) ; `VersionResolver` pur et son intégration au moteur (ADR-0018) ; récupération bornée de la version résolue, `resolvedRetrieval` (ADR-0019) ; projection pure `projectCitations` ResearchResult → sources + citations (ADR-0020) ; contenu transitoire vérifié `RetrievedContent` et contrat de hash `computeContentHash` (ADR-0021) | versionné (`979fa19`, publié sur `origin/main`) ; dépend de `@jarvis/core` + `@jarvis/legal-core` uniquement ; n'importe ni `connectors` ni `legifrance-client` (ESLint + test) ; aucune application ne le consomme |
+| `@jarvis/legal-case-engine` | Moteur de faits et de dossiers (LEGAL-04.1) : `addOpenQuestion`, `recordReportedFact`, `findEquivalentFacts`, `LegalCaseEngineError`, contexte et horloge injectés (`systemClock` explicite) | commit dédié (LEGAL-04.1) ; dépend **uniquement** de `@jarvis/legal-core` (ESLint + tests) ; pas de réseau, de persistance, de LLM ni d'horloge cachée ; aucune application ne le consomme |
 | `@jarvis/legifrance-client` | Client PISTE/Légifrance (LEGAL-02B.1) : configuration sandbox/production, OAuth `client_credentials`, `LegifranceHttpClient`, erreurs typées | versionné (`979fa19`, publié sur `origin/main`) ; dépend de `@jarvis/connectors` (cycle de packages préexistant avec `connectors`) ; credentials via `SecretStore` |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
 | `apps/desktop` | Client CLI (`connect`, `read`, `inbox`, `prepare-reply`, `send`, `disconnect`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`) |
@@ -640,8 +658,10 @@ non prioritaire : `apps/api` reste sans aucun outil connecteur branché.
 VersionResolver ; Version Resolution Integration ; Resolved Version Retrieval ;
 Research → Case ; Content Exposure ; **LegalCase v3 (Fact / Provenance / Evidence /
 Temporal)** ; **`ToolExecutor.runTracked`** ; **Post-Implementation Review**
-(PASS WITH ATTENTION) ; **LEGAL-04.0 (baseline Git + décisions d'architecture)**.
-Prochaine étape : **LEGAL-04.1** (non commencée ; aucun LEGAL-03C n'est planifié).
+(PASS WITH ATTENTION) ; **LEGAL-04.0 (baseline Git + décisions d'architecture)** ;
+**LEGAL-04.1 (Fact & Case Engine, premier jalon)** — implémentée et validée pour commit
+(voir « LEGAL-04.1 » ci-dessous). Suite du Fact & Case Engine : **non planifiée**
+(aucun sous-ticket documenté ; aucun LEGAL-03C n'est planifié).
 **Le domaine légal est versionné** (voir « LEGAL-04.0 » ci-dessous) : « terminé » =
 implémenté, versionné et testé dans un clone propre, **pas** validé en production.
 La baseline (`85e7e6e`, `979fa19`, `8407ac0`, `e9b3357`) et sa synchronisation
@@ -674,7 +694,7 @@ la version résolue), ADR-0020 (vertical slice Research → Case), ADR-0021
 | `ToolExecutor.runTracked` | `@jarvis/core` : `{ invocationId, result }`, UUID v4 par exécution, tous statuts couverts ; `run` et `ToolExecutionResult` inchangés | **IMPLEMENTED / CLOSED** (2026-09-25) |
 | Post-Implementation Review LegalCase v3 | Conformité au contrat gelé : aucune violation ; quatre attentions non bloquantes A1–A4 ; 125 fichiers / 2196 tests, `tsc` et `eslint` PASS | **CLOSED — PASS WITH ATTENTION** (2026-09-25) |
 | LEGAL-04.0 | Audit Git, baseline juridique versionnée (commits `979fa19`, `8407ac0`, `e9b3357`), décisions d'architecture D1–D10 validées (voir ci-dessous) | **terminé** (2026-09-26) — commits publiés sur `origin/main` |
-| LEGAL-04.1 | Première étape du Fact & Case Engine (nouveau package dépendant de `@jarvis/legal-core`) | **prochaine étape — non commencée** ; le package n'existe pas |
+| LEGAL-04.1 | Premier jalon du Fact & Case Engine : `@jarvis/legal-case-engine` (dépend uniquement de `@jarvis/legal-core`) — `addOpenQuestion`, `recordReportedFact`, `findEquivalentFacts` | **implémentée, validée pour commit** (2026-09-26) — revue contradictoire « validé sous réserve », corrections I1–I5 faites |
 
 ### LEGAL-04.0 — baseline Git et décisions d'architecture (2026-09-26)
 
@@ -701,6 +721,67 @@ de la situation, et `prototypes/situation-poc` (modifié + `situation-manual-run
 - **D8** correction : opération atomique (nouveau fait, lien de correction, liens explicites aux questions) ;
 - **D9** faits écartés visibles par une projection de résolution distincte, sans toucher R1–R7 ;
 - **D10** baseline Git avant la suite (réalisée par cette étape).
+
+### LEGAL-04.1 — Fact & Case Engine, premier jalon (2026-09-26)
+
+**Statut** : implémentée et **validée pour commit** (revue contradictoire « validé sous
+réserve », puis corrections I1–I5 effectuées et revérifiées). Package
+`@jarvis/legal-case-engine` (`packages/legal-case-engine`) ; dépendance runtime unique
+`@jarvis/legal-core` (décision D1) ; `packages/legal-core` **non modifié**. Aucune
+application ne le consomme.
+
+**Opérations** (pures et **atomiques** : elles renvoient un nouveau `LegalCase` v3
+revalidé — `validateLegalCaseV3`, append-only — ou lèvent une `LegalCaseEngineError` de
+motif typé ; l'entrée n'est jamais mutée, aucun résultat partiel n'existe) :
+- `addOpenQuestion` (D5) : ajoute une question au statut `open` ; aucun statut n'est
+  accepté en entrée ; le statut des questions existantes n'est **jamais** modifié ;
+  identifiant opaque fourni par l'appelant, doublon refusé.
+- `recordReportedFact` (D4) : ajoute **atomiquement** un `LegalFact`, une `LegalEvidence`
+  **non documentaire** et un lien `fact_question` par question. Provenance humaine issue
+  du contexte injecté (D2) ; le fait référence la pièce par une empreinte, ce qui donne
+  l'état dérivé `alleged` (R6) — R1 à R7 de `legal-core` inchangées. La température est
+  obligatoire, validée puis **copiée** (aucun aliasing avec l'entrée). Renvoie aussi les
+  dérivations et les faits potentiellement équivalents.
+- `findEquivalentFacts` (D7) : résultat **consultatif**, critère nommé
+  `structural_text_v1` (texte identique ou identique après NFC, espaces et minuscules ;
+  ni accents, ni ponctuation, ni synonymes ; température comparée à part et jamais
+  fusionnée). `none_found` n'est **pas** une preuve d'absence de doublon. Aucune fusion,
+  suppression ni rejet automatique : l'enregistrement a lieu dans tous les cas.
+
+**Contexte, horloge, chronologie** : `actorId` et `interactionId` sont fournis par
+l'appelant (format validé, non authentifiés) ; l'horloge est **obligatoire** et lue une
+seule fois par opération (aucune horloge cachée ; `systemClock` est un helper explicite).
+Les contrôles chronologiques (D6) sont appliqués **à l'écriture par le moteur**, sans
+durcir le validateur v3 gelé : l'instant ne peut précéder ni `updatedAt` ni aucun objet
+déjà enregistré (les neuf listes append-only). `createdAt` et `updatedAt` doivent être
+des instants valides : un `createdAt` qui n'en est pas un (par exemple la date seule
+`2026-09-24`, acceptée par `legal-core`) est **refusé** (`chronology`), sans conversion
+silencieuse. Aucune restriction READ-only : les opérations restent autorisées à toutes
+les étapes du dossier.
+
+**Frontières (décision volontaire, propre à ce package)** : `eslint.config.js` n'autorise
+que le point d'entrée public de `@jarvis/legal-core`, et interdit les sous-chemins, tout
+autre `@jarvis/*`, les imports relatifs sortant de `src/` (règle par profondeur de
+fichier) et **tout chargement dynamique** (`import()`, `require()`, `import x =
+require()`, types `import('…')`). Cette dernière restriction est plus stricte que le
+besoin minimal — elle interdit même `import('./interne')` — sans casser aucun usage
+actuel ; elle n'est pas requise pour les autres packages du monorepo. Les règles
+effectives sont testées par l'API ESLint, complétées par un test statique.
+
+**Messages d'erreur** : ils ne citent que des identifiants et des noms de clés, jamais
+le contenu d'un fait, d'une question ou d'une pièce.
+
+**Hors périmètre (non implémenté)** : faits proposés par un LLM (D3, restent hors de
+LEGAL-04.1), validation humaine, correction de faits (D8), projection des faits écartés
+(D9), persistance / Case Store, exécution d'actions juridiques, extracteur de faits.
+
+**Dette technique connue** (points mineurs de la revue, non traités) : M1 précision de
+`Date.parse` à la milliseconde ; M2 noms de clés inconnues repris dans les erreurs ; M3
+getter qui lève une erreur brute (la double lecture de la température est, elle,
+corrigée) ; M4 doublons dans `sharedQuestionIds` ; M5 champs racine non comparés par
+`assertValidAppend` ; M6 assertions faibles (partiellement renforcées) ; M7 convention de
+l'horloge (chaîne ISO, contre des millisecondes dans `ConfirmationService`) ; M8 pas de
+contrôle `createdAt` ≤ `updatedAt`.
 
 (Explorations réelles LEGAL-03.0 / 03.0A : leurs conclusions figurent dans les
 ADR 0011–0017 sous forme de faits [OBSERVÉ] ; les sorties brutes n'ont pas été
@@ -750,7 +831,7 @@ Une `LegalCitation` produite ici signifie « source **retrouvée et applicable**
 raisonnement. Une résolution `resolved` sur un historique `unknown` reste une
 résolution « au mieux » : l'incertitude est conservée dans la citation.
 
-**Non implémenté** : **production de faits (Fact & Case Engine : aucun producteur ni extracteur de faits — prochaine étape LEGAL-04.1, non commencée)** ; query planning ; production de `LegalResearchItem` ;
+**Non implémenté** : **production de faits (Fact & Case Engine : LEGAL-04.1 n'enregistre que des faits **rapportés par un humain** via `@jarvis/legal-case-engine` ; aucun extracteur, aucune proposition LLM, ni validation humaine, ni correction, ni projection des faits écartés, ni persistance — suite non planifiée)** ; query planning ; production de `LegalResearchItem` ;
 analyse juridique (ANALYZE), VERIFY, PREPARE ; production de `LegalArgument` / `LegalAnalysisNote` / `LegalConclusion` (types et validation existent, aucun producteur) ; producteurs d'`actorId` / `interactionId` ; métadonnées LLM (`@jarvis/llm` n'expose ni fournisseur, ni modèle, ni identifiant d'appel) ; **pertinence** et
 **« evidence-used »** (aucun marqueur, aucun producteur) ; persistance de la
 provenance de recherche (rejets, lacunes et provenance technique restent dans le
@@ -989,8 +1070,8 @@ Sandbox/production · cache · multi-source · erreurs structurées
 (`ToolFailed.reason` reste une chaîne) · correctif du test instable · origine
 de `asOf` d'une question (faits datés, saisie explicite) · une même version
 citée à deux `asOf` pour une même question donne deux citations (fusion
-éventuelle non décidée) · périmètre détaillé de **LEGAL-04.1 — Fact & Case Engine**
-(prochaine étape, non commencée ; architecture : D1–D10, voir « LEGAL-04.0 ») · producteurs d'`actorId` / `interactionId`,
+éventuelle non décidée) · périmètre de la **suite du Fact & Case Engine**
+(après LEGAL-04.1, non planifiée ; architecture : D1–D10, voir « LEGAL-04.0 ») · producteurs d'`actorId` / `interactionId`,
 métadonnées `@jarvis/llm`, câblage de `connectorId` (`describeCapabilities`) ·
 persistance et chiffrement du dossier (aucun Case Store).
 
@@ -1364,6 +1445,17 @@ Ce document ne tranche aucune de ces directions.
   d'aucun mécanisme externe.
 - Aucun secret réel, aucun nouveau fichier `.env`.
 
+**Addendum LEGAL-04.1 (2026-09-26)** — résultats **vérifiés par exécution avant le
+commit** (dépôt de travail, hors clone propre) : `vitest run packages/legal-case-engine` →
+**285 tests / 10 fichiers verts** ; `vitest run` → **2481 tests / 135 fichiers verts**
+(dont 3 tests de `situation-poc`, modification non commitée : 2478 sans elle) ;
+`tsc --noEmit` exit 0 ; `eslint .` exit 0 ; Prettier conforme sur le package et
+`eslint.config.js` ; frontières : `eslint-boundaries.test.ts` (**45 tests**, règles
+ESLint effectives + test statique) et `architecture-boundaries.test.ts` (20 tests) verts ;
+`packages/legal-core` : aucun diff. **Repris du rapport de la mission de corrections, non
+relancés lors de la finalisation** : mutation testing sur une copie (32 mutants tous
+détectés). Aucun appel réseau dans ces tests.
+
 **Addendum baseline juridique (2026-09-26, vérifié par exécution)** : sur un clone
 propre de `HEAD` (`e9b3357`, `node_modules` copiés, lock vérifié hors ligne :
 synchronisé) — **2193 tests / 125 fichiers verts**, `tsc --noEmit` PASS,
@@ -1450,6 +1542,11 @@ Domaine juridique (état au 2026-09-26) :
   Publié sur `origin/main`.
 - `38fb0fc` **Synchronisation documentaire** de la baseline (`PROJECT_STATE`,
   `LEGAL_SPECIFICATION`, roadmap, backlog). Publié sur `origin/main`.
+- `59cb8db` **Synchronisation post-push** (statuts « publié sur `origin/main` »).
+  Publié sur `origin/main`.
+- **LEGAL-04.1** (commit dédié, message `feat(legal): add legal case engine`, hash non
+  figé dans ce document) : `packages/legal-case-engine/`, `eslint.config.js` (frontières),
+  `package-lock.json` (workspace) et les documents d'état. `packages/legal-core` inchangé.
 
 `AUDIT_STATE.md` reste **non suivi par git**, comme les documents de cadrage des
 slices et de la situation et `prototypes/situation-poc` (modifié et non commité).

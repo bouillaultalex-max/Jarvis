@@ -190,15 +190,19 @@ résumées au §7.4 ; aucun ADR dédié n'a été créé).
 sont dans `979fa19`, les ADR 0011 à 0021 dans `8407ac0`, plus un correctif CI dans
 `e9b3357` ; ces commits sont **publiés sur `origin/main`** (2026-09-26).
 « Implémenté » signifie implémenté, versionné et testé : 2193 tests / 125 fichiers verts, `eslint` et `tsc` propres sur un clone propre
-de `HEAD` (2196 dans l'arbre de travail, +3 tests d'un POC non commité) ; **rien n'est
-validé en production**. `AUDIT_STATE.md` reste non suivi.
+de `HEAD` à la baseline (2196 dans l'arbre de travail, +3 tests d'un POC non commité) ; **rien n'est
+validé en production**. `AUDIT_STATE.md` reste non suivi. **LEGAL-04.1** est livrée dans un
+commit dédié (`feat(legal): add legal case engine`, état de publication : voir Git) ;
+vérifiée par exécution avant ce commit : 2481 tests / 135 fichiers dans l'arbre de travail
+(2478 sans les 3 tests du POC non commité), `eslint` et `tsc` propres.
 
 **Blocs CLOSED** : LEGAL-00 → LEGAL-03B ; VersionResolver ; Version Resolution
 Integration ; Resolved Version Retrieval ; Research → Case ; Content Exposure ;
 **LegalCase v3 (Fact / Provenance / Evidence / Temporal)** ; `ToolExecutor.runTracked` ;
 Post-Implementation Review (**PASS WITH ATTENTION**) ; **LEGAL-04.0** (baseline Git et
-décisions d'architecture D1–D10, voir `PROJECT_STATE.md`). Prochaine étape :
-**LEGAL-04.1** (Fact & Case Engine ; non commencée).
+décisions d'architecture D1–D10, voir `PROJECT_STATE.md`) ; **LEGAL-04.1** (Fact & Case
+Engine, premier jalon : `@jarvis/legal-case-engine`, voir §7.2). Suite du Fact & Case
+Engine : non planifiée (aucun sous-ticket documenté).
 
 ### 7.1 Architecture cible (vision)
 
@@ -249,10 +253,25 @@ SearchQuery (à la main) → SearchPort → SearchResultPage → SearchReference
     normalisation), opaque et absent de toute sérialisation ; aucun appel réseau
     de plus.
 
+- **Moteur de faits et de dossiers** (LEGAL-04.1, `@jarvis/legal-case-engine`, dépend
+  uniquement de `@jarvis/legal-core`, lui-même inchangé) : opérations pures et atomiques
+  sur un `LegalCase` v3 — `addOpenQuestion` (question `open`, statuts existants jamais
+  modifiés), `recordReportedFact` (fait rapporté par un humain + pièce non documentaire +
+  liens `fact_question`, atomiques ; état dérivé `alleged`, R1 à R7 inchangées),
+  `findEquivalentFacts` (consultatif, critère `structural_text_v1`, aucune fusion). Contexte
+  d'acteur et horloge **injectés** par l'appelant ; contrôles chronologiques appliqués à
+  l'écriture par le moteur (validateur v3 non durci) ; un `createdAt` qui n'est pas un
+  instant est refusé sans conversion ; aucune restriction READ-only. Frontières ESLint
+  volontairement strictes pour ce package (aucun chargement dynamique). **Ne réalise pas** :
+  persistance, validation humaine, correction de faits, projection des faits écartés,
+  propositions LLM, exécution d'actions.
+
 ### 7.3 Limites actuelles (non implémenté)
 
-- **Production de faits (Fact & Case Engine — LEGAL-04)** : le modèle v3 existe, aucun
-  producteur ni extracteur de faits ; query planning ; production de
+- **Production de faits (Fact & Case Engine)** : LEGAL-04.1 n'enregistre que des faits
+  **rapportés par un humain** ; aucun extracteur de faits, aucune proposition LLM, ni
+  validation humaine, ni correction, ni projection des faits écartés, ni persistance ;
+  query planning ; production de
   `LegalResearchItem` ; production de `LegalArgument` / `LegalAnalysisNote` /
   `LegalConclusion` (types et validation existent) ; analyse juridique
   (ANALYZE) ; **pertinence** et **« evidence-used »** (aucun marqueur, aucun

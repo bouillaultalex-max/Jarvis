@@ -7,7 +7,7 @@ une décision explicitement ouverte dans `PROJECT_STATE.md`.
 
 Voir aussi `MASTER_ROADMAP.md` pour la vue synthétique DONE / LATER.
 
-_Dernière mise à jour : 2026-09-26 (domaine juridique : baseline Git établie, LEGAL-04.0 terminé ; prochaine étape LEGAL-04.1 — Fact & Case Engine)._
+_Dernière mise à jour : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & Case Engine, premier jalon — implémentée et validée pour commit ; suite non planifiée)._
 
 ## Jalons fonctionnels terminés
 
@@ -190,8 +190,17 @@ Implémenté, **versionné** et testé (`legal-core` : `85e7e6e` ; Légifrance/r
   D1–D10 validées (détail : `PROJECT_STATE.md`). Validation sur un clone propre de
   `HEAD` : 125 fichiers / 2193 tests verts, `tsc` et `eslint` propres (2196 dans
   l'arbre de travail, +3 tests d'un POC non commité).
-- [ ] **LEGAL-04.1** — prochaine étape (Fact & Case Engine, nouveau package dépendant
-  uniquement de `@jarvis/legal-core`) : **non commencée**, le package n'existe pas.
+- [x] **LEGAL-04.1 — Fact & Case Engine, premier jalon** (2026-09-26) — package
+  `@jarvis/legal-case-engine` (dépend uniquement de `@jarvis/legal-core`, **inchangé**) :
+  `addOpenQuestion` (question `open`, statuts existants inchangés), `recordReportedFact`
+  (fait + pièce non documentaire + liens de question, atomiques), `findEquivalentFacts`
+  (consultatif, aucune fusion) ; contexte d'acteur et horloge injectés ; chronologie
+  contrôlée à l'écriture ; `createdAt` non instant refusé sans conversion ; aucune
+  restriction READ-only ; frontières ESLint volontairement strictes (aucun chargement
+  dynamique). Validé pour commit après revue contradictoire et corrections I1–I5 ; 285
+  tests du package, 2481 tests au total dans l'arbre de travail (dont 3 d'un POC non
+  commité), `tsc`, `eslint`, Prettier verts. Dette : M1–M8 (voir `PROJECT_STATE.md`).
+- [ ] **Suite du Fact & Case Engine** — **non planifiée**, aucun sous-ticket documenté.
 
 Dette technique connue (non planifiée) : test préexistant instable
 `legifrance-source-mapping.test.ts` (« 14. lienCitations… », horloge non
@@ -234,8 +243,9 @@ générique). Ils sont désormais tous résolus et implémentés par M8 :
 ## Domaine juridique — points ouverts (NON planifiés, NON décidés)
 
 Aucune de ces entrées n'est une tâche planifiée ni une décision. La prochaine
-étape légale établie est **LEGAL-04.1** (Fact & Case Engine ; LEGAL-04.0 terminé ;
-pas de LEGAL-03C). L'ordre relatif des points ci-dessous à LEGAL-04.1 n'est pas établi.
+étape légale établie a été **LEGAL-04.1** (Fact & Case Engine, premier jalon, terminé ;
+LEGAL-04.0 terminé ; pas de LEGAL-03C) : la suite n'est pas planifiée et l'ordre relatif des
+points ci-dessous n'est pas établi.
 
 **NON IMPLÉMENTÉS** (à ne pas présenter comme faits) :
 
@@ -245,8 +255,10 @@ pas de LEGAL-03C). L'ordre relatif des points ci-dessous à LEGAL-04.1 n'est pas
   synthèse non stabilisés.
 - ANALYZE, VERIFY, PREPARE ; production de `LegalArgument` / `LegalAnalysisNote` /
   `LegalConclusion` (types et validation existent, **aucun producteur**).
-- **Production de faits** (Fact & Case Engine) : aucun producteur ni extracteur de
-  faits ; `actorId` / `interactionId` sans producteur ; `@jarvis/llm` n'expose ni
+- **Production de faits** (Fact & Case Engine) : LEGAL-04.1 n'enregistre que des faits
+  rapportés par un humain ; aucun extracteur de faits, aucune proposition LLM, ni
+  validation humaine, ni correction, ni projection des faits écartés, ni persistance ;
+  `actorId` / `interactionId` sans producteur (fournis par l'appelant au moteur) ; `@jarvis/llm` n'expose ni
   fournisseur, ni modèle, ni identifiant d'appel ; `connectorId` obtenable par
   `describeCapabilities` (non câblé).
 - Pertinence et « evidence-used » — aucun marqueur, aucun producteur (la relation

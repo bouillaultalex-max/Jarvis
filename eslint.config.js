@@ -2,6 +2,66 @@
 const js = require('@eslint/js');
 const tseslint = require('typescript-eslint');
 
+/**
+ * packages/legal-case-engine (LEGAL-04.1) — règles de frontières, décision D1 : la SEULE
+ * dépendance est `@jarvis/legal-core`, par son point d'entrée public. ESLint ne fusionne pas
+ * les options d'une même règle entre deux blocs qui visent le même fichier (le dernier
+ * l'emporte) : chaque bloc de profondeur reçoit donc la liste complète, construite ici.
+ *
+ * @param {string} escapeRegex import relatif qui SORT de `src/` pour cette profondeur de fichier
+ */
+function legalCaseEngineBoundaryRules(escapeRegex) {
+  return {
+    '@typescript-eslint/no-restricted-imports': [
+      'error',
+      {
+        patterns: [
+          {
+            group: ['@jarvis/*', '!@jarvis/legal-core'],
+            message:
+              '@jarvis/legal-case-engine ne dépend que de @jarvis/legal-core (décision D1 de LEGAL-04) : aucun autre package @jarvis/*.',
+          },
+          {
+            group: ['@jarvis/legal-core/*', '@jarvis/legal-core/**'],
+            message:
+              "Import profond interdit : @jarvis/legal-case-engine n'utilise que le point d'entrée public de @jarvis/legal-core (aucun sous-chemin, aucune fixture de test).",
+          },
+          {
+            regex: escapeRegex,
+            message:
+              "Import relatif sortant interdit : le code d'@jarvis/legal-case-engine n'importe que depuis src/ (aucun contournement de D1 par un chemin relatif vers un autre package).",
+          },
+        ],
+      },
+    ],
+    // Un chargement dynamique échappe à l'analyse statique des frontières : le moteur n'en a
+    // aucun besoin (import(), require, `import x = require()`, types `import('…')`).
+    'no-restricted-syntax': [
+      'error',
+      {
+        selector: 'ImportExpression',
+        message:
+          'Import dynamique interdit dans @jarvis/legal-case-engine (contournerait les règles de frontières).',
+      },
+      {
+        selector: "CallExpression[callee.name='require']",
+        message:
+          'require() interdit dans @jarvis/legal-case-engine (imports statiques uniquement).',
+      },
+      {
+        selector: 'TSExternalModuleReference',
+        message:
+          '`import x = require(...)` interdit dans @jarvis/legal-case-engine (imports statiques uniquement).',
+      },
+      {
+        selector: 'TSImportType',
+        message:
+          "Type `import('…')` interdit dans @jarvis/legal-case-engine : utiliser `import type` (analysable).",
+      },
+    ],
+  };
+}
+
 module.exports = tseslint.config(
   {
     ignores: [
@@ -215,6 +275,21 @@ module.exports = tseslint.config(
         },
       ],
     },
+  },
+
+  {
+    // packages/legal-case-engine : moteur de faits et de dossiers (LEGAL-04.1) — au-dessus de
+    // @jarvis/legal-core, dont il est le SEUL @jarvis/* autorisé (décision D1) : ni llm, ni memory,
+    // ni core, ni connectors, ni legal-research, ni application. Fichiers de `src/` (profondeur 0) :
+    // tout `../` sort de `src/`.
+    files: ['packages/legal-case-engine/src/*.ts'],
+    rules: legalCaseEngineBoundaryRules('^\\.\\./'),
+  },
+  {
+    // Même règle pour les sous-dossiers de `src/` (aujourd'hui `testing/`, profondeur 1) :
+    // `../` reste dans `src/` (ex. `../engine-context.js`), `../../` en sort.
+    files: ['packages/legal-case-engine/src/*/**/*.ts'],
+    rules: legalCaseEngineBoundaryRules('^\\.\\./\\.\\./'),
   },
 
   {

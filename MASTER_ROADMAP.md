@@ -4,7 +4,7 @@ Vue d'ensemble condensée. Le détail (raisons, invariants, tests) vit dans
 `PROJECT_STATE.md` ; le détail actionnable vit dans `MASTER_BACKLOG.md`.
 Cette page ne fait que positionner chaque élément dans le temps.
 
-_Dernière mise à jour : 2026-09-26 (domaine juridique : baseline Git établie, LEGAL-04.0 terminé ; prochaine étape LEGAL-04.1 — Fact & Case Engine)._
+_Dernière mise à jour : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & Case Engine, premier jalon — implémentée et validée pour commit ; suite non planifiée)._
 
 ## DONE
 
@@ -110,8 +110,16 @@ documentaire : `38fb0fc` — **tous publiés sur `origin/main`** (2026-09-26). D
 - **LEGAL-04.0 — baseline Git et décisions d'architecture** — **terminé**
   (2026-09-26) : audit Git, trois commits (`979fa19`, `8407ac0`, `e9b3357`, **publiés
   sur `origin/main`**), décisions D1–D10 validées (détail : `PROJECT_STATE.md`).
-- **Non implémenté à ce jour** : production de faits (**Fact & Case Engine** :
-  aucun producteur ni extracteur de faits) ; query planning ; `LegalResearchItem`
+- **LEGAL-04.1 — Fact & Case Engine, premier jalon** — **implémentée, validée pour commit**
+  (2026-09-26) : package `@jarvis/legal-case-engine` (dépend uniquement de
+  `@jarvis/legal-core`, inchangé) — question ouverte, enregistrement atomique d'un fait
+  rapporté, contrôles chronologiques à l'écriture, faits équivalents **consultatifs**,
+  `createdAt` non instant refusé sans conversion, aucune restriction READ-only ; frontières
+  ESLint volontairement strictes (aucun chargement dynamique). Hors périmètre : faits
+  proposés par un LLM, validation humaine, correction, projection des faits écartés,
+  persistance (détail : `PROJECT_STATE.md` → « LEGAL-04.1 »).
+- **Non implémenté à ce jour** : production de faits (**Fact & Case Engine** : LEGAL-04.1
+  n'enregistre que des faits rapportés par un humain ; aucun extracteur ni proposition LLM) ; query planning ; `LegalResearchItem`
   (production) ; ANALYZE, VERIFY, PREPARE ; `LegalArgument` / `LegalAnalysisNote` /
   `LegalConclusion` (types et validation existent, **aucun producteur**) ; pertinence,
   « evidence-used » ; persistance de la provenance de recherche ;
@@ -124,16 +132,16 @@ documentaire : `38fb0fc` — **tous publiés sur `origin/main`** (2026-09-26). D
 Détail complet de M8 (contexte, invariants, tests) : `PROJECT_STATE.md` →
 « Envoi Gmail confirmé (M8) » et `docs/adr/0001` à `0005`.
 
-2193 tests / 125 fichiers sur un clone propre de `HEAD` (vérifié le 2026-09-26 ; 2196 dans l'arbre de travail, +3 tests d'un POC non commité ; inclut le domaine juridique), tous verts ; `eslint .` et `tsc --noEmit` propres ; tests d'architecture verts. Un test préexistant
+2481 tests / 135 fichiers dans l'arbre de travail (vérifié le 2026-09-26 avant le commit LEGAL-04.1 ; dont 3 tests d'un POC non commité, soit 2478 sans eux ; inclut le domaine juridique), tous verts ; `eslint .` et `tsc --noEmit` propres ; tests d'architecture verts. Un test préexistant
 instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE.md`). _(Historique : 1719 tests / 112 fichiers au 2026-09-24, avant LegalCase v3 ; 530 tests / 50 fichiers à l'issue de M8/VS-02.)_
 
 ## NEXT
 
-- **Domaine juridique — LEGAL-04.1 (Fact & Case Engine)** : prochaine étape, après
-  LEGAL-04.0 (terminé) ; **non commencée**, son package n'existe pas. Elle s'appuie sur
-  LegalCase v3 et sur les décisions D1–D10 (nouveau package dépendant uniquement de
-  `@jarvis/legal-core`). Aucun LEGAL-03C n'est planifié. La baseline est publiée
-  (`main` synchronisée avec `origin/main`).
+- **Domaine juridique — suite du Fact & Case Engine** : **non planifiée**. LEGAL-04.0 et
+  LEGAL-04.1 sont terminés ; aucun sous-ticket suivant n'est documenté (les éléments
+  hors périmètre de LEGAL-04.1 — propositions LLM, validation humaine, corrections,
+  projection des faits écartés, persistance — attendent une décision). Aucun LEGAL-03C
+  n'est planifié.
 
 ## LATER
 

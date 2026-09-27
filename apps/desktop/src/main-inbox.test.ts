@@ -13,6 +13,8 @@ import {
   type GmailAppCredentials,
   type GmailOAuthResult,
 } from '@jarvis/connectors';
+import type { EmailSummary, EmailSummarizer } from '@jarvis/inbox';
+import type { EmailMessage } from '@jarvis/types';
 import type { LlmMessage, LlmProvider, LlmResponse } from '@jarvis/llm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -117,6 +119,17 @@ class MockLlmProvider implements LlmProvider {
     this.calls.push(messages.map((m) => ({ ...m })));
     const user = messages.find((m) => m.role === 'user')?.content ?? '';
     return this.reply(user);
+  }
+}
+
+/** Faux résumeur : rejoue une réponse scriptée par expéditeur, aucun réseau. */
+class MockEmailSummarizer implements EmailSummarizer {
+  public readonly calls: EmailMessage[] = [];
+  constructor(private readonly reply: (email: EmailMessage) => EmailSummary | undefined) {}
+
+  async summarize(email: EmailMessage): Promise<EmailSummary | undefined> {
+    this.calls.push(email);
+    return this.reply(email);
   }
 }
 
@@ -403,5 +416,110 @@ describe('dispatch(["inbox"]) — câblage CLI', () => {
     expect(text).not.toContain(LEAK_MARKER);
     expect(text).not.toContain('access-token-secure');
     expect(text).not.toContain(BODY_MARKER);
+  });
+});
+
+describe('dispatch(["inbox"]) — résumé des emails importants', () => {
+  it('emailSummarizer injecté → résumé affiché, uniquement pour l’email important', async () => {
+    const { accountStore, secretStore } = await connectedStores('refresh-token-1');
+    const { fetchFn } = buildFakeGmail(new Map([['refresh-token-1', 'access-token-1']]), [
+      rawGmailMessage('m1', 'alice@example.test', 'Facture', `${BODY_MARKER} 1`),
+      rawGmailMessage('m2', 'news@promo.example', 'Solde -50%', `${BODY_MARKER} 2`),
+    ]);
+    const llm = new MockLlmProvider((user) =>
+      user.includes('promo.example')
+        ? classifierJson('not_important', 'Newsletter commerciale.')
+        : classifierJson('important', 'Facture à traiter.'),
+    );
+    const summarizer = new MockEmailSummarizer((email) => ({
+      summary: `Synthèse de « ${email.subject} ».`,
+    }));
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+      llmProvider: llm,
+      emailSummarizer: summarizer,
+    };
+    const { output, readText } = collectingOutput();
+
+    await dispatch(['inbox'], deps, { output }, forbiddenConnect);
+
+    const text = readText();
+    expect(text).toContain('Résumé : Synthèse de « Facture ».');
+    expect(text.split('\n').filter((l) => l.startsWith('Résumé'))).toHaveLength(1);
+    // Un seul email est `important` : le résumeur n'est appelé que pour celui-là.
+    expect(summarizer.calls).toHaveLength(1);
+    expect(summarizer.calls[0]?.subject).toBe('Facture');
+    expect(text).not.toContain(BODY_MARKER);
+  });
+
+  it('aucun emailSummarizer injecté et ANTHROPIC_API_KEY absente → aucune ligne Résumé, comportement inchangé', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    const { accountStore, secretStore } = await connectedStores('refresh-token-1');
+    const { fetchFn } = buildFakeGmail(new Map([['refresh-token-1', 'access-token-1']]), [
+      rawGmailMessage('m1', 'alice@example.test', 'Facture', 'x'),
+    ]);
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+      llmProvider: new MockLlmProvider(() => classifierJson('important', 'Facture à traiter.')),
+    };
+    const { output, readText } = collectingOutput();
+
+    await dispatch(['inbox'], deps, { output }, forbiddenConnect);
+
+    const text = readText();
+    expect(text).toContain('Libellé : important');
+    expect(text).not.toContain('Résumé');
+  });
+
+  it('résumeur qui renvoie undefined (réponse inexploitable) → aucune ligne Résumé, jamais fabriquée', async () => {
+    const { accountStore, secretStore } = await connectedStores('refresh-token-1');
+    const { fetchFn } = buildFakeGmail(new Map([['refresh-token-1', 'access-token-1']]), [
+      rawGmailMessage('m1', 'alice@example.test', 'Facture', 'x'),
+    ]);
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+      llmProvider: new MockLlmProvider(() => classifierJson('important', 'Facture à traiter.')),
+      emailSummarizer: new MockEmailSummarizer(() => undefined),
+    };
+    const { output, readText } = collectingOutput();
+
+    await dispatch(['inbox'], deps, { output }, forbiddenConnect);
+
+    const text = readText();
+    expect(text).toContain('Libellé : important');
+    expect(text).not.toContain('Résumé');
+  });
+
+  it('boîte sans email important → résumeur jamais appelé', async () => {
+    const { accountStore, secretStore } = await connectedStores('refresh-token-1');
+    const { fetchFn } = buildFakeGmail(new Map([['refresh-token-1', 'access-token-1']]), [
+      rawGmailMessage('m1', 'news@promo.example', 'Solde -50%', 'x'),
+    ]);
+    const summarizer = new MockEmailSummarizer((email) => ({
+      summary: `Résumé de ${email.subject}`,
+    }));
+    const deps: DesktopDeps = {
+      accountStore,
+      secretStore,
+      appCredentials: APP_CREDENTIALS,
+      fetchFn,
+      llmProvider: new MockLlmProvider(() => classifierJson('not_important', 'Newsletter.')),
+      emailSummarizer: summarizer,
+    };
+    const { output, readText } = collectingOutput();
+
+    await dispatch(['inbox'], deps, { output }, forbiddenConnect);
+
+    expect(summarizer.calls).toHaveLength(0);
+    expect(readText()).not.toContain('Résumé');
   });
 });

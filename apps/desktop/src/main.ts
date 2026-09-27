@@ -10,7 +10,10 @@ import {
 import {
   EmailFetchBlockedError,
   fetchAndClassifyEmails,
+  summarizeEmailsNeedingAttention,
+  LlmProviderEmailSummarizer,
   type ClassifiedEmail,
+  type EmailSummarizer,
 } from '@jarvis/inbox';
 import { AnthropicProvider, type LlmProvider } from '@jarvis/llm';
 
@@ -191,6 +194,16 @@ export interface DesktopDeps {
    * `ANTHROPIC_API_KEY` est présente, sinon aucun LLM.
    */
   readonly llmProvider?: LlmProvider;
+  /**
+   * Injecté par les tests uniquement (flux `inbox`). Absent en production ⇒
+   * résumeur construit par {@link buildInboxEmailSummarizer} (`AnthropicProvider`
+   * si `ANTHROPIC_API_KEY` est présente, sinon aucun résumeur — les emails
+   * importants sont alors affichés sans résumé, jamais avec un résumé fabriqué).
+   * Indépendant de `llmProvider`/`classificationEngine` : un test qui injecte
+   * un `llmProvider` pour contrôler la classification n'active pas, par ce
+   * seul fait, la production de résumés.
+   */
+  readonly emailSummarizer?: EmailSummarizer;
 }
 
 /**
@@ -508,6 +521,20 @@ export function buildInboxClassificationEngine(
 }
 
 /**
+ * Construit le résumeur de la sous-commande `inbox` — branché uniquement si
+ * `ANTHROPIC_API_KEY` est présente. Volontairement **indépendant** du
+ * provider utilisé par {@link buildInboxClassificationEngine} : un test qui
+ * injecte un `llmProvider` pour la classification ne doit pas, par ce seul
+ * fait, déclencher aussi des appels de résumé. Sans clé, retourne
+ * `undefined` — les emails importants sont alors affichés sans résumé
+ * (jamais un résumé fabriqué).
+ */
+export function buildInboxEmailSummarizer(): EmailSummarizer | undefined {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  return apiKey ? new LlmProviderEmailSummarizer(new AnthropicProvider()) : undefined;
+}
+
+/**
  * Flux `inbox` — lit puis classe les emails Gmail récents en composant
  * exactement les mêmes briques de confiance que `read` :
  * `resolveOrConnectGmailAccount()` → `resolveGmailApiClient()` →
@@ -520,8 +547,13 @@ export function buildInboxClassificationEngine(
  * `--maxResults` est transmis tel quel à `gmail.read` (jamais réécrit ici).
  * Une lecture non exécutée (erreur Gmail, refus…) est signalée par un statut
  * générique — jamais le `reason` d'origine (même discipline que
- * {@link describeReadResult}). Seuls expéditeur, objet, libellé, raison et
- * provenance sont affichés (voir {@link describeInboxResult}).
+ * {@link describeReadResult}). Expéditeur, objet, libellé, raison et
+ * provenance sont affichés pour chaque email, plus un résumé pour les
+ * emails importants quand un résumeur est disponible (voir
+ * {@link describeInboxResult}). Le résumé est produit par
+ * `summarizeEmailsNeedingAttention` (`@jarvis/inbox`, inchangé) : aucun
+ * appel Gmail supplémentaire, ne modifie ni le classement ni la sélection
+ * des emails importants.
  */
 export async function runInboxFlow(
   deps: DesktopDeps,
@@ -565,7 +597,13 @@ export async function runInboxFlow(
     throw err;
   }
 
-  for (const line of describeInboxResult(classified)) {
+  const summarizer = deps.emailSummarizer ?? buildInboxEmailSummarizer();
+  const attentionSummaries =
+    summarizer !== undefined
+      ? await summarizeEmailsNeedingAttention(classified, summarizer)
+      : undefined;
+
+  for (const line of describeInboxResult(classified, attentionSummaries)) {
     write(line);
   }
   return classified;

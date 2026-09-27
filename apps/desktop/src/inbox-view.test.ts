@@ -1,5 +1,5 @@
 import type { ClassificationResult } from '@jarvis/classification';
-import type { ClassifiedEmail } from '@jarvis/inbox';
+import type { AttentionSummary, ClassifiedEmail } from '@jarvis/inbox';
 import type { EmailMessage } from '@jarvis/types';
 import { describe, expect, it } from 'vitest';
 
@@ -103,5 +103,61 @@ describe('describeInboxResult', () => {
 
     expect(lines.filter((l) => l === '')).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('CORPS-CONFIDENTIEL');
+  });
+
+  it('résumé fourni pour un email → ligne Résumé après Provenance', () => {
+    const entry = classified({ label: 'important', source: 'llm', reason: 'r' });
+    const attentionSummaries: readonly AttentionSummary[] = [
+      { classified: entry, summary: 'Réunion déplacée à 15h.' },
+    ];
+
+    const lines = describeInboxResult([entry], attentionSummaries);
+
+    expect(lines).toEqual([
+      'Expéditeur : alice@example.test',
+      'Objet : Point projet',
+      'Libellé : important',
+      'Raison : r',
+      'Provenance : LLM',
+      'Résumé : Réunion déplacée à 15h.',
+    ]);
+  });
+
+  it('aucun `attentionSummaries` fourni → aucune ligne Résumé (comportement inchangé)', () => {
+    const lines = describeInboxResult([
+      classified({ label: 'important', source: 'llm', reason: 'r' }),
+    ]);
+
+    expect(lines.some((l) => l.startsWith('Résumé'))).toBe(false);
+  });
+
+  it('résumé `undefined` pour l’entrée correspondante (échec/repli) → aucune ligne Résumé, jamais fabriquée', () => {
+    const entry = classified({ label: 'important', source: 'llm', reason: 'r' });
+    const attentionSummaries: readonly AttentionSummary[] = [
+      { classified: entry, summary: undefined },
+    ];
+
+    const lines = describeInboxResult([entry], attentionSummaries);
+
+    expect(lines.some((l) => l.startsWith('Résumé'))).toBe(false);
+  });
+
+  it('le résumé n’apparaît que pour l’email auquel il correspond', () => {
+    const important = classified(
+      { label: 'important', source: 'llm', reason: 'r1' },
+      { sender: 'a@example.test' },
+    );
+    const notImportant = classified(
+      { label: 'not_important', source: 'llm', reason: 'r2' },
+      { sender: 'b@example.test' },
+    );
+    const attentionSummaries: readonly AttentionSummary[] = [
+      { classified: important, summary: 'Résumé de a.' },
+    ];
+
+    const lines = describeInboxResult([important, notImportant], attentionSummaries);
+
+    expect(lines).toContain('Résumé : Résumé de a.');
+    expect(lines.filter((l) => l.startsWith('Résumé'))).toHaveLength(1);
   });
 });

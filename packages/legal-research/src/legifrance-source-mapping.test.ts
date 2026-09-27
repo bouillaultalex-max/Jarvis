@@ -163,10 +163,14 @@ describe('mapLegifranceArticleToLegalSource — article versionné (1)', () => {
   });
 
   it('14. lienCitations n’est jamais lu : sa présence ou son absence n’a aucun effet sur le mapping', () => {
-    const withCitations = mapLegifranceArticleToLegalSource(VERSIONED_ARTICLE);
+    // Horloge fixe injectée : sans elle, les deux appels à `Date.now()` peuvent tomber de part et
+    // d'autre d'une même milliseconde et faire diverger `consultedAt`, rendant ce test instable
+    // (comparaison `toEqual` sur l'objet complet).
+    const now = () => Date.parse('2026-09-23T18:00:00.000Z');
+    const withCitations = mapLegifranceArticleToLegalSource(VERSIONED_ARTICLE, { now });
     const withoutCitations: Record<string, unknown> = { ...VERSIONED_ARTICLE };
     delete withoutCitations.lienCitations;
-    const withoutCitationsResult = mapLegifranceArticleToLegalSource(withoutCitations);
+    const withoutCitationsResult = mapLegifranceArticleToLegalSource(withoutCitations, { now });
 
     expect(withCitations).toEqual(withoutCitationsResult);
     // Aucune trace de lienCitations, sous quelque forme que ce soit, dans le résultat.

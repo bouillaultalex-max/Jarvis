@@ -293,6 +293,28 @@ module.exports = tseslint.config(
   },
 
   {
+    // packages/legal-case-store (LEGAL-STORE-01) : persistance des dossiers juridiques,
+    // au-dessus de @jarvis/legal-core (seule dépendance @jarvis/* autorisée). legal-core
+    // reste une feuille sans I/O (architecture-boundaries.test.ts) : c'est cette couche,
+    // séparée, qui porte node:fs/node:path — jamais legal-core lui-même.
+    files: ['packages/legal-case-store/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@jarvis/*', '!@jarvis/legal-core'],
+              message:
+                '@jarvis/legal-case-store ne dépend que de @jarvis/legal-core : aucun autre package @jarvis/*, en particulier pas @jarvis/memory (espaces étanches, LEGAL_SPECIFICATION.md §5).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
     // packages/legal-research : Provider juridique au-dessus du Connector (LEGAL-02B.3) —
     // ne dépend que de @jarvis/core (ToolExecutor, injecté — jamais contourné) et
     // @jarvis/legal-core (LegalSource/LegalCitation). Ne connaît ni SecretStore, ni

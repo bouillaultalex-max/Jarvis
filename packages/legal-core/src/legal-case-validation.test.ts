@@ -257,3 +257,67 @@ describe('validateLegalCaseV3 — provenance de citation rattachée à une quest
     if (!result.ok) expect(result.error).toMatch(/question inconnue/);
   });
 });
+
+describe('validateLegalCaseV3 — research : questionId et doublons (LEGAL-RESEARCH-ITEM-01)', () => {
+  it('accepte un item historique sans questionId (rétrocompatibilité)', () => {
+    // buildSampleLegalCase() fournit déjà 'res-1' sans questionId.
+    expect(validateLegalCaseV3(buildSampleLegalCase())).toEqual({ ok: true });
+  });
+
+  it('accepte un questionId présent et valide', () => {
+    const legalCase = buildSampleLegalCase();
+    const withQuestionId: LegalCase = {
+      ...legalCase,
+      research: [{ ...legalCase.research[0]!, questionId: 'q-1' }],
+    };
+    expect(validateLegalCaseV3(withQuestionId)).toEqual({ ok: true });
+  });
+
+  it('rejette un questionId vide', () => {
+    const legalCase = buildSampleLegalCase();
+    const withEmptyQuestionId: LegalCase = {
+      ...legalCase,
+      research: [{ ...legalCase.research[0]!, questionId: '' }],
+    };
+    const result = validateLegalCaseV3(withEmptyQuestionId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/questionId/);
+  });
+
+  it('rejette un questionId qui ne référence aucune question existante', () => {
+    const legalCase = buildSampleLegalCase();
+    const withUnknownQuestionId: LegalCase = {
+      ...legalCase,
+      research: [{ ...legalCase.research[0]!, questionId: 'q-inexistante' }],
+    };
+    const result = validateLegalCaseV3(withUnknownQuestionId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/question inconnue/);
+  });
+
+  it('rejette deux research items de même id (même si leur contenu diffère)', () => {
+    const legalCase = buildSampleLegalCase();
+    const withDuplicateIds: LegalCase = {
+      ...legalCase,
+      research: [
+        legalCase.research[0]!,
+        { id: 'res-1', topic: 'Autre sujet', summary: 'Autre résumé.', citationIds: [] },
+      ],
+    };
+    const result = validateLegalCaseV3(withDuplicateIds);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/research/);
+  });
+
+  it('accepte deux research items d’id distincts', () => {
+    const legalCase = buildSampleLegalCase();
+    const withDistinctIds: LegalCase = {
+      ...legalCase,
+      research: [
+        legalCase.research[0]!,
+        { id: 'res-2', topic: 'Autre sujet', summary: 'Autre résumé.', citationIds: [] },
+      ],
+    };
+    expect(validateLegalCaseV3(withDistinctIds)).toEqual({ ok: true });
+  });
+});

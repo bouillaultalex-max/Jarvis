@@ -36,19 +36,45 @@ export function validateQuestion(question: unknown, path: string): LegalCaseVali
   return OK;
 }
 
+/**
+ * `knownQuestionIds` valide `questionId` **si présent** (LEGAL-RESEARCH-ITEM-01,
+ * même discipline que `LegalCitationEligibility.questionId` dans
+ * `legal-citation-validation.ts`). Absent de l'appelant (`undefined`) ⇒ un
+ * `questionId` fourni est refusé (impossible à vérifier en confiance) ; le champ
+ * étant optionnel, son absence totale sur l'item reste toujours valide.
+ */
 export function validateResearchItem(
   item: unknown,
   path: string,
   knownCitationIds: ReadonlySet<string>,
+  knownQuestionIds?: ReadonlySet<string>,
 ): LegalCaseValidation {
   if (typeof item !== 'object' || item === null || Array.isArray(item)) {
     return invalid(`${path} : objet attendu.`);
   }
-  const { id, topic, summary, citationIds } = item as Partial<LegalResearchItem>;
+  const { id, topic, summary, citationIds, questionId } = item as Partial<LegalResearchItem>;
   if (!isNonEmptyString(id)) return invalid(`${path}.id : chaîne non vide attendue.`);
   if (!isNonEmptyString(topic)) return invalid(`${path}.topic : chaîne non vide attendue.`);
   if (!isNonEmptyString(summary)) return invalid(`${path}.summary : chaîne non vide attendue.`);
-  return validateIdRefs(citationIds, `${path}.citationIds`, knownCitationIds, 'citation');
+  const citationIdsResult = validateIdRefs(
+    citationIds,
+    `${path}.citationIds`,
+    knownCitationIds,
+    'citation',
+  );
+  if (!citationIdsResult.ok) return citationIdsResult;
+
+  if (questionId !== undefined) {
+    if (!isNonEmptyString(questionId)) {
+      return invalid(`${path}.questionId : chaîne non vide attendue.`);
+    }
+    if (knownQuestionIds === undefined || !knownQuestionIds.has(questionId)) {
+      return invalid(
+        `${path}.questionId : question inconnue « ${questionId} » (absente de « questions »).`,
+      );
+    }
+  }
+  return OK;
 }
 
 export function validateArgument(

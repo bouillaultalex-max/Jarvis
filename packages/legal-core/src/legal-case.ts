@@ -291,12 +291,21 @@ export interface LegalCitationEligibility {
  * {@link LegalCitation} — jamais directement à une {@link LegalSource}
  * brute, pour porter le passage précis mobilisé (revue d'architecture
  * LEGAL-01 §5/§6).
+ *
+ * `questionId` (LEGAL-RESEARCH-ITEM-01) : optionnel pour la rétrocompatibilité
+ * des dossiers et fixtures antérieurs à ce champ ; **tout item produit par un
+ * producteur de ce jalon en fournit un** valide (voir
+ * `research-item-projection.ts`, `@jarvis/legal-research`). Quand il est
+ * présent, il doit désigner une {@link LegalQuestion} réellement présente dans
+ * le dossier (voir `legal-case-common-validation.ts`) — même discipline que
+ * `LegalCitationEligibility.questionId`.
  */
 export interface LegalResearchItem {
   readonly id: string;
   readonly topic: string;
   readonly summary: string;
   readonly citationIds: readonly string[];
+  readonly questionId?: string;
 }
 
 /** Un argument ou contre-argument (étape `ANALYZE`), rattaché à ses citations précises. */

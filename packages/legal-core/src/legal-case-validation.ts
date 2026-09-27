@@ -155,20 +155,26 @@ export function validateLegalCaseV3(value: unknown): LegalCaseValidation {
       (source) => [source.id, source] as const,
     ),
   );
+  const knownQuestionIds = extractKnownIds(legalCase.questions);
   const citationsResult = validateCitationList(
     legalCase.citations,
     'citations',
     knownSourcesById,
-    extractKnownIds(legalCase.questions),
+    knownQuestionIds,
   );
   if (!citationsResult.ok) return citationsResult;
   const knownCitationIds = extractKnownIds(legalCase.citations);
 
   // --- Recherche / arguments / analyses / conclusions (chaîne d'audit, inchangée) ---------
   const researchResult = validateEachOf(legalCase.research, 'research', (item, path) =>
-    validateResearchItem(item, path, knownCitationIds),
+    validateResearchItem(item, path, knownCitationIds, knownQuestionIds),
   );
   if (!researchResult.ok) return researchResult;
+  const researchDuplicateResult = checkNoDuplicateIds(
+    (legalCase.research ?? []) as readonly { readonly id: string }[],
+    'research',
+  );
+  if (!researchDuplicateResult.ok) return researchDuplicateResult;
 
   const argumentsResult = validateEachOf(legalCase.arguments, 'arguments', (item, path) =>
     validateArgument(item, path, knownCitationIds),

@@ -237,3 +237,57 @@ describe('format de fichier v3 — champs additifs de citation (ADR-0020, inchan
     expect(() => parseLegalCaseFile(file)).toThrow(LegalCaseFileError);
   });
 });
+
+describe('format de fichier v3 — questionId de LegalResearchItem (LEGAL-RESEARCH-ITEM-01)', () => {
+  it('round-trip : un LegalResearchItem avec questionId et ses citations sont conservés', () => {
+    const base = buildSampleLegalCase();
+    const legalCase: LegalCase = {
+      ...base,
+      questions: [{ id: 'q-1', question: 'Quel préavis ?', status: 'open' }],
+      research: [
+        {
+          id: 'res-1',
+          topic: 'Préavis en CDD',
+          summary: '1 citation(s) éligible(s) : src-1 (version 2016-10-01).',
+          citationIds: ['cit-1'],
+          questionId: 'q-1',
+        },
+      ],
+    };
+
+    const serialized = JSON.parse(serializeLegalCaseFile(legalCase)) as { version: number };
+    expect(serialized.version).toBe(3);
+    const reloaded = parseLegalCaseFile(serialized);
+    expect(reloaded).toEqual(legalCase);
+    expect(reloaded.research[0]!.citationIds).toEqual(['cit-1']);
+  });
+
+  it('un research item historique sans questionId reste lisible', () => {
+    const base = buildSampleLegalCase();
+    const legalCase: LegalCase = {
+      ...base,
+      research: [{ id: 'res-1', topic: 'Sujet', summary: 'Résumé.', citationIds: ['cit-1'] }],
+    };
+    const reloaded = parseLegalCaseFile(JSON.parse(serializeLegalCaseFile(legalCase)) as unknown);
+    expect(reloaded.research[0]).not.toHaveProperty('questionId');
+  });
+
+  it('un fichier dont un research item vise une question absente est refusé au chargement', () => {
+    const base = buildSampleLegalCase();
+    const broken: LegalCase = {
+      ...base,
+      research: [
+        {
+          id: 'res-1',
+          topic: 'Sujet',
+          summary: 'Résumé.',
+          citationIds: ['cit-1'],
+          questionId: 'q-absente',
+        },
+      ],
+    };
+    // L'écrivain refuserait ce dossier : on construit l'enveloppe à la main pour tester le chargement.
+    const file = JSON.parse(JSON.stringify({ version: 3, case: broken })) as unknown;
+    expect(() => parseLegalCaseFile(file)).toThrow(LegalCaseFileError);
+  });
+});

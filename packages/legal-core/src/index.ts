@@ -187,6 +187,9 @@ export type {
 } from './legal-case-citations.js';
 export { attachSourcesAndCitations } from './legal-case-citations.js';
 
+export type { AttachResearchItemsOptions } from './legal-case-research-items.js';
+export { attachResearchItems } from './legal-case-research-items.js';
+
 export type {
   LegalCaseAppendOnlyList,
   LegalCaseAdditions,

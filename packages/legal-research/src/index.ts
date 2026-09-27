@@ -80,6 +80,8 @@ export type {
 } from './research/citation-projection.js';
 export { projectCitations } from './research/citation-projection.js';
 
+export { projectResearchItem } from './research/research-item-projection.js';
+
 export type { ResearchEngineOptions } from './research/research-engine.js';
 export { ResearchEngine } from './research/research-engine.js';
 

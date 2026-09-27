@@ -7,6 +7,7 @@ import {
   buildSituationPrototypePrompt,
   parseSituationPrototypeOutput,
   runSituationPrototype,
+  SITUATION_PROTOTYPE_INSTRUCTIONS,
   type SituationModelCall,
   type SituationPrototypeInput,
 } from './situation-prototype.js';
@@ -30,6 +31,7 @@ function situationJson(overrides: Record<string, unknown> = {}): Record<string, 
     pointsOfAttention: [],
     pendingDecisions: [],
     candidateActions: [],
+    humanCommitments: [],
     potentiallyMemorable: [],
     ...overrides,
   };
@@ -281,6 +283,74 @@ describe('runSituationPrototype — cas 7 : élément potentiellement mémorisab
   });
 });
 
+describe('runSituationPrototype — cas 10 : engagement humain explicite (humanCommitments)', () => {
+  it('conserve un engagement humain nommé, distinct d’une action candidate non redondante', async () => {
+    const text =
+      'Marie a confirmé qu’elle enverrait le rapport de conformité vendredi. Il reste par ailleurs ' +
+      'à vérifier si le service juridique doit valider le contenu avant envoi.';
+
+    const call = fakeCallReturning(
+      situationJson({
+        summary:
+          'Marie a pris l’engagement d’envoyer le rapport ; une vérification juridique reste ouverte.',
+        facts: [
+          { text: 'Marie a confirmé l’envoi du rapport de conformité vendredi.', basis: 'stated' },
+        ],
+        humanCommitments: ['Marie enverra le rapport de conformité vendredi.'],
+        candidateActions: [
+          'Vérifier si le service juridique doit valider le contenu avant l’envoi.',
+        ],
+      }),
+    );
+
+    const result = await runSituationPrototype(call, { text });
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    // L'engagement rapporté est conservé tel quel, attribué à une personne nommée.
+    expect(result.situation.humanCommitments).toEqual([
+      'Marie enverra le rapport de conformité vendredi.',
+    ]);
+    // L'action candidate répond à un besoin distinct (validation juridique),
+    // elle ne reformule pas l'engagement déjà rapporté.
+    expect(result.situation.candidateActions).toEqual([
+      'Vérifier si le service juridique doit valider le contenu avant l’envoi.',
+    ]);
+    // Aucun chevauchement textuel entre les deux listes dans ce cas nominal.
+    const commitmentsText = result.situation.humanCommitments.join(' ');
+    for (const action of result.situation.candidateActions) {
+      expect(commitmentsText).not.toContain(action);
+    }
+  });
+
+  it(
+    'caractérisation : le parseur accepte aujourd’hui un même engagement dupliqué dans ' +
+      'humanCommitments et candidateActions — la non-duplication est une règle de CONSIGNE ' +
+      'de prompt (voir SITUATION_PROTOTYPE_INSTRUCTIONS), pas une validation structurelle du ' +
+      'schéma. Ce test fige ce comportement actuel ; il ne prétend pas qu’il est souhaitable. ' +
+      'Une future évolution du parseur pour détecter et rejeter ce cas est un changement de ' +
+      'contrat, hors périmètre de cette session.',
+    async () => {
+      const duplicated = 'Marie enverra le rapport de conformité vendredi.';
+      const call = fakeCallReturning(
+        situationJson({
+          humanCommitments: [duplicated],
+          candidateActions: [duplicated],
+        }),
+      );
+
+      const result = await runSituationPrototype(call, baseInput);
+
+      expect(result.status).toBe('ok');
+      if (result.status !== 'ok') return;
+      // Le schéma fermé et les bornes de longueur n'imposent aucune contrainte
+      // d'exclusion mutuelle entre les deux listes : la duplication passe.
+      expect(result.situation.humanCommitments).toEqual([duplicated]);
+      expect(result.situation.candidateActions).toEqual([duplicated]);
+    },
+  );
+});
+
 describe('runSituationPrototype — cas 8 : sortie modèle invalide', () => {
   it('renvoie invalid sur un JSON syntaxiquement incorrect, sans exception', async () => {
     const call: SituationModelCall = async () => '{ not valid json';
@@ -392,5 +462,115 @@ describe('Frontière architecturale', () => {
         `le terme interdit « ${term} » apparaît dans le code du prototype`,
       ).toBe(false);
     }
+  });
+});
+
+describe('checkArrayBounds — bornage partagé par les listes de chaînes et de statements', () => {
+  // checkArrayBounds n'est pas exportée : on l'exerce via parseSituationPrototypeOutput,
+  // sur un champ liste de chaînes (missingInformation) et un champ liste de statements
+  // (facts), pour couvrir les deux fonctions appelantes avec le même bornage.
+
+  it('rejette une valeur non-tableau pour un champ liste de chaînes', () => {
+    const payload = { ...situationJson(), missingInformation: 'pas un tableau' };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('invalid');
+    if (result.status !== 'invalid') return;
+    expect(result.reason).toBe('« missingInformation » : tableau attendu.');
+  });
+
+  it('rejette une valeur non-tableau pour un champ liste de statements', () => {
+    const payload = { ...situationJson(), facts: 'pas un tableau' };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('invalid');
+    if (result.status !== 'invalid') return;
+    expect(result.reason).toBe('« facts » : tableau attendu.');
+  });
+
+  it('rejette un tableau de chaînes dépassant MAX_LIST_ITEMS', () => {
+    const tropLong = Array.from({ length: 21 }, (_, i) => `élément ${i}`);
+    const payload = { ...situationJson(), missingInformation: tropLong };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('invalid');
+    if (result.status !== 'invalid') return;
+    expect(result.reason).toBe('« missingInformation » : 21 éléments — maximum 20.');
+  });
+
+  it('rejette un tableau de statements dépassant MAX_LIST_ITEMS', () => {
+    const tropLong = Array.from({ length: 21 }, (_, i) => ({
+      text: `fait ${i}`,
+      basis: 'stated' as const,
+    }));
+    const payload = { ...situationJson(), facts: tropLong };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('invalid');
+    if (result.status !== 'invalid') return;
+    expect(result.reason).toBe('« facts » : 21 éléments — maximum 20.');
+  });
+
+  it('accepte un tableau de chaînes valide, au plus MAX_LIST_ITEMS éléments', () => {
+    const payload = { ...situationJson(), missingInformation: ['un élément', 'un autre'] };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.situation.missingInformation).toEqual(['un élément', 'un autre']);
+  });
+
+  it('accepte un tableau de statements valide, au plus MAX_LIST_ITEMS éléments', () => {
+    const payload = {
+      ...situationJson(),
+      facts: [{ text: 'un fait', basis: 'stated' }],
+    };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.situation.facts).toEqual([{ text: 'un fait', basis: 'stated' }]);
+  });
+
+  it('accepte un tableau de chaînes à exactement MAX_LIST_ITEMS éléments (frontière)', () => {
+    const auLimite = Array.from({ length: 20 }, (_, i) => `élément ${i}`);
+    const payload = { ...situationJson(), missingInformation: auLimite };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.situation.missingInformation).toEqual(auLimite);
+  });
+
+  it('accepte un tableau de statements à exactement MAX_LIST_ITEMS éléments (frontière)', () => {
+    const auLimite = Array.from({ length: 20 }, (_, i) => ({
+      text: `fait ${i}`,
+      basis: 'stated' as const,
+    }));
+    const payload = { ...situationJson(), facts: auLimite };
+    const result = parseSituationPrototypeOutput(JSON.stringify(payload));
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.situation.facts).toEqual(auLimite);
+  });
+});
+
+describe('SITUATION_PROTOTYPE_INSTRUCTIONS — consigne anti-Markdown', () => {
+  /**
+   * Vérification **statique du contenu du prompt**, pas une garantie de
+   * comportement du modèle : un vrai modèle peut toujours ignorer une
+   * instruction. Ce test fige seulement le fait que la consigne interdisant
+   * explicitement les balises Markdown et tout caractère hors de l'objet
+   * JSON est bien présente dans le texte envoyé au modèle — ajouté suite au
+   * diagnostic manuel montrant des sorties réelles entourées de balises
+   * ```json ... ```, rejetées à raison par le parseur strict.
+   */
+  it('interdit explicitement les balises Markdown et tout texte hors de l’objet JSON', () => {
+    expect(SITUATION_PROTOTYPE_INSTRUCTIONS).toContain('```json');
+    expect(SITUATION_PROTOTYPE_INSTRUCTIONS.toLowerCase()).toContain('balises markdown');
+    expect(SITUATION_PROTOTYPE_INSTRUCTIONS).toContain('JSON.parse');
+    expect(SITUATION_PROTOTYPE_INSTRUCTIONS).toContain('caractère avant le premier « { »');
+    expect(SITUATION_PROTOTYPE_INSTRUCTIONS).toContain('dernier « } »');
   });
 });

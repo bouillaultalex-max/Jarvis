@@ -160,6 +160,15 @@ instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE
 - Activation de la promotion mémoire (`@jarvis/memory`) dans une
   application — non commencé ; policy de référence actée par
   `docs/adr/0007-memory-promotion-policy.md`.
+- **Canal conversationnel WhatsApp** — idée à étudier, **non engagée**.
+  Objectif utilisateur envisagé : envoyer une demande à Jarvis depuis
+  WhatsApp et recevoir sa réponse dans la même conversation. Positionné
+  après la stabilisation des fondations et la livraison d'un premier
+  parcours utilisateur fonctionnel — déjà le cas aujourd'hui (fondations
+  M4–M8, VS-02 livré). Nécessite une étude de faisabilité préalable avant
+  tout MVP ; aucune bibliothèque ni fournisseur n'est choisi à ce stade.
+  Détail, périmètre envisagé et questions ouvertes : `MASTER_BACKLOG.md` →
+  « Pistes non encore validées ».
 - **Domaine juridique — autres points ouverts** (non planifiés, non décidés ;
   l'ordre relatif à LEGAL-04 n'est pas établi) : query planning, `LegalResearchItem` (rôle, lien à la question,
   synthèse), ANALYZE / VERIFY / PREPARE, pertinence et « evidence-used », stockage

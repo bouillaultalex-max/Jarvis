@@ -351,6 +351,42 @@ conservés, **NON résolus**, aucun n'est bloquant) :
   `createDefaultMemoryPromotionPolicy` réservée aux tests/usages
   explicitement maîtrisés).
 
+- **Canal conversationnel WhatsApp — étude de faisabilité préalable** (idée à
+  étudier, **non engagée** ; positionnement roadmap : `MASTER_ROADMAP.md` →
+  LATER). Objectif utilisateur : envoyer une demande à Jarvis depuis
+  WhatsApp et recevoir sa réponse dans la même conversation. Aucune réponse
+  technique n'est présentée comme acquise : la faisabilité reste entièrement
+  à vérifier auprès de la documentation officielle actuelle au moment de
+  l'étude — aucune bibliothèque ni fournisseur n'est choisi ici.
+  Questions ouvertes à trancher par l'étude :
+  - Quelle voie d'intégration officielle répond au besoin ?
+  - Peut-elle utiliser le compte personnel souhaité, ou exige-t-elle un
+    numéro/compte distinct ?
+  - Quelles contraintes de disponibilité, coût, confidentialité et
+    hébergement ?
+  - Comment présenter et recueillir une confirmation explicite liée à une
+    action précise, cohérent avec le protocole de confirmation existant
+    (`ConfirmationService`, `docs/adr/0006`, `docs/adr/0008`) ?
+- **Canal conversationnel WhatsApp — MVP** (**conditionné aux résultats** de
+  l'étude de faisabilité ci-dessus ; non engagé, aucune date). Périmètre
+  envisagé :
+  - réception d'un message de l'utilisateur autorisé ;
+  - transmission au parcours conversationnel de Jarvis ;
+  - réponse dans la même conversation WhatsApp ;
+  - identification de l'utilisateur et refus des interlocuteurs non
+    autorisés ;
+  - conservation intégrale des règles de permissions et de confirmation
+    existantes (`PermissionManager`/`ConfirmationService`) — un message
+    entrant ne vaut en aucun cas autorisation générale ;
+  - gestion minimale du contexte, des doublons et des erreurs.
+
+  Hors périmètre initial, explicitement exclu :
+  - lecture générale de l'historique WhatsApp ;
+  - surveillance des conversations, groupes ou messages de tiers ;
+  - envoi autonome à d'autres contacts ;
+  - toute connexion effective, création de compte ou manipulation de
+    secrets.
+
 Ces pistes sont mentionnées dans `PROJECT_STATE.md` comme décisions
 ouvertes ; aucune n'est priorisée par rapport aux autres à ce stade. La
 surface CLI desktop post-M8 (ci-dessus) est déjà livrée et ne préempte

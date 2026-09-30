@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { AgentLoop, type LlmProvider, type ToolExecutor } from '@jarvis/core';
 import {
   ConfirmationService,
+  UnsupportedConfirmationInputError,
   buildConfirmationRequest,
   confirmAndExecute,
   type Account,
@@ -12,6 +13,7 @@ import {
   confirmationDeniedResponse,
   mapChatToolBlockedResult,
   mapConfirmAndExecuteResult,
+  mapToolBlockedWithoutOutcome,
 } from './http-mapping.js';
 
 /**
@@ -110,7 +112,20 @@ export function buildServer(llm: LlmProvider, deps: BuildServerDependencies = {}
           input: last.input,
         };
         const createdAt = new Date().toISOString();
-        const ticket = await confirmationService.create(payload);
+        let ticket;
+        try {
+          ticket = await confirmationService.create(payload);
+        } catch (err) {
+          if (!(err instanceof UnsupportedConfirmationInputError)) {
+            throw err;
+          }
+          // `last.input` viole le contrat strict du protocole de
+          // confirmation (Tool.validateInput() mal écrit) — incohérence
+          // interne, jamais un détail brut exposé, même réponse générique
+          // que le cas limite déjà décidé par ADR-0009 §2.
+          const mapped = mapToolBlockedWithoutOutcome();
+          return reply.code(mapped.code).send(mapped.body);
+        }
         const confirmationRequest = buildConfirmationRequest({
           confirmationId: ticket.confirmationId,
           createdAt,

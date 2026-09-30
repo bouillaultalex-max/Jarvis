@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { LlmMessage, LlmProvider, LlmResponse } from '@jarvis/core';
+import type { LlmMessage, LlmProvider, LlmResponse, Tool } from '@jarvis/core';
 import { PermissionManager, ToolExecutor, ToolRegistry } from '@jarvis/core';
 import { ConfirmationService } from '@jarvis/connectors';
 
@@ -207,6 +207,51 @@ describe('POST /chat — protocole de confirmation (ADR-0008/0009)', () => {
     expect(raw).not.toMatch(/secret|token|refreshToken|accessToken|clientSecret|apiKey/i);
     expect(raw).not.toMatch(/oauth|clientId|redirectUri|scope=/i);
     expect(raw).not.toMatch(/at\s+\w+\s+\(.*:\d+:\d+\)/); // pas de stack trace
+  });
+
+  it('renvoie 500 générique si l’input validé par le Tool viole le contrat de confirmation (accesseur), sans ticket créé, sans invoquer l’accesseur', async () => {
+    const registry = new ToolRegistry();
+    registry.register(internalFakeExecuteTool);
+    let getterCalls = 0;
+    const badInputTool: Tool<unknown, { ok: true }> = {
+      name: 'test.bad-input',
+      description: 'Tool de test — input validé avec accesseur, simule un Tool mal écrit',
+      action: 'execute',
+      inputSchema: { type: 'object', properties: {} },
+      validateInput: () => {
+        const value: Record<string, unknown> = {};
+        Object.defineProperty(value, 'x', {
+          get() {
+            getterCalls += 1;
+            return 'leaked';
+          },
+          enumerable: true,
+        });
+        return { ok: true, value };
+      },
+      execute: async () => ({ ok: true }),
+    };
+    registry.register(badInputTool);
+    const permissions = new PermissionManager({
+      actionDefaults: { execute: 'require_confirmation' },
+      default: 'deny',
+    });
+    const toolExecutor = new ToolExecutor(registry, permissions);
+    const confirmationService = new ConfirmationService();
+    const pendingConfirmations = new PendingConfirmations();
+
+    const provider = new MockLlmProvider();
+    provider.response = {
+      content: 'x',
+      toolCall: { id: 'call-1', tool: 'test.bad-input', input: {} },
+    };
+    const app = buildServer(provider, { toolExecutor, confirmationService, pendingConfirmations });
+
+    const res = await app.inject({ method: 'POST', url: '/chat', payload: { message: 'x' } });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ status: 'internal_tool_error', reason: 'Internal tool error.' });
+    expect(getterCalls).toBe(0);
   });
 
   it('renvoie 422 avec le message fixe pour un input invalide (jamais avant de créer un ticket)', async () => {

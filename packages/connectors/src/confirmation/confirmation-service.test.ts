@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { ConfirmationService, type ConfirmationPayload } from './confirmation-service.js';
+import {
+  ConfirmationService,
+  UnsupportedConfirmationInputError,
+  type ConfirmationPayload,
+} from './confirmation-service.js';
 
 const FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK = 'FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK';
 
@@ -51,7 +55,10 @@ describe('ConfirmationService — expiration (horloge injectable)', () => {
     const ticket = await service.create(p);
 
     now += 60_000; // exactement à l'expiration
-    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({ ok: false, reason: 'expired' });
+    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({
+      ok: false,
+      reason: 'expired',
+    });
   });
 
   it('maintenant > expiration → invalide', async () => {
@@ -61,7 +68,10 @@ describe('ConfirmationService — expiration (horloge injectable)', () => {
     const ticket = await service.create(p);
 
     now += 60_001;
-    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({ ok: false, reason: 'expired' });
+    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({
+      ok: false,
+      reason: 'expired',
+    });
   });
 });
 
@@ -73,7 +83,10 @@ describe('ConfirmationService — deny()', () => {
 
     await service.deny(ticket.confirmationId);
 
-    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({ ok: false, reason: 'denied' });
+    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({
+      ok: false,
+      reason: 'denied',
+    });
   });
 
   it('deny() sur un id inconnu est un no-op silencieux (idempotent)', async () => {
@@ -92,7 +105,10 @@ describe('ConfirmationService — revokeForAccount()', () => {
 
     await service.revokeForAccount('acc-A');
 
-    await expect(service.verify(ticketA.confirmationId, payloadA)).resolves.toEqual({ ok: false, reason: 'revoked' });
+    await expect(service.verify(ticketA.confirmationId, payloadA)).resolves.toEqual({
+      ok: false,
+      reason: 'revoked',
+    });
     await expect(service.verify(ticketB.confirmationId, payloadB)).resolves.toEqual({ ok: true });
   });
 });
@@ -113,7 +129,9 @@ describe('ConfirmationService — binding strict (Tool / action / compte / paylo
     const p = payload({ action: 'execute' });
     const ticket = await service.create(p);
 
-    await expect(service.verify(ticket.confirmationId, { ...p, action: 'prepare' })).resolves.toMatchObject({
+    await expect(
+      service.verify(ticket.confirmationId, { ...p, action: 'prepare' }),
+    ).resolves.toMatchObject({
       ok: false,
     });
   });
@@ -123,7 +141,9 @@ describe('ConfirmationService — binding strict (Tool / action / compte / paylo
     const p = payload({ accountId: 'acc-A' });
     const ticket = await service.create(p);
 
-    await expect(service.verify(ticket.confirmationId, { ...p, accountId: 'acc-B' })).resolves.toMatchObject({
+    await expect(
+      service.verify(ticket.confirmationId, { ...p, accountId: 'acc-B' }),
+    ).resolves.toMatchObject({
       ok: false,
     });
   });
@@ -134,7 +154,10 @@ describe('ConfirmationService — binding strict (Tool / action / compte / paylo
     const ticket = await service.create(p);
 
     await expect(
-      service.verify(ticket.confirmationId, { ...p, input: { ...p.input as object, body: 'texte modifié' } }),
+      service.verify(ticket.confirmationId, {
+        ...p,
+        input: { ...(p.input as object), body: 'texte modifié' },
+      }),
     ).resolves.toMatchObject({ ok: false, reason: 'payload_mismatch' });
   });
 
@@ -144,7 +167,10 @@ describe('ConfirmationService — binding strict (Tool / action / compte / paylo
     const ticket = await service.create(p);
 
     await expect(
-      service.verify(ticket.confirmationId, { ...p, input: { subject: 's', to: 'a@example.test' } }),
+      service.verify(ticket.confirmationId, {
+        ...p,
+        input: { subject: 's', to: 'a@example.test' },
+      }),
     ).resolves.toEqual({ ok: true });
   });
 
@@ -154,7 +180,10 @@ describe('ConfirmationService — binding strict (Tool / action / compte / paylo
     const ticket = await service.create(p);
 
     await expect(
-      service.verify(ticket.confirmationId, { ...p, input: { to: ['b@example.test', 'a@example.test'] } }),
+      service.verify(ticket.confirmationId, {
+        ...p,
+        input: { to: ['b@example.test', 'a@example.test'] },
+      }),
     ).resolves.toMatchObject({ ok: false });
   });
 });
@@ -246,7 +275,9 @@ describe('ConfirmationService — redémarrage simulé', () => {
 describe('ConfirmationService — sécurité : aucune fuite de donnée sensible', () => {
   it('le marqueur de secret présent dans le payload ne fuit jamais dans le ticket, ni dans un résultat d’échec', async () => {
     const service = new ConfirmationService();
-    const p = payload({ input: { to: 'a@example.test', body: FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK } });
+    const p = payload({
+      input: { to: 'a@example.test', body: FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK },
+    });
     const ticket = await service.create(p);
 
     expect(JSON.stringify(ticket)).not.toContain(FAKE_REFRESH_TOKEN_SHOULD_NEVER_LEAK);
@@ -279,5 +310,63 @@ describe('ConfirmationService — sécurité : aucune fuite de donnée sensible'
     } else {
       throw new Error('unreachable: attendu un échec');
     }
+  });
+});
+
+describe('ConfirmationService — contrat strict de `input` (confirmation-input-contract.ts)', () => {
+  it('create() avec un input non pris en charge (accesseur) rejette sans créer de ticket, sans jamais invoquer l’accesseur', async () => {
+    const service = new ConfirmationService();
+    let getterCalls = 0;
+    const badInput: Record<string, unknown> = {};
+    Object.defineProperty(badInput, 'x', {
+      get() {
+        getterCalls += 1;
+        return 'leaked';
+      },
+      enumerable: true,
+    });
+
+    await expect(service.create(payload({ input: badInput }))).rejects.toThrow(
+      UnsupportedConfirmationInputError,
+    );
+    expect(getterCalls).toBe(0);
+
+    // Le service reste utilisable normalement ensuite : aucun état corrompu.
+    const goodTicket = await service.create(payload());
+    await expect(service.verify(goodTicket.confirmationId, payload())).resolves.toEqual({
+      ok: true,
+    });
+  });
+
+  it('create() avec un BigInt imbriqué rejette sans créer de ticket', async () => {
+    const service = new ConfirmationService();
+    await expect(
+      service.create(payload({ input: { amount: 10n } as unknown as Record<string, unknown> })),
+    ).rejects.toThrow(UnsupportedConfirmationInputError);
+  });
+
+  it('verify() avec un input non pris en charge au moment de la confirmation → payload_mismatch, ticket non consommé, accesseur jamais invoqué', async () => {
+    const service = new ConfirmationService();
+    const p = payload();
+    const ticket = await service.create(p);
+
+    let getterCalls = 0;
+    const badInput: Record<string, unknown> = {};
+    Object.defineProperty(badInput, 'x', {
+      get() {
+        getterCalls += 1;
+        return 'leaked';
+      },
+      enumerable: true,
+    });
+
+    const result = await service.verify(ticket.confirmationId, { ...p, input: badInput });
+
+    expect(result).toEqual({ ok: false, reason: 'payload_mismatch' });
+    expect(getterCalls).toBe(0);
+
+    // Le ticket original n'a pas été consommé par cette tentative invalide —
+    // il reste utilisable avec le payload réellement approuvé.
+    await expect(service.verify(ticket.confirmationId, p)).resolves.toEqual({ ok: true });
   });
 });

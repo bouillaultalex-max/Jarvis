@@ -1,8 +1,14 @@
 import { randomBytes, createHash } from 'node:crypto';
 
+import {
+  captureConfirmationInput,
+  UnsupportedConfirmationInputError,
+} from './confirmation-input-contract.js';
 import { canonicalStringify, computeFingerprint, type ConfirmationPayload } from './fingerprint.js';
 
 export type { ConfirmationPayload } from './fingerprint.js';
+export { UnsupportedConfirmationInputError } from './confirmation-input-contract.js';
+export type { ConfirmationInputRejectionReason } from './confirmation-input-contract.js';
 
 /**
  * Générateur de service de confirmation — garantit qu'une confirmation
@@ -38,16 +44,10 @@ export type { ConfirmationPayload } from './fingerprint.js';
 
 /** Raison structurée d'un échec de `verify()` — une seule catégorie d'erreur pour tous les cas, volontairement. */
 export type ConfirmationFailureReason =
-  | 'not_found'
-  | 'payload_mismatch'
-  | 'expired'
-  | 'denied'
-  | 'revoked'
-  | 'already_consumed';
+  'not_found' | 'payload_mismatch' | 'expired' | 'denied' | 'revoked' | 'already_consumed';
 
 export type ConfirmationVerifyResult =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: ConfirmationFailureReason };
+  { readonly ok: true } | { readonly ok: false; readonly reason: ConfirmationFailureReason };
 
 export interface ConfirmationTicket {
   /** Opaque, imprévisible — jamais le token en clair n'est stocké tel quel côté service (voir plus bas). */
@@ -118,14 +118,22 @@ export class ConfirmationService {
    * Crée une confirmation `pending` pour ce payload exact et renvoie un
    * jeton opaque et imprévisible (256 bits, `crypto.randomBytes` —
    * jamais `Math.random`, un compteur, ou un horodatage seul).
+   *
+   * `payload.input` est d'abord validé contre le contrat strict de
+   * `confirmation-input-contract.ts` (JSON ordinaire uniquement). Lève
+   * {@link UnsupportedConfirmationInputError} et **ne crée aucun ticket**
+   * si `input` ne le respecte pas — aucun `randomBytes`, aucune écriture
+   * dans `#records`, aucun effet de bord avant validation complète.
    */
   async create(payload: ConfirmationPayload): Promise<ConfirmationTicket> {
+    const capturedInput = captureConfirmationInput(payload.input);
+
     const confirmationId = randomBytes(32).toString('base64url');
     const expiresAtMs = this.#now() + this.#ttlMs;
 
     this.#records.set(hashToken(confirmationId), {
       status: 'pending',
-      fingerprint: computeFingerprint(payload),
+      fingerprint: computeFingerprint({ ...payload, input: capturedInput }),
       accountId: payload.accountId,
       expiresAtMs,
     });
@@ -145,7 +153,10 @@ export class ConfirmationService {
    * (voir les tests de concurrence : un seul `ok:true` sur N appels
    * identiques).
    */
-  async verify(confirmationId: string, payload: ConfirmationPayload): Promise<ConfirmationVerifyResult> {
+  async verify(
+    confirmationId: string,
+    payload: ConfirmationPayload,
+  ): Promise<ConfirmationVerifyResult> {
     const record = this.#records.get(hashToken(confirmationId));
     if (record === undefined) {
       return { ok: false, reason: 'not_found' };
@@ -166,7 +177,22 @@ export class ConfirmationService {
       return { ok: false, reason: 'expired' };
     }
 
-    if (computeFingerprint(payload) !== record.fingerprint) {
+    // Un `input` qui viole le contrat strict (accesseur, BigInt, cycle…) ne
+    // peut par construction jamais correspondre à une empreinte stockée
+    // (celle-ci n'a été calculée que sur une capture déjà validée par
+    // `create()`) — traité comme une divergence d'empreinte ordinaire,
+    // jamais comme une nouvelle catégorie d'échec exposée à l'appelant.
+    let capturedInput: unknown;
+    try {
+      capturedInput = captureConfirmationInput(payload.input);
+    } catch (err) {
+      if (err instanceof UnsupportedConfirmationInputError) {
+        return { ok: false, reason: 'payload_mismatch' };
+      }
+      throw err;
+    }
+
+    if (computeFingerprint({ ...payload, input: capturedInput }) !== record.fingerprint) {
       return { ok: false, reason: 'payload_mismatch' };
     }
 

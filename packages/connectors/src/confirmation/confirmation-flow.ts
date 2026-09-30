@@ -1,9 +1,17 @@
 import type { ToolExecutionResult, ToolExecutor, ToolRequest } from '@jarvis/core';
 
 import type { Account } from '../account.js';
+import {
+  captureConfirmationInput,
+  UnsupportedConfirmationInputError,
+} from './confirmation-input-contract.js';
 import type { ConfirmationInputSummary, ConfirmationRequest } from './confirmation-request.js';
 import { buildConfirmationRequest } from './confirmation-request.js';
-import type { ConfirmationFailureReason, ConfirmationPayload, ConfirmationService } from './confirmation-service.js';
+import type {
+  ConfirmationFailureReason,
+  ConfirmationPayload,
+  ConfirmationService,
+} from './confirmation-service.js';
 import { describeConfirmationFailure } from './confirmation-service.js';
 
 /**
@@ -49,8 +57,19 @@ export interface ProposeConfirmationOptions {
 export interface ProposeConfirmationResult {
   /** Résultat brut de `ToolExecutor.run()` — jamais réinterprété. */
   readonly result: ToolExecutionResult;
-  /** Présent uniquement si `result.status === 'awaiting_confirmation'`. */
+  /** Présent uniquement si `result.status === 'awaiting_confirmation'` et que `input` respecte le contrat de confirmation. */
   readonly confirmationRequest?: ConfirmationRequest;
+  /**
+   * Présent uniquement si `result.status === 'awaiting_confirmation'` mais
+   * que `result.input` viole le contrat strict du protocole de confirmation
+   * (`confirmation-input-contract.ts` — ex. un `Tool.validateInput()` mal
+   * écrit qui laisserait passer un `BigInt`, un accesseur…). Dans ce cas,
+   * **aucun ticket n'est créé** (`ConfirmationService.create()` a levé avant
+   * toute écriture) : `confirmationRequest` reste `undefined`, `result`
+   * reste exactement celui de `ToolExecutor` (`awaiting_confirmation`,
+   * contrat de `@jarvis/core` inchangé).
+   */
+  readonly rejectedInput?: UnsupportedConfirmationInputError;
 }
 
 /**
@@ -84,7 +103,15 @@ export async function proposeConfirmation(
     input: result.input,
   };
 
-  const ticket = await confirmationService.create(payload);
+  let ticket;
+  try {
+    ticket = await confirmationService.create(payload);
+  } catch (err) {
+    if (err instanceof UnsupportedConfirmationInputError) {
+      return { result, rejectedInput: err };
+    }
+    throw err;
+  }
 
   const confirmationRequest = buildConfirmationRequest({
     confirmationId: ticket.confirmationId,
@@ -137,11 +164,49 @@ export interface ConfirmAndExecuteOptions {
  * redemander la décision réelle à `PermissionManager` (via `ToolExecutor`,
  * qui peut toujours refuser malgré un ticket valide, ex. politique changée
  * entre-temps).
+ *
+ * `verifiedToolName`/`verifiedInput` sont des captures de `payload.toolName`/
+ * `payload.input` prises de façon strictement synchrone, avant le seul point
+ * de suspension de cette fonction (`await confirmationService.verify(...)`).
+ * `payload.toolName` est un primitif (copié par valeur, immunisé de fait) ;
+ * `payload.input` est capturé par {@link captureConfirmationInput} (contrat
+ * strict, `confirmation-input-contract.ts` — même mécanisme que celui
+ * utilisé en interne par `ConfirmationService.create()`/`verify()`). Ceci
+ * garantit que l'outil et la valeur fingerprintés par `verify()` et ceux
+ * réellement transmis à `executor.run()` sont **toujours** les mêmes —
+ * même si l'appelant conservait une référence à `payload` et le mutait
+ * (outil ou entrée) entre l'appel à `confirmAndExecute` et sa résolution
+ * (fenêtre théorique : aucun appelant actuel — `apps/api`, `apps/desktop` —
+ * ne conserve une telle référence mutable après l'appel).
+ *
+ * Si `payload.input` viole le contrat (accesseur, `BigInt`, cycle…), cette
+ * capture échoue **avant** tout appel à `confirmationService.verify()` —
+ * aucun ticket n'est donc jamais consulté ni consommé pour une tentative de
+ * forme invalide ; le ticket original reste utilisable avec un payload
+ * conforme. Le résultat est `confirmation_failed`/`payload_mismatch` —
+ * même statut public que toute autre divergence de payload, aucune
+ * information supplémentaire n'est exposée.
  */
 export async function confirmAndExecute(
   options: ConfirmAndExecuteOptions,
 ): Promise<ConfirmAndExecuteResult> {
   const { executor, confirmationService, confirmationId, payload } = options;
+
+  let verifiedToolName: string;
+  let verifiedInput: unknown;
+  try {
+    verifiedToolName = payload.toolName;
+    verifiedInput = captureConfirmationInput(payload.input);
+  } catch (err) {
+    if (!(err instanceof UnsupportedConfirmationInputError)) {
+      throw err;
+    }
+    return {
+      status: 'confirmation_failed',
+      failureReason: 'payload_mismatch',
+      reason: describeConfirmationFailure('payload_mismatch'),
+    };
+  }
 
   const verification = await confirmationService.verify(confirmationId, payload);
   if (!verification.ok) {
@@ -152,5 +217,5 @@ export async function confirmAndExecute(
     };
   }
 
-  return executor.run({ tool: payload.toolName, input: payload.input, confirmed: true });
+  return executor.run({ tool: verifiedToolName, input: verifiedInput, confirmed: true });
 }

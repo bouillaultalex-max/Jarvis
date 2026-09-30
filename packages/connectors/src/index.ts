@@ -63,12 +63,14 @@ export type {
   ConfirmationVerifyResult,
   ConfirmationTicket,
   ConfirmationServiceOptions,
+  ConfirmationInputRejectionReason,
 } from './confirmation/confirmation-service.js';
 export {
   ConfirmationService,
   describeConfirmationFailure,
   canonicalStringify,
   computeFingerprint,
+  UnsupportedConfirmationInputError,
 } from './confirmation/confirmation-service.js';
 
 export type { TextPreview } from './confirmation/text-preview.js';

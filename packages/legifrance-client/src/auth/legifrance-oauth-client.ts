@@ -1,4 +1,4 @@
-import type { AccessTokenProvider } from '@jarvis/connectors';
+import type { AccessTokenProvider } from './access-token-provider.js';
 
 import type { LegifranceConfig } from '../config/legifrance-config.js';
 import {
@@ -11,12 +11,12 @@ import type { LegifranceCredentials } from './legifrance-credentials.js';
 /**
  * Client OAuth 2.0 *Client Credentials* pour PISTE — jalon LEGAL-02B.1.
  *
- * Implémente {@link AccessTokenProvider}, déjà défini et exporté par
- * `@jarvis/connectors` (`gmail-auth.ts`) pour `GoogleOAuthAccessTokenProvider` :
- * cette interface n'est pas spécifique à Gmail (sa forme — `getAccessToken(): Promise<string>` —
- * ne mentionne rien de Google), donc `LegifranceOAuthClient` la réutilise
- * telle quelle plutôt que d'en déclarer une nouvelle (LEGAL-02B.1 interdit
- * explicitement de dupliquer une abstraction existante).
+ * Implémente {@link AccessTokenProvider} — même forme que celle de
+ * `@jarvis/connectors` (`gmail-auth.ts`) pour `GoogleOAuthAccessTokenProvider`,
+ * redéclarée localement (`./access-token-provider.js`) pour que
+ * `@jarvis/legifrance-client` reste une feuille sans dépendance `@jarvis/*`
+ * (cycle de packages corrigé — voir PROJECT_STATE.md). Le typage structurel
+ * de TypeScript rend les deux déclarations interchangeables.
  *
  * Différences volontaires avec `GoogleOAuthAccessTokenProvider` :
  *   - **pas de refresh token** : PISTE utilise `grant_type=client_credentials`

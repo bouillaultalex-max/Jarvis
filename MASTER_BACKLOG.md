@@ -204,9 +204,10 @@ Implémenté, **versionné** et testé (`legal-core` : `85e7e6e` ; Légifrance/r
 
 Dette technique connue (non planifiée) : test préexistant instable
 `legifrance-source-mapping.test.ts` (« 14. lienCitations… », horloge non
-injectée) ; `LegalSourceProvider` typé Légifrance ; cycle de packages
-`connectors` ↔ `legifrance-client`. Les points d'attention des derniers blocs
-sont conservés dans « Domaine juridique — points ouverts » ci-dessous.
+injectée) ; `LegalSourceProvider` typé Légifrance. Le cycle de packages
+`connectors` ↔ `legifrance-client` a été corrigé (voir `PROJECT_STATE.md`).
+Les points d'attention des derniers blocs sont conservés dans « Domaine
+juridique — points ouverts » ci-dessous.
 
 ## Prérequis pour M8 — tous résolus
 

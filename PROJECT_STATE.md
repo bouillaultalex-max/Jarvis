@@ -148,7 +148,7 @@ Domaine juridique (LEGAL-01 → Content Exposure ; `legal-core` versionné depui
 @jarvis/legal-core      (aucune dépendance interne ; feuille imposée par ESLint)
 @jarvis/legal-research  → @jarvis/core, @jarvis/legal-core
 @jarvis/legal-case-engine → @jarvis/legal-core (seule dépendance, LEGAL-04.1 ; imposée par ESLint et tests)
-@jarvis/legifrance-client → @jarvis/connectors (SecretStore/AccessTokenProvider ; cycle de packages avec connectors, préexistant, non traité)
+@jarvis/legifrance-client (aucune dépendance interne ; feuille imposée par ESLint et test — cycle de packages avec connectors corrigé)
 ```
 
 `@jarvis/connectors` ne dépendait que de `@jarvis/core` + `@jarvis/types`
@@ -184,7 +184,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/legal-core` | Modèle juridique pur : **LegalCase v3** (2026-09-25) — `LegalFact` immuable sans état stocké, provenance `human`/`tool`/`deterministic`/`llm`, références d'entrée typées, temporalité `point`/`interval`/`unknown`, `LegalDocument`/`LegalEvidence`, relations `fact_question`/`fact_correction`, `LegalFactValidation`, conflits/résolutions/règles, `deriveFactEpistemicState` (R1 → R7), empreintes, append-only, lecteur/validateur/écrivain v3 **strict** et lecteur/validateur **legacy v2** ; plus `LegalSource` (versionnée, temporelle), `LegalCitation` (ADR-0020), `LegalResearchItem`…, `attachSourcesAndCitations` (sur dossier v3) | versionné (`85e7e6e`, présent sur `origin/main`) ; feuille (aucune dépendance interne) ; aucun réseau ; aucun chiffrement ; **aucun contenu textuel** ; aucune migration v2 → v3 ; consommé par aucune application |
 | `@jarvis/legal-research` | `LegifranceSourceProvider`/mapping (LEGAL-02B.3) ; types et ports du Research Engine (LEGAL-03A) ; `LegifranceSearchAdapter`, `LegifranceRetrievalAdapter`, `ResearchEngine` borné (LEGAL-03B) ; `VersionResolver` pur et son intégration au moteur (ADR-0018) ; récupération bornée de la version résolue, `resolvedRetrieval` (ADR-0019) ; projection pure `projectCitations` ResearchResult → sources + citations (ADR-0020) ; contenu transitoire vérifié `RetrievedContent` et contrat de hash `computeContentHash` (ADR-0021) | versionné (`979fa19`, publié sur `origin/main`) ; dépend de `@jarvis/core` + `@jarvis/legal-core` uniquement ; n'importe ni `connectors` ni `legifrance-client` (ESLint + test) ; aucune application ne le consomme |
 | `@jarvis/legal-case-engine` | Moteur de faits et de dossiers (LEGAL-04.1) : `addOpenQuestion`, `recordReportedFact`, `findEquivalentFacts`, `LegalCaseEngineError`, contexte et horloge injectés (`systemClock` explicite) | commit dédié (LEGAL-04.1) ; dépend **uniquement** de `@jarvis/legal-core` (ESLint + tests) ; pas de réseau, de persistance, de LLM ni d'horloge cachée ; aucune application ne le consomme |
-| `@jarvis/legifrance-client` | Client PISTE/Légifrance (LEGAL-02B.1) : configuration sandbox/production, OAuth `client_credentials`, `LegifranceHttpClient`, erreurs typées | versionné (`979fa19`, publié sur `origin/main`) ; dépend de `@jarvis/connectors` (cycle de packages préexistant avec `connectors`) ; credentials via `SecretStore` |
+| `@jarvis/legifrance-client` | Client PISTE/Légifrance (LEGAL-02B.1) : configuration sandbox/production, OAuth `client_credentials`, `LegifranceHttpClient`, erreurs typées | versionné (`979fa19`, publié sur `origin/main`) ; feuille (aucune dépendance `@jarvis/*`, ESLint + test) ; résolution des credentials via `SecretStore` déplacée dans `@jarvis/connectors` (`resolveLegifranceCredentials`, cycle de packages corrigé) |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
 | `apps/desktop` | Client CLI (`connect`, `read`, `inbox`, `prepare-reply`, `send`, `disconnect`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`) |
 
@@ -1050,7 +1050,11 @@ Observations, **pas des décisions** (détail et limites : ADR 0011–0017) :
   modifié, non corrigé** ; dette indépendante des blocs LEGAL.
 - `LegalSourceProvider` (LEGAL-02B.3) reste typé Légifrance (retourne
   `MapLegifranceArticleResult`) ; conservé tel quel (ADR-0015).
-- Cycle de packages `connectors` ↔ `legifrance-client`, préexistant, non traité.
+- ~~Cycle de packages `connectors` ↔ `legifrance-client`~~ — **corrigé** :
+  `resolveLegifranceCredentials` déplacé dans
+  `packages/connectors/src/legifrance/legifrance-credentials.ts` ;
+  `@jarvis/legifrance-client` ne dépend plus d'aucun package `@jarvis/*`
+  (ESLint + `architecture-boundaries.test.ts`).
 - Credentials Sandbox : sous WSL, le `SecretStore` est le trousseau noyau
   (volatile, perdu au redémarrage de la VM) ; aucun script d'initialisation
   n'existe dans le dépôt.

@@ -1,5 +1,6 @@
-import type { AccessTokenProvider } from '@jarvis/connectors';
 import { describe, expect, it, vi } from 'vitest';
+
+import type { AccessTokenProvider } from '../auth/access-token-provider.js';
 
 import { createLegifranceConfig } from '../config/legifrance-config.js';
 import {

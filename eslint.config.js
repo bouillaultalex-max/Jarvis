@@ -236,11 +236,18 @@ module.exports = tseslint.config(
   },
 
   {
-    // packages/connectors/src/legifrance : LegifranceConnector (LEGAL-02B.2) ne doit jamais
-    // manipuler SecretStore/credentials directement — l'authentification appartient
-    // entièrement à @jarvis/legifrance-client (AccessTokenProvider), reçue déjà résolue via
-    // le `LegifranceHttpClient` injecté dans `createTools(client)`.
-    files: ['packages/connectors/src/legifrance/**/*.ts'],
+    // packages/connectors/src/legifrance : LegifranceConnector/legifrance-search-tool
+    // (LEGAL-02B.2) ne doivent jamais manipuler SecretStore/credentials directement —
+    // ils reçoivent un `LegifranceHttpClient` déjà authentifié via `createTools(client)`.
+    // Exclut délibérément `legifrance-credentials.ts` (et son test) : ce fichier est,
+    // depuis la correction du cycle de packages `connectors` ↔ `legifrance-client`
+    // (PROJECT_STATE.md « Dette technique connue »), le seul endroit du package dont le
+    // rôle *est* de résoudre `SecretStore` → `LegifranceCredentials`
+    // (`resolveLegifranceCredentials`, anciennement dans `@jarvis/legifrance-client`).
+    files: [
+      'packages/connectors/src/legifrance/legifrance-connector.ts',
+      'packages/connectors/src/legifrance/legifrance-search-tool.ts',
+    ],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
@@ -249,7 +256,7 @@ module.exports = tseslint.config(
             {
               group: ['**/secret-store.js', '**/secret-store'],
               message:
-                'LegifranceConnector ne doit jamais accéder à SecretStore directement — voir @jarvis/legifrance-client.',
+                'LegifranceConnector ne doit jamais accéder à SecretStore directement — voir legifrance-credentials.ts.',
             },
           ],
         },
@@ -369,43 +376,25 @@ module.exports = tseslint.config(
   },
 
   {
-    // packages/legifrance-client : couche transport/authentification PISTE (LEGAL-02B.1) —
-    // ne dépend que de @jarvis/connectors (SecretStore/AccessTokenProvider), jamais de la
-    // logique métier juridique ni d'une app.
+    // packages/legifrance-client : couche transport/authentification PISTE (LEGAL-02B.1),
+    // feuille (comme @jarvis/types/@jarvis/llm/@jarvis/memory) — aucune dépendance vers un
+    // autre package @jarvis/*. Corrigé : dépendait auparavant de @jarvis/connectors
+    // (SecretStore) — cycle de packages `connectors` ↔ `legifrance-client`
+    // (PROJECT_STATE.md « Dette technique connue ») ; la résolution des credentials
+    // (`resolveLegifranceCredentials`) vit désormais dans
+    // `packages/connectors/src/legifrance/legifrance-credentials.ts`, `AccessTokenProvider`
+    // est redéclarée localement (interface structurelle, voir
+    // `packages/legifrance-client/src/http/legifrance-http-client.ts`).
     files: ['packages/legifrance-client/src/**/*.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
-          paths: [
+          patterns: [
             {
-              name: '@jarvis/legal-core',
+              group: ['@jarvis/*'],
               message:
-                '@jarvis/legifrance-client reste transport/auth pur : aucune connaissance du modèle juridique.',
-            },
-            {
-              name: '@jarvis/core',
-              message: '@jarvis/legifrance-client ne doit pas dépendre de @jarvis/core.',
-            },
-            {
-              name: '@jarvis/classification',
-              message: '@jarvis/legifrance-client ne doit pas dépendre de la logique métier.',
-            },
-            {
-              name: '@jarvis/inbox',
-              message: '@jarvis/legifrance-client ne doit pas dépendre de @jarvis/inbox.',
-            },
-            {
-              name: '@jarvis/tools',
-              message: '@jarvis/legifrance-client ne doit pas dépendre de @jarvis/tools.',
-            },
-            {
-              name: '@jarvis/api',
-              message: "@jarvis/legifrance-client ne doit pas dépendre d'une app.",
-            },
-            {
-              name: '@jarvis/desktop',
-              message: "@jarvis/legifrance-client ne doit pas dépendre d'une app.",
+                '@jarvis/legifrance-client est une feuille : aucune dépendance vers un autre package @jarvis/*.',
             },
           ],
         },

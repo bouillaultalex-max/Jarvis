@@ -1,5 +1,4 @@
-import type { AccessTokenProvider } from '@jarvis/connectors';
-
+import type { AccessTokenProvider } from '../auth/access-token-provider.js';
 import type { LegifranceConfig } from '../config/legifrance-config.js';
 import {
   LegifranceHttpError,
@@ -17,9 +16,10 @@ import {
  * ne fait que porter un jeton d'accès et des headers JSON sur une requête
  * HTTP générique. Le détail des endpoints appartient à LEGAL-02B.2+.
  *
- * Dépend d'un {@link AccessTokenProvider} (déjà défini par
- * `@jarvis/connectors`, implémenté ici par `LegifranceOAuthClient`) plutôt
- * que d'un `LegifranceOAuthClient` concret : ce client HTTP n'a besoin de
+ * Dépend d'un {@link AccessTokenProvider} (implémenté ici par
+ * `LegifranceOAuthClient` ; même forme que celle de `@jarvis/connectors`,
+ * redéclarée localement — voir `./access-token-provider.js`) plutôt que
+ * d'un `LegifranceOAuthClient` concret : ce client HTTP n'a besoin de
  * savoir « obtenir un token », jamais « comment » — même séparation que
  * `GmailApiClient`/`AccessTokenProvider`.
  */

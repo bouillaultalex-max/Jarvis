@@ -171,3 +171,5 @@ export type {
   LegifranceCitationLink,
 } from './legifrance/legifrance-connector.js';
 export { legifranceConnector } from './legifrance/legifrance-connector.js';
+
+export { resolveLegifranceCredentials } from './legifrance/legifrance-credentials.js';

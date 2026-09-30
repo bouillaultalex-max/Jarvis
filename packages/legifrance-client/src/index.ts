@@ -9,7 +9,6 @@ export type { LegifranceCredentials } from './auth/legifrance-credentials.js';
 export {
   legifranceClientIdSecretKey,
   legifranceClientSecretSecretKey,
-  resolveLegifranceCredentials,
 } from './auth/legifrance-credentials.js';
 
 export type { LegifranceOAuthClientOptions } from './auth/legifrance-oauth-client.js';

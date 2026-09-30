@@ -1,73 +1,36 @@
-import { InMemorySecretStore, SecretNotFoundError } from '@jarvis/connectors';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   legifranceClientIdSecretKey,
   legifranceClientSecretSecretKey,
-  resolveLegifranceCredentials,
 } from './legifrance-credentials.js';
 
-// Valeurs manifestement factices — jamais des credentials réels, même en test.
-const FAKE_CLIENT_ID = 'test-fake-client-id-0000';
-const FAKE_CLIENT_SECRET = 'test-fake-client-secret-0000';
-
-describe('resolveLegifranceCredentials', () => {
-  it('résout clientId/clientSecret depuis le SecretStore existant, sans store parallèle', async () => {
-    const store = new InMemorySecretStore();
-    await store.set(legifranceClientIdSecretKey('sandbox'), FAKE_CLIENT_ID);
-    await store.set(legifranceClientSecretSecretKey('sandbox'), FAKE_CLIENT_SECRET);
-
-    const credentials = await resolveLegifranceCredentials(store, 'sandbox');
-
-    expect(credentials).toEqual({ clientId: FAKE_CLIENT_ID, clientSecret: FAKE_CLIENT_SECRET });
-  });
-
-  it('scinde les clés par environnement — un credential sandbox n’est jamais lu pour production', async () => {
-    const store = new InMemorySecretStore();
-    await store.set(legifranceClientIdSecretKey('sandbox'), 'sandbox-id');
-    await store.set(legifranceClientSecretSecretKey('sandbox'), 'sandbox-secret');
-
+/**
+ * Ne teste que les constructeurs de clé purs, restés dans ce package après
+ * le déplacement de `resolveLegifranceCredentials` vers `@jarvis/connectors`
+ * (cycle de packages corrigé — voir
+ * `packages/connectors/src/legifrance/legifrance-credentials.test.ts` pour
+ * la résolution effective via `SecretStore`).
+ */
+describe('constructeurs de clé Légifrance', () => {
+  it('scinde les clés par environnement — un credential sandbox n’est jamais confondu avec production', () => {
     expect(legifranceClientIdSecretKey('sandbox')).not.toBe(
       legifranceClientIdSecretKey('production'),
     );
     expect(legifranceClientSecretSecretKey('sandbox')).not.toBe(
       legifranceClientSecretSecretKey('production'),
     );
-    await expect(resolveLegifranceCredentials(store, 'production')).rejects.toThrowError(
-      SecretNotFoundError,
+  });
+
+  it('clientId et clientSecret ne partagent jamais la même clé', () => {
+    expect(legifranceClientIdSecretKey('sandbox')).not.toBe(
+      legifranceClientSecretSecretKey('sandbox'),
     );
   });
 
-  it('credentials absents : lève SecretNotFoundError (réutilisé, aucune nouvelle classe d’erreur)', async () => {
-    const store = new InMemorySecretStore();
-    await expect(resolveLegifranceCredentials(store, 'sandbox')).rejects.toThrowError(
-      SecretNotFoundError,
+  it('est déterministe (même environnement → même clé)', () => {
+    expect(legifranceClientIdSecretKey('production')).toBe(
+      legifranceClientIdSecretKey('production'),
     );
-  });
-
-  it('client_id manquant seul : lève SecretNotFoundError', async () => {
-    const store = new InMemorySecretStore();
-    await store.set(legifranceClientSecretSecretKey('sandbox'), FAKE_CLIENT_SECRET);
-
-    await expect(resolveLegifranceCredentials(store, 'sandbox')).rejects.toThrowError(
-      SecretNotFoundError,
-    );
-  });
-
-  it('ne journalise jamais les credentials pendant la résolution', async () => {
-    const store = new InMemorySecretStore();
-    await store.set(legifranceClientIdSecretKey('sandbox'), FAKE_CLIENT_ID);
-    await store.set(legifranceClientSecretSecretKey('sandbox'), FAKE_CLIENT_SECRET);
-
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      await resolveLegifranceCredentials(store, 'sandbox');
-    } finally {
-      expect(logSpy).not.toHaveBeenCalled();
-      expect(errorSpy).not.toHaveBeenCalled();
-      logSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
   });
 });

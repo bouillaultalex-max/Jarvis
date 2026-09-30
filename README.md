@@ -14,7 +14,7 @@ Assistant IA personnel — monorepo npm workspaces (TypeScript strict, Node 24, 
 
 ```
 apps/api          Serveur HTTP Fastify
-apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect)
+apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search)
 packages/types      Types partagés
 packages/llm        Abstraction LLM (Anthropic)
 packages/core       AgentLoop, Tool, PermissionManager, ToolExecutor
@@ -25,6 +25,24 @@ packages/inbox      Orchestration inbox (fetch → classify → attention → r�
 ```
 
 Graphe de dépendances détaillé : voir `PROJECT_STATE.md` → « Workspaces & dépendances ».
+
+### `legal-search` (recherche juridique Légifrance, lecture seule)
+
+```bash
+apps/desktop legal-search --asOf 2026-01-01 "préavis licenciement économique"
+```
+
+Prérequis : `SecretStore` (trousseau OS) peuplé avec
+`legifrance.<sandbox|production>.clientId`/`clientSecret` — aucun script de
+provisionnement n'est fourni par ce dépôt. `LEGIFRANCE_ENVIRONMENT`
+optionnelle (défaut `sandbox`). N'exige **ni** configuration Gmail ni
+`ANTHROPIC_API_KEY`.
+
+Limites assumées : recherche seule, budget fixe (1 page, 5 candidats, 5
+récupérations) ; ne présente jamais une source comme « droit applicable » ni
+une conclusion juridique vérifiée ; n'écrit jamais de dossier (`LegalCase`) ;
+testé uniquement avec des doubles — **aucun appel réel à la Sandbox PISTE
+n'a été exécuté**. Détail : `PROJECT_STATE.md` → `apps/desktop`.
 
 ## Développement local
 

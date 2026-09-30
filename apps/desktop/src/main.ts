@@ -35,6 +35,8 @@ import {
   FileAccountStore,
   gmailConnector,
   GmailOAuthFlow,
+  InMemoryAccountStore,
+  InMemorySecretStore,
   OsCredentialSecretStore,
   PermissionManager,
   resolveAccount,
@@ -47,8 +49,15 @@ import {
 import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js';
 import { describeInboxResult } from './inbox-view.js';
 import { parseGmailSendArgs } from './gmail-send-args.js';
+import { parseLegalSearchArgs } from './legal-search-args.js';
 import { parsePrepareReplyArgs } from './prepare-reply-args.js';
 import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
+import {
+  defaultLegalSearchDeps,
+  describeLegalSearchResult,
+  runLegalSearchFlow,
+  type LegalSearchDeps,
+} from './run-legal-search-flow.js';
 import { createTerminalConfirm } from './terminal-confirm.js';
 import {
   runReadNaturalLanguageFlow,
@@ -804,18 +813,40 @@ function parseReadNaturalArgs(argv: readonly string[]): string {
   return text;
 }
 
-/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect`. */
+/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
   io: DesktopIo = {},
   connect: ConnectGmailFn = runOAuthConnect,
+  /**
+   * Injecté par les tests uniquement (flux `legal-search`). Absent en
+   * production ⇒ {@link defaultLegalSearchDeps} — construite **ici**, à
+   * l'intérieur de la branche `legal-search`, jamais avant : aucune autre
+   * sous-commande ne touche à `LEGIFRANCE_ENVIRONMENT` ni au `SecretStore`
+   * Légifrance, et `legal-search` elle-même ne touche jamais aux identifiants
+   * Gmail (`deps: DesktopDeps` ci-dessus, `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`
+   * inclus) ni à `ANTHROPIC_API_KEY`.
+   */
+  legalSearchDeps?: LegalSearchDeps,
 ): Promise<void> {
   const output = io.output ?? process.stdout;
   const write = (line: string): void => {
     output.write(`${line}\n`);
   };
   const command = argv[0];
+
+  if (command === 'legal-search') {
+    // Parsing AVANT toute résolution de secrets ou construction de client —
+    // un argument invalide (texte vide, --asOf manquant/impossible, option
+    // inconnue) ne doit jamais déclencher le moindre accès credentials/réseau.
+    const input = parseLegalSearchArgs(argv.slice(1));
+    const result = await runLegalSearchFlow(input, legalSearchDeps ?? defaultLegalSearchDeps());
+    for (const line of describeLegalSearchResult(result)) {
+      write(line);
+    }
+    return;
+  }
 
   if (command === 'send') {
     const input = parseGmailSendArgs(argv.slice(1));
@@ -869,12 +900,33 @@ export async function dispatch(
   }
 
   throw new Error(
-    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect).',
+    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search).',
   );
 }
 
+/**
+ * Prépare des `DesktopDeps` (Gmail) **inertes**, jamais lues : réservées au
+ * seul cas où `main()` doit appeler `dispatch()` pour `legal-search`, qui
+ * n'accède jamais à `deps`. Évite d'appeler {@link defaultDesktopDeps} (qui
+ * exige `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`) pour une commande qui ne
+ * doit exiger aucune configuration Gmail. `InMemory*` : aucune E/S, aucune
+ * lecture d'environnement, jamais construites ailleurs qu'ici.
+ */
+function noopDesktopDeps(): DesktopDeps {
+  return {
+    accountStore: new InMemoryAccountStore(),
+    secretStore: new InMemorySecretStore(),
+    appCredentials: { clientId: '', clientSecret: '' },
+  };
+}
+
 async function main(): Promise<void> {
-  await dispatch(process.argv.slice(2), defaultDesktopDeps());
+  const argv = process.argv.slice(2);
+  // `legal-search` ne doit exiger aucune configuration Gmail ni clé LLM :
+  // `defaultDesktopDeps()` (qui lit GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET et
+  // lève si absents) n'est donc appelée que pour les autres commandes.
+  const deps = argv[0] === 'legal-search' ? noopDesktopDeps() : defaultDesktopDeps();
+  await dispatch(argv, deps);
 }
 
 // Garde d'entrée : ce module est importé directement par ses tests (pour
@@ -885,7 +937,10 @@ async function main(): Promise<void> {
 // simple import.
 if (require.main === module) {
   main().catch((err) => {
-    console.error('Échec de la connexion Gmail :', err instanceof Error ? err.message : err);
+    // Générique : `main()` dispatche vers `legal-search` aussi bien que vers
+    // les sous-commandes Gmail — un message fixe « connexion Gmail » serait
+    // trompeur pour un échec `legal-search` (ex. argument invalide).
+    console.error('Échec de la commande :', err instanceof Error ? err.message : err);
     process.exit(1);
   });
 }

@@ -11,6 +11,8 @@
     "@jarvis/classification": "0.1.0",
     "@jarvis/connectors": "0.1.0",
     "@jarvis/inbox": "0.1.0",
+    "@jarvis/legal-research": "0.1.0",
+    "@jarvis/legifrance-client": "0.1.0",
     "@jarvis/llm": "0.1.0"
   },
   "devDependencies": {

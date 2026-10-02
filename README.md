@@ -33,10 +33,22 @@ apps/desktop legal-search --asOf 2026-01-01 "préavis licenciement économique"
 ```
 
 Prérequis : `SecretStore` (trousseau OS) peuplé avec
-`legifrance.<sandbox|production>.clientId`/`clientSecret` — aucun script de
-provisionnement n'est fourni par ce dépôt. `LEGIFRANCE_ENVIRONMENT`
-optionnelle (défaut `sandbox`). N'exige **ni** configuration Gmail ni
-`ANTHROPIC_API_KEY`.
+`legifrance.<sandbox|production>.clientId`/`clientSecret`. Provisionnement
+interactif (terminal requis, saisie masquée, jamais d'appel OAuth ni de
+recherche) :
+
+```bash
+node_modules/.bin/tsx apps/desktop/src/provision-legifrance-secrets.ts
+```
+
+`LEGIFRANCE_ENVIRONMENT` optionnelle (défaut `sandbox`). N'exige **ni**
+configuration Gmail ni `ANTHROPIC_API_KEY`.
+
+Code de sortie de `legal-search` : `0` pour un résultat exploitable (y compris
+une recherche vide ou un résultat partiel, limites toujours présentées dans le
+texte) ; non nul si la configuration est absente/invalide, si la permission
+est refusée, ou en cas d'échec du fournisseur — dérivé du statut structuré du
+flow, jamais d'une détection du texte affiché.
 
 Limites assumées : recherche seule, budget fixe (1 page, 5 candidats, 5
 récupérations) ; ne présente jamais une source comme « droit applicable » ni

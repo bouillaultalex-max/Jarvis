@@ -21,6 +21,7 @@ import {
 import {
   defaultLegalSearchDeps,
   describeLegalSearchResult,
+  legalSearchExitCode,
   resolveLegalSearchEnvironment,
   runLegalSearchFlow,
   type LegalSearchDeps,
@@ -207,6 +208,29 @@ describe('runLegalSearchFlow — configuration absente ou invalide', () => {
     } finally {
       if (original !== undefined) process.env.LEGIFRANCE_ENVIRONMENT = original;
     }
+  });
+});
+
+describe('legalSearchExitCode — dérivé du statut structuré, jamais du texte affiché', () => {
+  it("statut 'result' → 0, y compris un résultat partiel (candidats + rejets)", () => {
+    const partial = {
+      status: 'result',
+      result: { candidates: [], rejections: [{ reason: 'over_candidate_budget' }], gaps: [] },
+    } as unknown as Parameters<typeof legalSearchExitCode>[0];
+    expect(legalSearchExitCode(partial)).toBe(0);
+  });
+
+  it("statut 'configuration_error' → non nul", () => {
+    expect(legalSearchExitCode({ status: 'configuration_error', reason: 'absent' })).not.toBe(0);
+  });
+
+  it("statut 'provider_error' (y compris permission refusée, reason 'denied') → non nul", () => {
+    expect(
+      legalSearchExitCode({ status: 'provider_error', reason: 'denied', detail: 'x' }),
+    ).not.toBe(0);
+    expect(
+      legalSearchExitCode({ status: 'provider_error', reason: 'execution_error', detail: 'x' }),
+    ).not.toBe(0);
   });
 });
 

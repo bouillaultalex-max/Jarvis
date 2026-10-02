@@ -146,6 +146,37 @@ export type LegalSearchFlowResult =
       readonly detail: string;
     };
 
+/**
+ * Code de sortie CLI pour `legal-search`, dérivé du **statut structuré** du
+ * flow — jamais d'une détection de texte affiché (`describeLegalSearchResult`
+ * reste uniquement destinée à l'humain).
+ *
+ * Convention volontaire : `'result'` vaut toujours `0`, **y compris des
+ * résultats partiels** (candidats rejetés par le budget, référence non
+ * récupérée…) — un résultat partiel reste un résultat exploitable, présenté
+ * avec ses limites visibles (`describeLegalSearchResult`), pas un échec total
+ * de la commande. Seuls `'configuration_error'` (configuration absente ou
+ * invalide) et `'provider_error'` (fournisseur en échec **ou** permission
+ * refusée — `reason: 'denied'`, voir `LegifranceSearchAdapter`) valent un
+ * code non nul : dans ces deux cas, aucune recherche exploitable n'a eu
+ * lieu.
+ */
+export function legalSearchExitCode(result: LegalSearchFlowResult): number {
+  switch (result.status) {
+    case 'result':
+      return 0;
+    case 'configuration_error':
+    case 'provider_error':
+      return 1;
+    default: {
+      const exhaustive: never = result;
+      throw new Error(
+        `legalSearchExitCode : statut inattendu (${(exhaustive as { readonly status: string }).status}).`,
+      );
+    }
+  }
+}
+
 function buildPermissionManager(deps: LegalSearchDeps): PermissionManager {
   return (
     deps.permissionManager ??

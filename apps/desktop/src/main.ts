@@ -55,6 +55,7 @@ import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
 import {
   defaultLegalSearchDeps,
   describeLegalSearchResult,
+  legalSearchExitCode,
   runLegalSearchFlow,
   type LegalSearchDeps,
 } from './run-legal-search-flow.js';
@@ -845,6 +846,12 @@ export async function dispatch(
     for (const line of describeLegalSearchResult(result)) {
       write(line);
     }
+    // `process.exitCode` (jamais `process.exit()`, qui tronquerait une
+    // écriture stdout en vol) — laisse le process se terminer naturellement
+    // une fois l'event loop vidée. Seule cette commande en dépend : les
+    // autres sous-commandes (Gmail) gardent leur comportement inchangé
+    // (jamais de code non nul pour un échec métier).
+    process.exitCode = legalSearchExitCode(result);
     return;
   }
 

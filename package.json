@@ -13,7 +13,9 @@
     "build": "npm run build --workspaces",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "typecheck:tool-interface-bench": "tsc --noEmit -p prototypes/tool-interface-bench/tsconfig.json",
     "test": "vitest run",
+    "bench:tool-interface:live": "tsx prototypes/tool-interface-bench/run-live.ts",
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

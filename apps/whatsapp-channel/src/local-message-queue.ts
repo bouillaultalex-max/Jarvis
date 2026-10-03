@@ -259,7 +259,10 @@ export class LocalMessageQueue {
 
   async #runJob(event: MessageChannelEvent): Promise<void> {
     const outcome = await executeMessageEvent(event, this.#deps);
-    this.#deduplicator.finish(event.id, outcome.status === 'replied' ? 'completed' : 'released');
+    this.#deduplicator.finish(
+      event.id,
+      blocksAutomaticRedelivery(outcome) ? 'completed' : 'released',
+    );
     this.#recordOutcome(event.id, outcome);
     this.#active -= 1;
     this.#scheduleNext();
@@ -283,4 +286,32 @@ export class LocalMessageQueue {
     this.#idleWaiters = [];
     for (const resolve of waiters) resolve();
   }
+}
+
+/**
+ * Décide si une issue marque l'identifiant `'completed'` (aucune relance
+ * **automatique** tant qu'il reste retenu) ou le libère pour une
+ * relivraison immédiate (`'released'`).
+ *
+ * **Garantie exacte, pas une garantie absolue** : `'completed'` empêche une
+ * relance automatique seulement **pour la durée où cet identifiant reste
+ * effectivement retenu dans ce process** — voir
+ * `in-memory-deduplicator.ts` : les entrées `completed` sont bornées
+ * (`maxCompletedEntries`) et évincées en FIFO, et tout l'état est perdu au
+ * redémarrage. Un identifiant évincé, ou retrouvé après redémarrage, est
+ * retraité comme un essai neuf si redélivré — ce n'est jamais un blocage
+ * « définitif » ni une promesse de « jamais de renvoi » au sens absolu, et
+ * ne doit pas être présenté comme tel.
+ *
+ * `'transport_uncertain'` est traité **comme** `'replied'` ici — pas parce
+ * que l'envoi est confirmé, mais parce qu'une relance automatique risquerait
+ * un double envoi si le message a en réalité été délivré (voir
+ * `graph-api-transport.ts` : un timeout n'est jamais une preuve de
+ * non-envoi). L'issue réelle reste distincte et consultable via
+ * `getOutcome()` (tant que non évincée — voir `maxRetainedOutcomes`) — une
+ * décision de relance reste possible, mais seulement explicite, hors de
+ * cette politique automatique.
+ */
+function blocksAutomaticRedelivery(outcome: ChannelOutcome): boolean {
+  return outcome.status === 'replied' || outcome.status === 'transport_uncertain';
 }

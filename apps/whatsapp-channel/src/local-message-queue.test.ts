@@ -157,6 +157,63 @@ describe('LocalMessageQueue — outcomes consultables', () => {
     expect(queue.admit(event)).toBe('queued');
   });
 
+  it('issue incertaine du transport → transport_uncertain, identifiant NON libéré (pas de relance automatique)', async () => {
+    const queue = buildQueue({
+      transport: new SimulatedOutboundTransport({ status: 'uncertain', reason: 'délai dépassé' }),
+    });
+    const event = buildMessageEvent({ id: 'uncertain-1', senderId: AUTHORIZED_SENDER_ID });
+    queue.admit(event);
+    await queue.drain();
+    expect(queue.getOutcome('uncertain-1')).toEqual({
+      status: 'transport_uncertain',
+      reason: 'délai dépassé',
+    });
+    // Contrairement aux échecs certains : une relivraison IMMÉDIATE du même
+    // id n'est pas retraitée comme un essai neuf — reste un doublon, pour
+    // éviter un double envoi si le message a en réalité été délivré malgré
+    // l'issue incertaine. Garantie limitée à la rétention de cet
+    // identifiant dans ce process — voir le test suivant.
+    expect(queue.admit(event)).toBe('duplicate');
+  });
+
+  it('garantie limitée, pas définitive : une fois évincé des « completed » retenus, un id transport_uncertain redevient admissible', async () => {
+    // Démontre explicitement que le blocage d'un id `transport_uncertain`
+    // n'est PAS un verrou permanent : avec un déduplicateur à rétention
+    // volontairement minuscule, suffisamment d'autres identifiants bloqués
+    // (`'transport_uncertain'` ou `'replied'` — les deux marquent
+    // `'completed'` côté déduplication, voir `blocksAutomaticRedelivery`)
+    // poussent le premier hors de la fenêtre retenue (éviction FIFO, voir
+    // `in-memory-deduplicator.ts`) — une relivraison ultérieure du même id
+    // est alors retraitée comme neuve. Aucune promesse de « jamais de
+    // renvoi » au sens absolu ; aucune persistance introduite ici pour
+    // éviter ce cas — volontairement hors périmètre.
+    const dedup = new InMemoryDeduplicator({ maxCompletedEntries: 2 });
+    const queue = buildQueue({
+      deduplicator: dedup,
+      transport: new SimulatedOutboundTransport({ status: 'uncertain', reason: 'délai dépassé' }),
+      maxQueueSize: 10,
+      maxConcurrency: 10,
+    });
+
+    const target = buildMessageEvent({ id: 'uncertain-evicted', senderId: AUTHORIZED_SENDER_ID });
+    queue.admit(target);
+    await queue.drain();
+    expect(queue.admit(target)).toBe('duplicate'); // toujours bloqué, juste après
+    expect(dedup.completedCount).toBe(1);
+
+    // Deux autres identifiants bloqués (capacité de rétention = 2) poussent
+    // « uncertain-evicted » hors de la fenêtre retenue.
+    for (const id of ['other-1', 'other-2']) {
+      queue.admit(buildMessageEvent({ id, senderId: AUTHORIZED_SENDER_ID }));
+      await queue.drain();
+    }
+    expect(dedup.completedCount).toBe(2);
+
+    // Évincé : une relivraison du même événement est désormais retraitée
+    // comme un essai neuf, jamais un blocage « définitif ».
+    expect(queue.admit(target)).toBe('queued');
+  });
+
   it('exception inattendue du service → processing_error, identifiant libéré', async () => {
     const throwingService = {
       async reply(): Promise<never> {

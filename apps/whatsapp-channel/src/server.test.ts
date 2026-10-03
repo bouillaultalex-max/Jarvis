@@ -502,6 +502,56 @@ describe('POST /webhooks/whatsapp — erreur conversationnelle et transport', ()
       reason: 'injoignable',
     });
   });
+
+  it('issue incertaine du transport → admis, outcome transport_uncertain, relivraison immédiate du même id pas retraitée automatiquement', async () => {
+    const config = buildLocalSyntheticConfig({
+      appSecret: TEST_APP_SECRET,
+      verifyToken: TEST_VERIFY_TOKEN,
+    });
+    const allowlist = new InMemoryAllowlist(new Set([AUTHORIZED_SENDER_ID]));
+    const uncertainTransport = new SimulatedOutboundTransport({
+      status: 'uncertain',
+      reason: 'délai dépassé',
+    });
+    const dedicatedQueue = new LocalMessageQueue({
+      deduplicator: new InMemoryDeduplicator(),
+      allowlist,
+      conversationalService: new ScriptedConversationalService(),
+      transport: uncertainTransport,
+      maxQueueSize: 10,
+      maxConcurrency: 4,
+    });
+    const dedicatedApp = buildWhatsAppChannelServer({
+      config,
+      allowlist,
+      signatureVerifier: new HmacSha256SignatureVerifier(config.appSecret),
+      queue: dedicatedQueue,
+    });
+    const request = {
+      method: 'POST' as const,
+      url: WEBHOOK_PATH,
+      ...signedRequest(
+        buildTextMessagePayload({ id: 'wamid.uncertain', from: AUTHORIZED_SENDER_ID, body: 'x' }),
+      ),
+    };
+
+    const first = await dedicatedApp.inject(request);
+    expect(first.statusCode).toBe(200);
+    await dedicatedQueue.drain();
+    expect(dedicatedQueue.getOutcome('wamid.uncertain')).toEqual({
+      status: 'transport_uncertain',
+      reason: 'délai dépassé',
+    });
+
+    // Une relivraison WhatsApp immédiate du même message n'est pas
+    // retraitée automatiquement : elle est vue comme un doublon, pas un
+    // essai neuf — évite un double envoi si le message avait en réalité
+    // été délivré. Garantie limitée à la rétention de cet identifiant
+    // dans ce process (voir `local-message-queue.test.ts` pour le test
+    // d'éviction) — pas un blocage définitif.
+    const retry = await dedicatedApp.inject(request);
+    expect(retry.json().admissions[0].kind).toBe('duplicate');
+  });
 });
 
 describe('fermeture — serveur et worker', () => {

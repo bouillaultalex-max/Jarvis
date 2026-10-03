@@ -14,8 +14,14 @@
  *
  * Politique **au moins une fois, jamais exactement une fois** : c'est
  * `LocalMessageQueue` qui, selon le {@link ChannelOutcome} renvoyé ici,
- * décide de verrouiller (`completed`) ou de libérer (`released`)
- * l'identifiant pour une relivraison — voir `local-message-queue.ts`.
+ * décide de marquer `completed` (aucune relance automatique **tant que
+ * l'identifiant reste retenu** — rétention bornée, pas un verrou permanent,
+ * voir `local-message-queue.ts`/`in-memory-deduplicator.ts`) ou de libérer
+ * (`released`) l'identifiant pour une relivraison. Une exception assumée :
+ * `'transport_uncertain'` (voir `graph-api-transport.ts`) est traitée comme
+ * `completed` aussi, bien que rien n'y soit confirmé — un timeout n'étant
+ * jamais une preuve de non-envoi, relancer automatiquement risquerait un
+ * double envoi.
  *
  * Toute exception inattendue (bug d'un double, rejet non géré) est
  * capturée ici et transformée en `processing_error` — jamais remontée à
@@ -63,6 +69,12 @@ export async function executeMessageEvent(
     });
     if (transportResult.status === 'error') {
       return { status: 'transport_error', reason: transportResult.reason };
+    }
+    if (transportResult.status === 'uncertain') {
+      // Ni succès confirmé ni échec certain — voir `TransportResult`.
+      // Propagé tel quel ; `LocalMessageQueue` décide de la politique de
+      // relance (jamais automatique pour cette issue).
+      return { status: 'transport_uncertain', reason: transportResult.reason };
     }
 
     return { status: 'replied' };

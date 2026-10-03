@@ -70,7 +70,13 @@ export type ClaimResult = 'proceed' | 'duplicate';
 
 /** Issue terminale d'un traitement, transmise à {@link Deduplicator.finish}. */
 export type ProcessingOutcome =
-  /** Réponse effectivement envoyée — ne doit plus jamais être retraité. */
+  /**
+   * Réponse effectivement envoyée — ne doit pas être retraité
+   * automatiquement **tant que l'implémentation retient cet identifiant**.
+   * Pas une garantie absolue : voir `in-memory-deduplicator.ts` pour la
+   * portée exacte (rétention bornée, éviction FIFO, perdue au redémarrage)
+   * de l'implémentation réellement utilisée dans cette app.
+   */
   | 'completed'
   /**
    * Aucun effet confirmé (erreur de service, erreur de transport, ou refus
@@ -92,7 +98,13 @@ export type ProcessingOutcome =
  *      redevient disponible pour une relivraison (`released`).
  *
  * Aucune des deux garanties ne survit à un redémarrage ni à plusieurs
- * instances du process (état en mémoire uniquement). Dans cette intégration,
+ * instances du process (état en mémoire uniquement) — et, pour
+ * l'implémentation réellement utilisée ici (`InMemoryDeduplicator`), le
+ * blocage `completed` lui-même reste borné dans le temps **au sein d'un
+ * même process** : au-delà d'une capacité de rétention configurée, les plus
+ * anciens identifiants `completed` sont évincés et redeviennent admissibles.
+ * « Completed » ne signifie donc jamais un blocage définitif, seulement
+ * « non retraitable tant que retenu ». Dans cette intégration,
  * c'est {@link ../local-message-queue.js | LocalMessageQueue} qui appelle
  * `beginProcessing` **à l'admission** (avant d'empiler l'événement) et
  * `finish` une fois le traitement terminé — jamais l'exécuteur de message
@@ -118,7 +130,20 @@ export interface ConversationalService {
 }
 
 export type TransportResult =
-  { readonly status: 'sent' } | { readonly status: 'error'; readonly reason: string };
+  | { readonly status: 'sent' }
+  /** Échec certain — le transport sait que l'envoi n'a pas eu lieu (refus HTTP explicite, validation locale, erreur réseau avant toute réponse). */
+  | { readonly status: 'error'; readonly reason: string }
+  /**
+   * Issue **incertaine** — la requête a pu atteindre le serveur et être
+   * traitée avant que le transport ne puisse confirmer le résultat (délai
+   * dépassé après envoi, réponse 2xx de forme inattendue, corps illisible
+   * sur une réponse par ailleurs `ok`…). Ne jamais traiter comme un échec
+   * certain : un timeout n'est **pas** une preuve de non-envoi. Voir
+   * `graph-api-transport.ts` pour le détail des cas classés ainsi, et
+   * `local-message-queue.ts`/`execute-message-event.ts` pour la politique
+   * de non-relance automatique qui en découle.
+   */
+  | { readonly status: 'uncertain'; readonly reason: string };
 
 /** Port de sortie — voir `simulated-transport.ts` (aucune implémentation réseau dans cette tranche). */
 export interface OutboundTransport {
@@ -136,6 +161,16 @@ export type ChannelOutcome =
   | { readonly status: 'ignored_unauthorized' }
   | { readonly status: 'conversational_service_error'; readonly reason: string }
   | { readonly status: 'transport_error'; readonly reason: string }
+  /**
+   * Le transport a renvoyé `'uncertain'` (voir {@link TransportResult}) —
+   * l'envoi a peut-être abouti. Traité comme **non relançable
+   * automatiquement** par `LocalMessageQueue` (même politique que
+   * `'replied'` vis-à-vis de la déduplication) précisément pour éviter un
+   * double envoi si le message a en réalité été délivré — voir
+   * `local-message-queue.ts`. Une relance reste possible, mais seulement
+   * via une décision explicite hors de cette tranche (jamais automatique).
+   */
+  | { readonly status: 'transport_uncertain'; readonly reason: string }
   /**
    * Exception inattendue (bug d'un double, erreur de programmation) levée
    * par `allowlist`/`conversationalService`/`transport` plutôt que renvoyée

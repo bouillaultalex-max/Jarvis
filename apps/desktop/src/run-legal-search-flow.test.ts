@@ -4,7 +4,15 @@ import {
   OsCredentialSecretStore,
   PermissionManager,
 } from '@jarvis/connectors';
-import type { ResearchBudget } from '@jarvis/legal-research';
+import type {
+  ResearchBudget,
+  ResearchCandidate,
+  ResearchResult,
+  RetrievalResult,
+  SearchProvenance,
+  SearchQuery,
+  SearchReference,
+} from '@jarvis/legal-research';
 
 import type { LegalSearchInput } from './legal-search-args.js';
 import {
@@ -25,6 +33,7 @@ import {
   resolveLegalSearchEnvironment,
   runLegalSearchFlow,
   type LegalSearchDeps,
+  type LegalSearchFlowResult,
 } from './run-legal-search-flow.js';
 
 /**
@@ -231,6 +240,151 @@ describe('legalSearchExitCode — dérivé du statut structuré, jamais du texte
     expect(
       legalSearchExitCode({ status: 'provider_error', reason: 'execution_error', detail: 'x' }),
     ).not.toBe(0);
+  });
+});
+
+describe('describeLegalSearchResult — version résolue distincte de la source initialement récupérée (ADR-0019)', () => {
+  /**
+   * Construit un `ResearchResult` à la main (même convention que
+   * `citation-projection.test.ts` → `resolvedCandidate`/`handBuilt`) : le cas
+   * testé ici (resolution `resolved` avec `resolvedRetrieval.mode: 'retrieved'`,
+   * id distinct de `retrieval.source.id`) exige deux appels `getArticle`
+   * différents, hors de portée de `buildFetchFn` (un seul `articleOutput`).
+   * Isoler ainsi la couche de présentation reste exact : l'assemblage
+   * `ResearchCandidate` est entièrement défini par contrat
+   * (`research-types.ts`), déjà testé indépendamment côté moteur
+   * (`research-engine-version-target.test.ts`).
+   */
+  type SourceShape = RetrievalResult['source'];
+  function buildSource(overrides: Partial<SourceShape> & Pick<SourceShape, 'id'>): SourceShape {
+    return {
+      sourceType: 'code_article',
+      authority: 'legifrance',
+      reliability: 'primary_institutional',
+      title: 'L999-9',
+      identifier: 'LEGIARTI_STABLE_CID',
+      version: '1.0',
+      effectiveFrom: '2020-01-01T00:00:00.000Z',
+      consultedAt: '2026-10-02T14:43:20.000Z',
+      ...overrides,
+    };
+  }
+
+  const QUERY: SearchQuery = {
+    text: 'texte',
+    matchMode: 'all_terms',
+    asOf: '2026-01-01',
+    page: { number: 1, size: 5 },
+  };
+  const PROVENANCE: SearchProvenance = {
+    providerId: 'legifrance',
+    collection: 'CODE_DATE',
+    query: QUERY,
+    executedAt: '2026-10-02T14:43:20.384Z',
+    page: 1,
+    resultIndex: 0,
+  };
+  const REFERENCE: SearchReference = {
+    authority: 'legifrance',
+    collection: 'CODE_DATE',
+    candidateId: 'LEGIARTI_INITIAL',
+    provenance: PROVENANCE,
+  };
+
+  function buildResult(candidate: ResearchCandidate): LegalSearchFlowResult {
+    const result: ResearchResult = {
+      query: QUERY,
+      budget: { maxSearchPages: 1, maxCandidates: 5, maxRetrievedSources: 5 },
+      candidates: [candidate],
+      rejections: [],
+      gaps: [],
+      skipped: [],
+    };
+    return { status: 'result', result };
+  }
+
+  it('version résolue récupérée (mode "retrieved") → affichée distinctement, jamais confondue avec la source initiale', () => {
+    const initialSource = buildSource({
+      id: 'LEGIARTI_INITIAL',
+      consultedAt: '2026-10-02T10:00:00.000Z',
+    });
+    const resolvedSource = buildSource({
+      id: 'LEGIARTI_RESOLVED',
+      title: 'L999-9 (version antérieure)',
+      consultedAt: '2026-10-02T10:00:05.000Z',
+    });
+    const retrieval: RetrievalResult = {
+      source: initialSource,
+      versions: [],
+      reference: REFERENCE,
+    };
+    const candidate: ResearchCandidate = {
+      reference: REFERENCE,
+      sightings: [PROVENANCE],
+      retrieval,
+      versionResolution: { status: 'resolved', version: { id: 'LEGIARTI_RESOLVED' } },
+      historyCompleteness: 'unknown',
+      resolvedRetrieval: { mode: 'retrieved', result: { source: resolvedSource, versions: [] } },
+    };
+
+    const lines = describeLegalSearchResult(buildResult(candidate)).join('\n');
+
+    // `source.identifier` (CID, article-level) est partagé par construction —
+    // seul `source.id` (version-specific) distingue réellement les deux
+    // sources, et n'est jamais affiché tel quel par la CLI : c'est précisément
+    // ce qui rendait la confusion possible avant correction.
+    expect(lines).toContain('Consulté le 2026-10-02T10:00:00.000Z'); // source initiale
+    expect(lines).toContain('résolue (version LEGIARTI_RESOLVED)');
+    // Avant correction, seule la source initiale était affichée : rien ne
+    // distinguait "candidat trouvé" de "version exploitable à la date
+    // demandée" quand elles diffèrent réellement.
+    expect(lines).toContain('Source de la version résolue (au mieux, à la date demandée)');
+    expect(lines).toContain('L999-9 (version antérieure)');
+    expect(lines).toContain('consultée le 2026-10-02T10:00:05.000Z'); // version resolue, distincte
+    expect(lines).toContain('distincte de la source ci-dessus');
+    // Ne promet jamais une applicabilité juridique garantie.
+    expect(lines).not.toMatch(/version applicable/i);
+  });
+
+  it('version résolue mais non récupérée → signalé explicitement, jamais silencieux', () => {
+    const initialSource = buildSource({ id: 'LEGIARTI_INITIAL' });
+    const retrieval: RetrievalResult = {
+      source: initialSource,
+      versions: [],
+      reference: REFERENCE,
+    };
+    const candidate: ResearchCandidate = {
+      reference: REFERENCE,
+      sightings: [PROVENANCE],
+      retrieval,
+      versionResolution: { status: 'resolved', version: { id: 'LEGIARTI_RESOLVED' } },
+      historyCompleteness: 'unknown',
+      // Pas de `resolvedRetrieval` : cas réel (échec de la cible, budget
+      // épuisé) — `retrieval` ne doit jamais devenir un substitut silencieux.
+    };
+
+    const lines = describeLegalSearchResult(buildResult(candidate)).join('\n');
+
+    expect(lines).toContain('non récupérée');
+    expect(lines).toContain('LEGIARTI_RESOLVED');
+  });
+
+  it('version résolue = source initiale (mode "initial") → aucune ligne redondante', () => {
+    const source = buildSource({ id: 'LEGIARTI_SAME' });
+    const retrieval: RetrievalResult = { source, versions: [], reference: REFERENCE };
+    const candidate: ResearchCandidate = {
+      reference: REFERENCE,
+      sightings: [PROVENANCE],
+      retrieval,
+      versionResolution: { status: 'resolved', version: { id: 'LEGIARTI_SAME' } },
+      historyCompleteness: 'unknown',
+      resolvedRetrieval: { mode: 'initial', result: retrieval },
+    };
+
+    const lines = describeLegalSearchResult(buildResult(candidate)).join('\n');
+
+    expect(lines).not.toContain('Source de la version résolue');
+    expect(lines).not.toContain('non récupérée');
   });
 });
 

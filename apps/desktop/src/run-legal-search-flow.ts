@@ -348,6 +348,28 @@ export function describeLegalSearchResult(flowResult: LegalSearchFlowResult): re
         lines.push(
           `   Résolution de version à la date demandée : ${describeVersionResolution(candidate.versionResolution)} — historique ${candidate.historyCompleteness ?? 'unknown'} (jamais garanti exhaustif).`,
         );
+        // `retrieval` (ci-dessus) est la source INITIALEMENT trouvée — jamais
+        // un substitut de la version résolue (ADR-0019, conséquences). Si la
+        // résolution désigne une version différente, le lecteur doit le
+        // savoir explicitement plutôt que de supposer que le contenu
+        // affiché est celui résolu pour la date demandée. Formulation
+        // volontairement non assertive : une résolution reste « au mieux »
+        // (jamais une preuve d'exhaustivité, jamais une conclusion de droit
+        // applicable vérifiée — voir l'avertissement final de cette fonction).
+        if (candidate.versionResolution.status === 'resolved') {
+          const resolvedSource = candidate.resolvedRetrieval?.result.source;
+          if (resolvedSource === undefined) {
+            lines.push(
+              `   Version résolue (${candidate.versionResolution.version.id}) non récupérée : le contenu ci-dessus ne correspond pas à cette version (voir références écartées).`,
+            );
+          } else if (resolvedSource.id !== source.id) {
+            const resolvedTitle =
+              resolvedSource.title.length > 0 ? ` — ${resolvedSource.title}` : '';
+            lines.push(
+              `   Source de la version résolue (au mieux, à la date demandée) : ${resolvedSource.identifier}${resolvedTitle}, consultée le ${resolvedSource.consultedAt} — distincte de la source ci-dessus, initialement trouvée.`,
+            );
+          }
+        }
       }
       lines.push('');
     });

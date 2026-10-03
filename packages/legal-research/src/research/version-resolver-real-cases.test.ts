@@ -11,6 +11,7 @@ import {
   L3121_27_V1_RAW,
   L3121_27_V2_RAW,
   L36_11_V14_RAW,
+  L642_5_RAW,
 } from './testing/fixtures.js';
 
 /**
@@ -209,6 +210,42 @@ describe('cas réel — L36-11 (articleVersions INCOMPLET : 2 versions listées 
       };
       expect(resolveVersion(reversed, '2017-03-01')).toEqual(resolveVersion(history, '2017-03-01'));
     });
+  });
+});
+
+describe('cas réel — L642-5 (amendement MODIFIE_MORT_NE à intervalle réellement inversé)', () => {
+  const article = mapLegifranceArticleToLegalSource(L642_5_RAW, { now: NOW });
+  const versions = refsOf(article.metadata);
+  const poisonedId = 'LEGIARTI000028724251';
+
+  it('les deux dates sont des epoch ms valides et distinctes de la sentinelle — pas un défaut de mapping', () => {
+    const poisoned = article.metadata.articleVersions.find((v) => v.id === poisonedId)!;
+    expect(poisoned.etat).toBe('MODIFIE_MORT_NE');
+    // dateFin (2014-06-28) antérieure de 3 jours à dateDebut (2014-07-01).
+    expect(Date.parse(poisoned.effectiveTo!)).toBeLessThan(Date.parse(poisoned.effectiveFrom!));
+    expect(poisoned.effectiveTo).not.toBe(undefined);
+  });
+
+  it('indeterminate / invalid_interval, quelle que soit asOf — jamais résolu, jamais une borne par défaut', () => {
+    const history: VersionHistory = { versions, completeness: 'unknown' };
+    for (const asOf of ['2006-06-01', '2014-07-01', '2026-01-01']) {
+      expect(resolveVersion(history, asOf)).toEqual({
+        status: 'indeterminate',
+        reason: 'invalid_interval',
+        versionIds: [poisonedId],
+      });
+    }
+  });
+
+  it('même avec un historique déclaré complete, invalid_interval prime : jamais none_applicable', () => {
+    const history: VersionHistory = { versions, completeness: 'complete' };
+    const result = resolveVersion(history, '2026-01-01');
+    expect(result).toEqual({
+      status: 'indeterminate',
+      reason: 'invalid_interval',
+      versionIds: [poisonedId],
+    });
+    expect(result.status).not.toBe('none_applicable');
   });
 });
 

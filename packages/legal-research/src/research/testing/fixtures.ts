@@ -219,6 +219,56 @@ export const L36_11_V14_RAW = {
   ],
 };
 
+/**
+ * L642-5 (Code de commerce) : anomalie RÉELLE observée en Sandbox PISTE
+ * (essai `legal-search` du 2026-10-02, asOf 2026-01-01, diagnostic
+ * `invalid_interval`). `articleVersions` porte une entrée `etat:
+ * 'MODIFIE_MORT_NE'` dont `dateFin` (2014-06-28) est antérieure de 3 jours à
+ * `dateDebut` (2014-07-01) — intervalle réellement inversé, pas une
+ * sentinelle (`dateFin` ≠ `LEGIFRANCE_NO_BOUND_SENTINEL_MS`) ni un défaut de
+ * mapping (les deux dates sont des epoch ms valides, correctement converties).
+ * Fait observé uniquement : cet état porte un intervalle inversé dans les
+ * données source. Aucune source établissant la sémantique juridique de
+ * `MODIFIE_MORT_NE` (p. ex. « amendement retiré/invalidé ») n'a été vérifiée
+ * ici — ne pas en déduire une telle interprétation à partir de ce commentaire
+ * ou de ce nom d'état.
+ * Fixture volontairement réduite à la version récupérée + l'entrée fautive
+ * (6 des 8 versions réelles omises, sans incidence sur le diagnostic : un
+ * seul défaut, où qu'il soit, suffit — voir `version-resolver.ts`). Identique
+ * en substance pour LEGIARTI000006238291 (L631-19), observé le même jour avec
+ * les mêmes dates (1404172800000 / 1403913600000) sur une entrée `4.0`
+ * `MODIFIE_MORT_NE` — non dupliqué ici.
+ */
+export const L642_5_RAW = {
+  id: 'LEGIARTI000006238668',
+  cid: 'LEGIARTI000006238668',
+  nature: 'Article',
+  num: 'L642-5',
+  texte: 'Texte factice L642-5 version 1.',
+  versionArticle: '1.0',
+  etat: 'MODIFIE',
+  dateDebut: 1136073600000,
+  dateFin: 1234656000000,
+  versionPrecedente: null,
+  isMultipleVersions: true,
+  articleVersions: [
+    {
+      id: 'LEGIARTI000006238668',
+      etat: 'MODIFIE',
+      version: '1.0',
+      dateDebut: 1136073600000,
+      dateFin: 1234656000000,
+    },
+    {
+      id: 'LEGIARTI000028724251',
+      etat: 'MODIFIE_MORT_NE',
+      version: '6.0',
+      dateDebut: 1404172800000,
+      dateFin: 1403913600000,
+    },
+  ],
+};
+
 /** Article 57 : version unique, ouverte (`versionPrecedente` null). */
 export const ARTICLE_57_RAW = {
   id: 'LEGIARTI000006528277',

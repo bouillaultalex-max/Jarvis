@@ -187,6 +187,10 @@ module.exports = tseslint.config(
             { name: '@jarvis/api', message: "@jarvis/core ne doit jamais dépendre d'une app." },
             { name: '@jarvis/desktop', message: "@jarvis/core ne doit jamais dépendre d'une app." },
             {
+              name: '@jarvis/whatsapp-channel',
+              message: "@jarvis/core ne doit jamais dépendre d'une app.",
+            },
+            {
               name: '@jarvis/llm',
               message:
                 "@jarvis/core ne peut référencer @jarvis/llm qu'en `import type`/`export type` (aucune dépendance d'exécution).",
@@ -227,6 +231,10 @@ module.exports = tseslint.config(
             { name: '@jarvis/api', message: "@jarvis/connectors ne doit pas dépendre d'une app." },
             {
               name: '@jarvis/desktop',
+              message: "@jarvis/connectors ne doit pas dépendre d'une app.",
+            },
+            {
+              name: '@jarvis/whatsapp-channel',
               message: "@jarvis/connectors ne doit pas dépendre d'une app.",
             },
           ],
@@ -369,6 +377,10 @@ module.exports = tseslint.config(
               name: '@jarvis/desktop',
               message: "@jarvis/legal-research ne doit pas dépendre d'une app.",
             },
+            {
+              name: '@jarvis/whatsapp-channel',
+              message: "@jarvis/legal-research ne doit pas dépendre d'une app.",
+            },
           ],
         },
       ],
@@ -424,6 +436,10 @@ module.exports = tseslint.config(
             },
             { name: '@jarvis/api', message: "@jarvis/tools ne doit pas dépendre d'une app." },
             { name: '@jarvis/desktop', message: "@jarvis/tools ne doit pas dépendre d'une app." },
+            {
+              name: '@jarvis/whatsapp-channel',
+              message: "@jarvis/tools ne doit pas dépendre d'une app.",
+            },
           ],
         },
       ],
@@ -464,6 +480,10 @@ module.exports = tseslint.config(
               message: "@jarvis/classification ne doit pas dépendre d'une app.",
             },
             {
+              name: '@jarvis/whatsapp-channel',
+              message: "@jarvis/classification ne doit pas dépendre d'une app.",
+            },
+            {
               name: '@jarvis/llm',
               message:
                 "@jarvis/classification ne peut référencer @jarvis/llm qu'en `import type` (aucune dépendance d'exécution).",
@@ -494,6 +514,10 @@ module.exports = tseslint.config(
             { name: '@jarvis/api', message: "@jarvis/inbox ne doit pas dépendre d'une app." },
             { name: '@jarvis/desktop', message: "@jarvis/inbox ne doit pas dépendre d'une app." },
             {
+              name: '@jarvis/whatsapp-channel',
+              message: "@jarvis/inbox ne doit pas dépendre d'une app.",
+            },
+            {
               name: '@jarvis/connectors',
               message:
                 '@jarvis/connectors est une devDependency de test pour @jarvis/inbox : interdit en dehors des fichiers *.test.ts.',
@@ -514,6 +538,10 @@ module.exports = tseslint.config(
           paths: [
             { name: '@jarvis/api', message: "@jarvis/inbox ne doit pas dépendre d'une app." },
             { name: '@jarvis/desktop', message: "@jarvis/inbox ne doit pas dépendre d'une app." },
+            {
+              name: '@jarvis/whatsapp-channel',
+              message: "@jarvis/inbox ne doit pas dépendre d'une app.",
+            },
           ],
         },
       ],
@@ -521,7 +549,8 @@ module.exports = tseslint.config(
   },
 
   {
-    // apps/api et apps/desktop : apps terminales indépendantes, jamais l'une de l'autre.
+    // apps/api, apps/desktop et apps/whatsapp-channel : apps terminales
+    // indépendantes, jamais l'une de l'autre.
     files: ['apps/api/src/**/*.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
@@ -531,6 +560,10 @@ module.exports = tseslint.config(
             {
               name: '@jarvis/desktop',
               message: 'apps/api ne doit jamais dépendre de apps/desktop.',
+            },
+            {
+              name: '@jarvis/whatsapp-channel',
+              message: 'apps/api ne doit jamais dépendre de apps/whatsapp-channel.',
             },
           ],
         },
@@ -545,6 +578,32 @@ module.exports = tseslint.config(
         {
           paths: [
             { name: '@jarvis/api', message: 'apps/desktop ne doit jamais dépendre de apps/api.' },
+            {
+              name: '@jarvis/whatsapp-channel',
+              message: 'apps/desktop ne doit jamais dépendre de apps/whatsapp-channel.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // apps/whatsapp-channel (intégration locale, ADR-0022) : app terminale
+    // indépendante — ne doit jamais dépendre d'une autre app.
+    files: ['apps/whatsapp-channel/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@jarvis/api',
+              message: 'apps/whatsapp-channel ne doit jamais dépendre de apps/api.',
+            },
+            {
+              name: '@jarvis/desktop',
+              message: 'apps/whatsapp-channel ne doit jamais dépendre de apps/desktop.',
+            },
           ],
         },
       ],

@@ -1,5 +1,12 @@
 # Prototype — frontière de canal conversationnel (WhatsApp)
 
+⚠️ **SUPERSEDED** — la première intégration locale réelle vit désormais dans
+`apps/whatsapp-channel/` (workspace npm, tests `app.inject()`). Ce dossier
+reste en l'état comme instantané historique, toujours testé et vert, mais
+ne reçoit plus d'évolution : toute nouvelle fonctionnalité va dans
+`apps/whatsapp-channel`, jamais ici, pour éviter deux implémentations
+divergentes.
+
 PROTOTYPE JETABLE. Voir `docs/adr/0022-whatsapp-channel-boundary.md` pour la
 décision d'architecture. Vit hors du graphe de workspaces (pas de
 `package.json`, non couvert par le `tsconfig.json` racine) — même

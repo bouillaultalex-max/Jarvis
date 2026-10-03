@@ -6,6 +6,9 @@
  * corps, avec le secret d'application, exposé en en-tête `X-Hub-Signature-256:
  * sha256=<hex>`. Primitive Node native uniquement (`node:crypto`) — aucun
  * SDK supplémentaire.
+ *
+ * ⚠️ **SUPERSEDED** — implémentation de référence désormais dans
+ * `apps/whatsapp-channel/src/webhook-signature.ts`. Voir `channel-ports.ts`.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 

@@ -1,5 +1,16 @@
 /**
  * PROTOTYPE JETABLE — voir `docs/adr/0022-whatsapp-channel-boundary.md`.
+ *
+ * ⚠️ **SUPERSEDED** — `apps/whatsapp-channel` ne reprend pas ce fichier
+ * à l'identique : la réservation de déduplication (`beginProcessing`) doit y
+ * avoir lieu **à l'admission dans la file bornée**, pas au moment où ce
+ * `processChannelEvent` monolithique la prend lui-même — sinon un doublon
+ * arrivé pendant qu'un événement attend encore en file ne serait pas
+ * détecté. Voir `apps/whatsapp-channel/src/local-message-queue.ts`
+ * (admission + réservation) et `apps/whatsapp-channel/src/execute-message-event.ts`
+ * (traitement seul, sans dédup — équivalent fonctionnel de ce fichier moins
+ * la réservation).
+ *
  * Orchestrateur générique : ne connaît aucun fournisseur (pas de WhatsApp
  * ici) ni `AgentLoop` — uniquement les ports de `channel-ports.ts`. Conçu
  * pour être réutilisé tel quel par un futur canal (Telegram…) qui fournirait

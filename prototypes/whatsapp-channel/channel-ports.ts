@@ -3,6 +3,13 @@
  * `README.md` de ce dossier. Zéro import `@jarvis/*` : ce fichier ne définit
  * que des contrats génériques, indépendants du fournisseur (WhatsApp,
  * Telegram…) et du moteur conversationnel (`AgentLoop` ou autre).
+ *
+ * ⚠️ **SUPERSEDED** — l'implémentation de référence vit désormais dans
+ * `apps/whatsapp-channel/src/channel-ports.ts` (première intégration
+ * locale). Ce fichier reste tel quel comme instantané historique, validé
+ * par `whatsapp-channel.test.ts` de ce dossier — il ne reçoit plus
+ * d'évolution. Ne pas modifier l'un sans l'autre sans en avoir
+ * conscience : toute nouvelle fonctionnalité va dans `apps/whatsapp-channel`.
  */
 
 /** Requête brute reçue par le canal, avant tout parsing fournisseur. */

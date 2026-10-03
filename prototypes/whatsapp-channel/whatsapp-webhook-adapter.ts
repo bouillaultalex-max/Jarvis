@@ -1,6 +1,9 @@
 /**
  * PROTOTYPE JETABLE — voir `docs/adr/0022-whatsapp-channel-boundary.md`.
  *
+ * ⚠️ **SUPERSEDED** — implémentation de référence désormais dans
+ * `apps/whatsapp-channel/src/whatsapp-webhook-adapter.ts`. Voir `channel-ports.ts`.
+ *
  * Seul fichier de ce prototype qui connaît la forme du JSON webhook
  * WhatsApp (enveloppe `entry[].changes[].value.messages[]`/`statuses[]`).
  * Voir `README.md` § Conformité au contrat officiel pour le détail

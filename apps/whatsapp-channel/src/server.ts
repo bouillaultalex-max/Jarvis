@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { SenderAllowlist, SignatureVerifier } from './channel-ports.js';
 import type { WhatsAppChannelConfig } from './config.js';
 import { LOCAL_BODY_LIMIT_BYTES } from './config.js';
-import type { LocalMessageQueue } from './local-message-queue.js';
+import type { DurableMessageWorker } from './durable-message-worker.js';
 import { handleWhatsAppHandshake, parseWhatsAppWebhookBody } from './whatsapp-webhook-adapter.js';
 
 const WEBHOOK_PATH = '/webhooks/whatsapp';
@@ -23,7 +23,9 @@ export interface EventAdmission {
     | 'closed'
     | 'ignored_unauthorized'
     | 'ignored_status'
-    | 'ignored_unsupported';
+    | 'ignored_unsupported'
+    | 'storage_error'
+    | 'rejected_text_too_long';
   readonly reason?: string;
 }
 
@@ -31,7 +33,7 @@ export interface BuildWhatsAppChannelServerOptions {
   readonly config: WhatsAppChannelConfig;
   readonly allowlist: SenderAllowlist;
   readonly signatureVerifier: SignatureVerifier;
-  readonly queue: LocalMessageQueue;
+  readonly worker: DurableMessageWorker;
   /** Défaut : {@link LOCAL_BODY_LIMIT_BYTES} — choix applicatif, pas une limite officielle Meta. */
   readonly bodyLimitBytes?: number;
 }
@@ -45,16 +47,18 @@ export interface BuildWhatsAppChannelServerOptions {
  *   POST /webhooks/whatsapp   — événements, signature vérifiée sur les octets bruts
  *
  * La route POST ne répond **200** pour un message à traiter qu'après
- * admission effective dans `queue` (réservation de déduplication prise,
- * capacité disponible) — jamais avant, jamais en pariant que le traitement
- * réussira. Le traitement réel (service conversationnel, transport) se
- * déroule en tâche de fond, suivi par `queue` (voir `local-message-queue.ts`) —
- * jamais attendu par cette route.
+ * admission **durable et confirmée** (`MessageStore.admit()`, ADR-0023) —
+ * jamais avant, jamais en pariant que le traitement réussira. Une erreur de
+ * stockage pendant l'admission (`worker.admit()` qui lève une exception)
+ * empêche explicitement l'accusé 200 pour cet événement — voir le
+ * `catch` ci-dessous, jamais un 200 optimiste. Le traitement réel (service
+ * conversationnel, transport) se déroule en tâche de fond, suivi par
+ * `worker` — jamais attendu par cette route.
  */
 export function buildWhatsAppChannelServer(
   options: BuildWhatsAppChannelServerOptions,
 ): FastifyInstance {
-  const { config, allowlist, signatureVerifier, queue } = options;
+  const { config, allowlist, signatureVerifier, worker } = options;
   const bodyLimit = options.bodyLimitBytes ?? LOCAL_BODY_LIMIT_BYTES;
 
   const app = Fastify({ logger: false, bodyLimit });
@@ -112,7 +116,7 @@ export function buildWhatsAppChannelServer(
     }
 
     const admissions: EventAdmission[] = [];
-    let capacityExceeded = false;
+    let mustRedeliverBatch = false;
 
     for (const event of parseResult.events) {
       if (event.kind === 'status') {
@@ -125,32 +129,71 @@ export function buildWhatsAppChannelServer(
       }
 
       // event.kind === 'message' : filtré par l'allowlist **avant**
-      // d'atteindre la file — protège sa capacité bornée d'un expéditeur
+      // d'atteindre le store — protège sa capacité bornée d'un expéditeur
       // non autorisé, et garantit qu'aucune réponse n'est jamais envoyée à
       // un expéditeur refusé (défense en profondeur ré-appliquée par
-      // `executeMessageEvent` au moment du traitement réel).
+      // `generateResponse` au moment du traitement réel).
       if (!allowlist.isAuthorized(event.senderId)) {
         admissions.push({ eventId: event.id, kind: 'ignored_unauthorized' });
         continue;
       }
 
-      const admission = queue.admit(event);
-      if (admission === 'rejected_capacity' || admission === 'closed') {
-        capacityExceeded = true;
+      try {
+        const outcome = worker.admit(event);
+        if (outcome.kind === 'admitted') {
+          if (outcome.contentMismatch) {
+            console.warn(
+              `[whatsapp-channel] admission "${event.id}" : contenu divergent d'une admission ` +
+                `antérieure — texte/expéditeur d'origine conservés, jamais remplacés silencieusement.`,
+            );
+          }
+          admissions.push({
+            eventId: event.id,
+            kind: 'queued',
+            ...(outcome.contentMismatch ? { reason: 'content_mismatch_kept_original' } : {}),
+          });
+          continue;
+        }
+        if (outcome.kind === 'duplicate') {
+          admissions.push({
+            eventId: event.id,
+            kind: 'duplicate',
+            ...(outcome.contentMismatch ? { reason: 'content_mismatch_kept_original' } : {}),
+          });
+          continue;
+        }
+        if (outcome.kind === 'rejected_text_too_long') {
+          // Rejet permanent (limite applicative locale, pas Meta) : une
+          // redélivraison échouerait identiquement — jamais de 503, jamais
+          // de pression de relivraison pour un rejet qui ne changera pas.
+          admissions.push({ eventId: event.id, kind: 'rejected_text_too_long' });
+          continue;
+        }
+        // 'rejected_capacity' | 'closed'
+        mustRedeliverBatch = true;
+        admissions.push({ eventId: event.id, kind: outcome.kind });
+      } catch (err) {
+        // Erreur de stockage pendant l'admission : jamais un 200 optimiste
+        // pour cet événement (ADR-0023 § admission).
+        mustRedeliverBatch = true;
+        admissions.push({
+          eventId: event.id,
+          kind: 'storage_error',
+          reason: err instanceof Error ? err.message : String(err),
+        });
       }
-      admissions.push({ eventId: event.id, kind: admission });
     }
 
     // Politique d'admission pour un événement multi-message : **partielle**,
     // par identifiant — chaque message est admis/refusé indépendamment (sa
-    // propre réservation de déduplication). Si au moins un message de ce
-    // lot n'a pas pu être admis (capacité), le lot entier reçoit 503 pour
-    // provoquer une relivraison WhatsApp du lot complet ; les messages déjà
-    // admis gardent leur réservation (`'in_flight'`/`'completed'` selon
-    // l'avancement) et ne sont donc jamais redupliqués lors de cette
+    // propre réservation de déduplication, désormais durable). Si au moins
+    // un message de ce lot n'a pas pu être admis (capacité, fermeture, ou
+    // erreur de stockage), le lot entier reçoit 503 pour provoquer une
+    // relivraison WhatsApp du lot complet ; les messages déjà admis gardent
+    // leur réservation et ne sont donc jamais redupliqués lors de cette
     // relivraison — seuls ceux non admis la première fois obtiennent une
     // admission neuve.
-    if (capacityExceeded) {
+    if (mustRedeliverBatch) {
       return reply.code(503).send({ status: 'queue_full', admissions });
     }
     return reply.code(200).send({ status: 'accepted', admissions });

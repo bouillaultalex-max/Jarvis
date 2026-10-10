@@ -23,7 +23,12 @@ export interface WhatsAppChannelConfig {
  */
 export const LOCAL_BODY_LIMIT_BYTES = 262_144; // 256 KiB
 
-export const DEFAULT_QUEUE_MAX_SIZE = 50;
+/**
+ * Capacité (`maxActiveDepth`) et rétention totale (`maxStoredMessages`) du
+ * store durable vivent désormais dans `sqlite-message-store.ts`
+ * (`DEFAULT_MAX_ACTIVE_DEPTH`/`DEFAULT_MAX_STORED_MESSAGES`, ADR-0023) —
+ * seule la concurrence du worker reste un choix de ce bootstrap.
+ */
 export const DEFAULT_QUEUE_MAX_CONCURRENCY = 4;
 
 /**

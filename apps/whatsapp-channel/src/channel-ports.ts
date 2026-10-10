@@ -66,56 +66,15 @@ export interface SenderAllowlist {
   isAuthorized(senderId: string): boolean;
 }
 
-export type ClaimResult = 'proceed' | 'duplicate';
-
-/** Issue terminale d'un traitement, transmise à {@link Deduplicator.finish}. */
-export type ProcessingOutcome =
-  /**
-   * Réponse effectivement envoyée — ne doit pas être retraité
-   * automatiquement **tant que l'implémentation retient cet identifiant**.
-   * Pas une garantie absolue : voir `in-memory-deduplicator.ts` pour la
-   * portée exacte (rétention bornée, éviction FIFO, perdue au redémarrage)
-   * de l'implémentation réellement utilisée dans cette app.
-   */
-  | 'completed'
-  /**
-   * Aucun effet confirmé (erreur de service, erreur de transport, ou refus
-   * d'autorisation) — l'identifiant est libéré : une relivraison ultérieure
-   * du même identifiant est traitée comme un essai neuf, pas comme un
-   * doublon. Politique **au moins une fois**, jamais « exactement une
-   * fois ».
-   */
-  | 'released';
-
 /**
- * Déduplication par identifiant d'événement, en deux temps :
- *   1. `beginProcessing` — **synchrone** à dessein : dans un process Node
- *      mono-thread, cela élimine toute fenêtre d'interleaving entre la
- *      vérification et le marquage, donc toute course entre deux livraisons
- *      concurrentes du même identifiant.
- *   2. `finish` — appelé une fois le traitement terminé, quelle qu'en soit
- *      l'issue, pour décider si l'identifiant reste bloqué (`completed`) ou
- *      redevient disponible pour une relivraison (`released`).
- *
- * Aucune des deux garanties ne survit à un redémarrage ni à plusieurs
- * instances du process (état en mémoire uniquement) — et, pour
- * l'implémentation réellement utilisée ici (`InMemoryDeduplicator`), le
- * blocage `completed` lui-même reste borné dans le temps **au sein d'un
- * même process** : au-delà d'une capacité de rétention configurée, les plus
- * anciens identifiants `completed` sont évincés et redeviennent admissibles.
- * « Completed » ne signifie donc jamais un blocage définitif, seulement
- * « non retraitable tant que retenu ». Dans cette intégration,
- * c'est {@link ../local-message-queue.js | LocalMessageQueue} qui appelle
- * `beginProcessing` **à l'admission** (avant d'empiler l'événement) et
- * `finish` une fois le traitement terminé — jamais l'exécuteur de message
- * lui-même (voir `execute-message-event.ts`).
+ * La déduplication par identifiant d'événement (auparavant portée par
+ * `Deduplicator`/`InMemoryDeduplicator`, en mémoire) est, depuis ADR-0023,
+ * portée par `MessageStore.admit()` (`message-store.ts`) — durable,
+ * transactionnelle, et seule source de vérité pour l'admission ET l'état de
+ * traitement. `Deduplicator` n'existe plus : une admission durable exige
+ * une seule décision atomique (réservation + capacité + réouverture bornée
+ * d'un échec démontré), pas deux structures séparées à synchroniser.
  */
-export interface Deduplicator {
-  /** `'duplicate'` si déjà en cours ou terminé (`completed`) ; sinon marque « en cours » et renvoie `'proceed'`. */
-  beginProcessing(eventId: string): ClaimResult;
-  /** Fixe l'issue terminale — voir {@link ProcessingOutcome}. */
-  finish(eventId: string, outcome: ProcessingOutcome): void;
-}
 
 export type ConversationalServiceResult =
   | { readonly status: 'ok'; readonly text: string }
@@ -140,8 +99,8 @@ export type TransportResult =
    * sur une réponse par ailleurs `ok`…). Ne jamais traiter comme un échec
    * certain : un timeout n'est **pas** une preuve de non-envoi. Voir
    * `graph-api-transport.ts` pour le détail des cas classés ainsi, et
-   * `local-message-queue.ts`/`execute-message-event.ts` pour la politique
-   * de non-relance automatique qui en découle.
+   * `durable-message-worker.ts`/`send-response.ts` pour la politique de
+   * non-relance automatique qui en découle.
    */
   | { readonly status: 'uncertain'; readonly reason: string };
 
@@ -151,10 +110,11 @@ export interface OutboundTransport {
 }
 
 /**
- * Issue définitive du traitement d'un événement **message** par l'exécuteur
- * (`execute-message-event.ts`). Distincte des issues d'admission de la file
- * (voir `local-message-queue.ts` → `AdmissionResult`), produites avant même
- * qu'un exécuteur ne soit invoqué.
+ * Issue produite par les étapes de traitement d'un événement **message**
+ * (`generate-response.ts`/`send-response.ts`), consommée par
+ * `durable-message-worker.ts` pour décider de la transition `MessageStore`
+ * correspondante (ADR-0023). Distincte du statut persistant
+ * (`MessageStatus`, `message-store.ts`), qui seul survit à un redémarrage.
  */
 export type ChannelOutcome =
   | { readonly status: 'replied' }
@@ -163,11 +123,10 @@ export type ChannelOutcome =
   | { readonly status: 'transport_error'; readonly reason: string }
   /**
    * Le transport a renvoyé `'uncertain'` (voir {@link TransportResult}) —
-   * l'envoi a peut-être abouti. Traité comme **non relançable
-   * automatiquement** par `LocalMessageQueue` (même politique que
-   * `'replied'` vis-à-vis de la déduplication) précisément pour éviter un
-   * double envoi si le message a en réalité été délivré — voir
-   * `local-message-queue.ts`. Une relance reste possible, mais seulement
+   * l'envoi a peut-être abouti. Jamais relancé automatiquement (voir
+   * `durable-message-worker.ts` : mappé vers le statut durable `uncertain`,
+   * jamais `failed`) précisément pour éviter un double envoi si le message
+   * a en réalité été délivré. Une relance reste possible, mais seulement
    * via une décision explicite hors de cette tranche (jamais automatique).
    */
   | { readonly status: 'transport_uncertain'; readonly reason: string }

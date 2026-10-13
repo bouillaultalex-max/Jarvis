@@ -46,6 +46,7 @@ import {
   UnknownAccountError,
 } from '@jarvis/connectors';
 
+import { runChatRepl } from './chat-repl.js';
 import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js';
 import { describeInboxResult } from './inbox-view.js';
 import { parseGmailSendArgs } from './gmail-send-args.js';
@@ -814,7 +815,7 @@ function parseReadNaturalArgs(argv: readonly string[]): string {
   return text;
 }
 
-/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search`. */
+/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -836,6 +837,19 @@ export async function dispatch(
     output.write(`${line}\n`);
   };
   const command = argv[0];
+
+  if (command === 'chat') {
+    // Aucune dépendance Gmail/Légifrance/WhatsApp construite ou touchée ici —
+    // `deps` (Gmail) n'est jamais lu dans cette branche, exactement comme
+    // `legal-search` ci-dessous. Provider réel (AnthropicProvider), mais
+    // `AgentLoop` sans `ToolExecutor` — jamais importé dans ce fichier.
+    await runChatRepl({
+      llm: new AnthropicProvider(),
+      ...(io.input !== undefined ? { input: io.input } : {}),
+      output,
+    });
+    return;
+  }
 
   if (command === 'legal-search') {
     // Parsing AVANT toute résolution de secrets ou construction de client —
@@ -907,16 +921,16 @@ export async function dispatch(
   }
 
   throw new Error(
-    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search).',
+    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat).',
   );
 }
 
 /**
- * Prépare des `DesktopDeps` (Gmail) **inertes**, jamais lues : réservées au
- * seul cas où `main()` doit appeler `dispatch()` pour `legal-search`, qui
- * n'accède jamais à `deps`. Évite d'appeler {@link defaultDesktopDeps} (qui
- * exige `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`) pour une commande qui ne
- * doit exiger aucune configuration Gmail. `InMemory*` : aucune E/S, aucune
+ * Prépare des `DesktopDeps` (Gmail) **inertes**, jamais lues : réservées aux
+ * commandes dont `dispatch()` n'accède jamais à `deps` — `legal-search` et
+ * `chat`. Évite d'appeler {@link defaultDesktopDeps} (qui exige
+ * `GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`) pour une commande qui ne doit
+ * exiger aucune configuration Gmail. `InMemory*` : aucune E/S, aucune
  * lecture d'environnement, jamais construites ailleurs qu'ici.
  */
 function noopDesktopDeps(): DesktopDeps {
@@ -927,12 +941,15 @@ function noopDesktopDeps(): DesktopDeps {
   };
 }
 
+/** Commandes dont `dispatch()` n'accède jamais à `deps` (Gmail) — voir {@link noopDesktopDeps}. */
+const NO_GMAIL_DEPS_COMMANDS = new Set(['legal-search', 'chat']);
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  // `legal-search` ne doit exiger aucune configuration Gmail ni clé LLM :
+  // `legal-search`/`chat` ne doivent exiger aucune configuration Gmail :
   // `defaultDesktopDeps()` (qui lit GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET et
   // lève si absents) n'est donc appelée que pour les autres commandes.
-  const deps = argv[0] === 'legal-search' ? noopDesktopDeps() : defaultDesktopDeps();
+  const deps = NO_GMAIL_DEPS_COMMANDS.has(argv[0] ?? '') ? noopDesktopDeps() : defaultDesktopDeps();
   await dispatch(argv, deps);
 }
 

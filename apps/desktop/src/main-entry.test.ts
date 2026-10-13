@@ -11,12 +11,13 @@ import { describe, expect, it } from 'vitest';
  *
  * Volontairement limité aux scénarios qui échouent **avant** toute
  * résolution de secrets/appel réseau (arguments invalides, environnement
- * Légifrance invalide, commande Gmail sans credentials) : aucun de ces
- * process ne peut donc atteindre le trousseau OS réel ni le réseau. Un
- * scénario de succès `legal-search` nécessiterait de vrais secrets Sandbox
- * PISTE — hors périmètre (voir `run-legal-search-flow.test.ts`/
- * `main-legal-search.test.ts` pour ce cas, avec `fetchFn`/`SecretStore`
- * mockés via `dispatch()`).
+ * Légifrance invalide, commande Gmail sans credentials), plus un scénario de
+ * démarrage réussi (`chat`) dont le stdin est fermé immédiatement (`input:
+ * ''`) — aucun de ces process ne peut donc jamais atteindre le trousseau OS
+ * réel, le réseau, ni un vrai modèle LLM. Un scénario de succès
+ * `legal-search` nécessiterait de vrais secrets Sandbox PISTE — hors
+ * périmètre (voir `run-legal-search-flow.test.ts`/`main-legal-search.test.ts`
+ * pour ce cas, avec `fetchFn`/`SecretStore` mockés via `dispatch()`).
  */
 
 const TSX_BIN = join(__dirname, '..', '..', '..', 'node_modules', '.bin', 'tsx');
@@ -26,6 +27,8 @@ const DESKTOP_DIR = join(__dirname, '..');
 function runMain(
   args: readonly string[],
   envOverrides: Record<string, string | undefined> = {},
+  /** `undefined` (défaut) : stdin inchangée (aucune des commandes testées sans ce paramètre n'en lit). Fourni pour `chat`, qui en lirait. */
+  input?: string,
 ): { readonly status: number | null; readonly stdout: string; readonly stderr: string } {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.GMAIL_CLIENT_ID;
@@ -42,6 +45,7 @@ function runMain(
     env,
     encoding: 'utf8',
     timeout: 20_000,
+    ...(input !== undefined ? { input } : {}),
   });
 
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -73,6 +77,20 @@ describe('main() — vrai point d’entrée, process réel (tsx src/main.ts)', (
 
     expect(status).toBe(1);
     expect(stderr).toContain('GMAIL_CLIENT_ID et GMAIL_CLIENT_SECRET sont requis');
+  });
+
+  it('chat, sans GMAIL_CLIENT_ID/SECRET ni ANTHROPIC_API_KEY, stdin fermé immédiatement → démarre et se termine proprement, aucune exigence Gmail, aucun appel LLM réel', () => {
+    // `input: ''` ferme stdin dès l'ouverture (EOF immédiat, aucune ligne
+    // tapée) — `runChatRepl` ne peut donc jamais appeler `AnthropicProvider`,
+    // réel ou pas : ce test ne constitue en rien un échange avec un LLM réel,
+    // seulement la vérification que le vrai bootstrap (`main()`) démarre
+    // cette commande sans exiger de credentials Gmail.
+    const { status, stdout, stderr } = runMain(['chat'], {}, '');
+
+    expect(status).toBe(0);
+    expect(stdout).toContain('mono-tour');
+    expect(stdout).toContain('facturé');
+    expect(stderr).not.toContain('GMAIL_CLIENT_ID');
   });
 
   it('commande inconnue → rejetée, la liste des commandes mentionne legal-search', () => {

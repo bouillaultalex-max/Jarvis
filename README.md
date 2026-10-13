@@ -14,7 +14,7 @@ Assistant IA personnel — monorepo npm workspaces (TypeScript strict, Node 24, 
 
 ```
 apps/api          Serveur HTTP Fastify
-apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search)
+apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search / chat)
 packages/types      Types partagés
 packages/llm        Abstraction LLM (Anthropic)
 packages/core       AgentLoop, Tool, PermissionManager, ToolExecutor
@@ -55,6 +55,33 @@ récupérations) ; ne présente jamais une source comme « droit applicable » n
 une conclusion juridique vérifiée ; n'écrit jamais de dossier (`LegalCase`) ;
 testé uniquement avec des doubles — **aucun appel réel à la Sandbox PISTE
 n'a été exécuté**. Détail : `PROJECT_STATE.md` → `apps/desktop`.
+
+### `chat` (conversation locale, mono-tour, sans outil)
+
+```bash
+node_modules/.bin/tsx apps/desktop/src/main.ts chat
+```
+
+Boucle interactive : une ligne tapée → une réponse de Jarvis affichée, jusqu'à
+`/quit`, Ctrl+C, ou la fin de l'entrée. **Portée volontairement minimale** :
+`AgentLoop` est construit **sans** `ToolExecutor` — aucun outil n'est présenté
+au modèle (`gmail.*`/`legal-search` restent des commandes séparées, non
+accessibles depuis ce chat) ; aucun historique entre deux messages, aucune
+mémoire persistante — chaque ligne est un tour entièrement indépendant.
+Annoncé explicitement dans la bannière affichée au démarrage.
+
+Prérequis : `ANTHROPIC_API_KEY` (sinon message d'erreur contrôlé au premier
+message, aucun appel réseau tenté). **N'exige ni configuration Gmail, ni
+Légifrance.** `ANTHROPIC_MODEL` optionnelle pour forcer explicitement un
+modèle — le défaut codé dans `AnthropicProvider`
+(`packages/llm/src/index.ts`) n'est pas garanti correspondre à un identifiant
+actuellement disponible.
+
+**Chaque message non vide déclenche un appel réel à l'API Anthropic et peut
+être facturé** — l'abonnement Claude Code ne couvre pas cette consommation.
+Ctrl+C n'annule jamais un appel déjà en cours (aucun mécanisme d'annulation
+câblé dans ce dépôt) : une réponse en vol au moment de l'interruption
+s'affiche quand même avant la fermeture effective de la boucle.
 
 ## Développement local
 

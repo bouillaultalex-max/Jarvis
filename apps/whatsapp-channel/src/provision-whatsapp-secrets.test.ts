@@ -300,7 +300,7 @@ describe('runProvisionWhatsAppSecrets — orchestration', () => {
     );
   });
 
-  it("échec d'écriture (accessToken refusé par le store) → message clair sans valeur, appSecret/verifyToken non supprimés", async () => {
+  it("échec d'écriture (accessToken refusé par le store) → motif fixe nommant la clé, jamais le message d'origine, appSecret/verifyToken non supprimés", async () => {
     const stdin = fakeTty();
     const { output, readText } = collectingOutput();
     const inner = new InMemorySecretStore();
@@ -333,6 +333,10 @@ describe('runProvisionWhatsAppSecrets — orchestration', () => {
       { key: WHATSAPP_ACCESS_TOKEN_KEY, ok: false },
     ]);
     expect(outcome.detail).not.toContain('my-access-token');
+    // Motif fixe et contrôlé : jamais le message d'origine du store, même
+    // inoffensif en apparence — seul le nom de la clé (non secret) apparaît.
+    expect(outcome.detail).not.toContain('Ambiguous credential entry');
+    expect(outcome.detail).toContain(WHATSAPP_ACCESS_TOKEN_KEY);
     await expect(inner.get(WHATSAPP_APP_SECRET_KEY)).resolves.toBe('my-app-secret');
     await expect(inner.get(WHATSAPP_VERIFY_TOKEN_KEY)).resolves.toBe('my-verify-token');
     // Pas de suppression automatique des clés déjà écrites.
@@ -340,17 +344,23 @@ describe('runProvisionWhatsAppSecrets — orchestration', () => {
     await expect(inner.has(WHATSAPP_VERIFY_TOKEN_KEY)).resolves.toBe(true);
   });
 
-  it("l'exception du store contient elle-même la valeur du secret → la valeur est retirée avant tout affichage (défense en profondeur)", async () => {
+  it("l'exception du store contient la valeur soumise ET un autre secret sans rapport → motif fixe, aucune des deux valeurs ne fuit (retirer seulement la valeur soumise ne suffirait pas)", async () => {
     const stdin = fakeTty();
     const { output, readText } = collectingOutput();
     const inner = new InMemorySecretStore();
+    const unrelatedLeakedSecret = 'sk-unrelated-internal-token-should-never-appear';
     const secretStore: SecretStore = {
       set: async (key, value) => {
         if (key === WHATSAPP_ACCESS_TOKEN_KEY) {
-          // Simule une implémentation de SecretStore buguée/adverse qui
-          // échoue en embarquant la valeur dans son propre message
-          // d'erreur — jamais censé arriver, mais vérifié plutôt que supposé.
-          throw new Error(`write failed for value "${value}"`);
+          // Simule une implémentation de SecretStore buguée/adverse dont le
+          // message d'erreur embarque à la fois la valeur soumise ET un
+          // tout autre secret interne (ex. un jeton de session du
+          // trousseau) — jamais censé arriver, mais vérifié plutôt que
+          // supposé. Retirer uniquement `value` (tentative précédente,
+          // revue finale) laisserait fuiter `unrelatedLeakedSecret`.
+          throw new Error(
+            `write failed for value "${value}" using internal credential ${unrelatedLeakedSecret}`,
+          );
         }
         await inner.set(key, value);
       },
@@ -371,12 +381,16 @@ describe('runProvisionWhatsAppSecrets — orchestration', () => {
     expect(outcome.status).toBe('partial_failure');
     if (outcome.status !== 'partial_failure') throw new Error('unreachable');
     expect(outcome.detail).not.toContain('super-sensitive-token-value');
-    expect(outcome.detail).toContain('[valeur masquée]');
+    expect(outcome.detail).not.toContain(unrelatedLeakedSecret);
+    expect(outcome.detail).not.toContain('write failed for value');
+    expect(outcome.detail).toContain(WHATSAPP_ACCESS_TOKEN_KEY);
 
     for (const line of describeProvisionOutcome(outcome)) {
       expect(line).not.toContain('super-sensitive-token-value');
+      expect(line).not.toContain(unrelatedLeakedSecret);
     }
     expect(readText()).not.toContain('super-sensitive-token-value');
+    expect(readText()).not.toContain(unrelatedLeakedSecret);
   });
 
   it('saisie collée pour les trois champs → écrits tels quels', async () => {

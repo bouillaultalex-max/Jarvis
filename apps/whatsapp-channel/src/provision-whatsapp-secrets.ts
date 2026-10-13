@@ -184,15 +184,17 @@ async function trySet(
   try {
     await store.set(key, value);
     return { ok: true };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    // Défense en profondeur, pas une simple confiance dans l'appelant : même
-    // si une implémentation de `SecretStore` embarquait par erreur la valeur
-    // dans son message (jamais censé arriver — voir `OsCredentialSecretStore.set()`
-    // — mais vérifié ici plutôt que supposé, revue finale), elle est retirée
-    // avant de quitter cette fonction, donc avant tout affichage/log.
-    const error = value.length === 0 ? message : message.split(value).join('[valeur masquée]');
-    return { ok: false, error };
+  } catch {
+    // Motif **fixe et contrôlé** — jamais `err.message`, même partiellement
+    // expurgé : retirer la seule valeur soumise (tentative précédente,
+    // revue finale) ne protège pas contre une exception qui embarquerait un
+    // AUTRE secret, un encodage, une pile, ou tout autre détail interne du
+    // trousseau. Seul le nom de la clé — non secret — est inclus ; l'erreur
+    // d'origine n'est jamais inspectée au-delà de ce `catch`.
+    return {
+      ok: false,
+      error: `Échec d'écriture pour la clé "${key}" (détail non repris — voir les journaux du trousseau OS si besoin).`,
+    };
   }
 }
 

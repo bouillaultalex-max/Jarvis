@@ -167,6 +167,7 @@ export type ProvisionOutcome =
   | { readonly status: 'not_a_tty' }
   | { readonly status: 'cancelled' }
   | { readonly status: 'stdin_closed' }
+  | { readonly status: 'existence_check_failed'; readonly key: string }
   | { readonly status: 'declined_overwrite'; readonly keys: readonly string[] }
   | { readonly status: 'empty_value'; readonly label: string }
   | { readonly status: 'written'; readonly keys: readonly string[] }
@@ -217,7 +218,17 @@ export async function runProvisionWhatsAppSecrets(
 
   const existing: string[] = [];
   for (const field of SECRET_FIELDS) {
-    if (await deps.secretStore.has(field.key)) existing.push(field.key);
+    let has: boolean;
+    try {
+      has = await deps.secretStore.has(field.key);
+    } catch {
+      // Arrêt immédiat, avant toute autre vérification et avant toute
+      // écriture — une erreur ici ne doit JAMAIS être interprétée comme
+      // « clé absente » (ce qui laisserait écraser silencieusement un
+      // secret existant). Motif fixe, nom de clé non secret uniquement.
+      return { status: 'existence_check_failed', key: field.key };
+    }
+    if (has) existing.push(field.key);
   }
   if (existing.length > 0) {
     const confirmed = await confirmOverwrite(deps, existing);
@@ -274,6 +285,11 @@ export function describeProvisionOutcome(outcome: ProvisionOutcome): readonly st
       return ['Provisionnement annulé — aucun secret écrit.'];
     case 'stdin_closed':
       return ['Entrée standard fermée avant la fin de la saisie — aucun secret écrit.'];
+    case 'existence_check_failed':
+      return [
+        `Vérification d'existence impossible pour la clé "${outcome.key}" — ` +
+          'provisionnement arrêté avant toute écriture, aucun secret écrit.',
+      ];
     case 'declined_overwrite':
       return [`Écrasement refusé pour : ${outcome.keys.join(', ')} — aucun secret écrit.`];
     case 'empty_value':

@@ -229,7 +229,7 @@ describe('runProvisionLegifranceSecrets — orchestration', () => {
     );
   });
 
-  it("échec partiel d'écriture (clientSecret refusé par le SecretStore) → message clair sans valeur, clientId non supprimé", async () => {
+  it("échec partiel d'écriture (clientSecret refusé par le SecretStore) → motif fixe nommant la clé, jamais le message d'origine, clientId non supprimé", async () => {
     const stdin = fakeTty();
     const { output, readText } = collectingOutput();
     const inner = new InMemorySecretStore();
@@ -257,9 +257,101 @@ describe('runProvisionLegifranceSecrets — orchestration', () => {
     expect(outcome.clientId).toBe('written');
     expect(outcome.clientSecret).toBe('failed');
     expect(outcome.detail).not.toContain('my-secret');
+    // Motif fixe et contrôlé : jamais le message d'origine du store, même
+    // inoffensif en apparence — seul le nom de la clé (non secret) apparaît.
+    expect(outcome.detail).not.toContain('Ambiguous credential entry');
+    expect(outcome.detail).toContain(legifranceClientSecretSecretKey('sandbox'));
     await expect(inner.get(legifranceClientIdSecretKey('sandbox'))).resolves.toBe('my-id');
     // Pas de suppression automatique de la clé déjà écrite.
     await expect(inner.has(legifranceClientIdSecretKey('sandbox'))).resolves.toBe(true);
+  });
+
+  it("l'exception de set() contient la valeur soumise ET un autre secret sans rapport → motif fixe, aucune des deux valeurs ne fuit", async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    const inner = new InMemorySecretStore();
+    const unrelatedLeakedSecret = 'sk-unrelated-internal-token-should-never-appear';
+    const secretStore: SecretStore = {
+      set: async (key, value) => {
+        if (key === legifranceClientSecretSecretKey('sandbox')) {
+          throw new Error(
+            `write failed for value "${value}" using internal credential ${unrelatedLeakedSecret}`,
+          );
+        }
+        await inner.set(key, value);
+      },
+      get: (key) => inner.get(key),
+      has: (key) => inner.has(key),
+      delete: (key) => inner.delete(key),
+    };
+
+    const promise = runProvisionLegifranceSecrets({ stdin, output, secretStore });
+    stdin.write('my-id\r');
+    await vi.waitFor(() => expect(readText()).toContain('client_secret'));
+    stdin.write('super-sensitive-secret-value\r');
+
+    const outcome = await promise;
+
+    expect(outcome.status).toBe('partial_failure');
+    if (outcome.status !== 'partial_failure') throw new Error('unreachable');
+    expect(outcome.detail).not.toContain('super-sensitive-secret-value');
+    expect(outcome.detail).not.toContain(unrelatedLeakedSecret);
+    expect(outcome.detail).not.toContain('write failed for value');
+
+    for (const line of describeProvisionOutcome(outcome)) {
+      expect(line).not.toContain('super-sensitive-secret-value');
+      expect(line).not.toContain(unrelatedLeakedSecret);
+    }
+    expect(readText()).not.toContain('super-sensitive-secret-value');
+    expect(readText()).not.toContain(unrelatedLeakedSecret);
+  });
+
+  it('erreur de has() → statut explicite dédié, JAMAIS interprétée comme « absente », aucun set() jamais appelé', async () => {
+    const stdin = fakeTty();
+    const { output } = collectingOutput();
+    const setSpy = vi.fn(() => Promise.reject(new Error('jamais appelé')));
+    const secretStore: SecretStore = {
+      set: setSpy,
+      get: () => Promise.reject(new Error('jamais appelé')),
+      has: () => Promise.reject(new Error('trousseau indisponible')),
+      delete: () => Promise.reject(new Error('jamais appelé')),
+    };
+
+    const outcome = await runProvisionLegifranceSecrets({ stdin, output, secretStore });
+
+    expect(outcome).toEqual({
+      status: 'existence_check_failed',
+      key: legifranceClientIdSecretKey('sandbox'),
+    });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("erreur de has() contenant plusieurs valeurs sensibles → aucune ne fuit dans le résultat, l'affichage ou la sortie terminal", async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    const leakedSecretA = 'leaked-os-keychain-master-token';
+    const leakedSecretB = 'leaked-other-account-password';
+    const secretStore: SecretStore = {
+      set: () => Promise.reject(new Error('jamais appelé')),
+      get: () => Promise.reject(new Error('jamais appelé')),
+      has: () =>
+        Promise.reject(
+          new Error(
+            `keychain backend failure, context: token=${leakedSecretA} session=${leakedSecretB}`,
+          ),
+        ),
+      delete: () => Promise.reject(new Error('jamais appelé')),
+    };
+
+    const outcome = await runProvisionLegifranceSecrets({ stdin, output, secretStore });
+
+    for (const line of describeProvisionOutcome(outcome)) {
+      expect(line).not.toContain(leakedSecretA);
+      expect(line).not.toContain(leakedSecretB);
+      expect(line).not.toContain('keychain backend failure');
+    }
+    expect(readText()).not.toContain(leakedSecretA);
+    expect(readText()).not.toContain(leakedSecretB);
   });
 });
 
@@ -267,6 +359,7 @@ describe('describeProvisionOutcome — jamais une valeur de secret', () => {
   it.each([
     { status: 'not_a_tty' } as const,
     { status: 'cancelled' } as const,
+    { status: 'existence_check_failed', key: 'legifrance.sandbox.clientId' } as const,
     { status: 'declined_overwrite', keys: ['legifrance.sandbox.clientId'] } as const,
     { status: 'empty_value', label: 'clientId' } as const,
     {

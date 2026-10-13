@@ -119,6 +119,7 @@ async function confirmOverwrite(
 export type ProvisionOutcome =
   | { readonly status: 'not_a_tty' }
   | { readonly status: 'cancelled' }
+  | { readonly status: 'existence_check_failed'; readonly key: string }
   | { readonly status: 'declined_overwrite'; readonly keys: readonly string[] }
   | { readonly status: 'empty_value'; readonly label: 'clientId' | 'clientSecret' }
   | { readonly status: 'written'; readonly clientIdKey: string; readonly clientSecretKey: string }
@@ -137,9 +138,16 @@ async function trySet(
   try {
     await store.set(key, value);
     return { ok: true };
-  } catch (err) {
-    // Jamais `value` dans le message — voir OsCredentialSecretStore.set().
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } catch {
+    // Motif **fixe et contrôlé** — jamais `err.message` ni une version
+    // expurgée : une exception du store pourrait embarquer la valeur, un
+    // AUTRE secret, un encodage, une pile, ou tout autre détail interne.
+    // Seul le nom de la clé — non secret — est inclus ; l'erreur d'origine
+    // n'est jamais inspectée au-delà de ce `catch`.
+    return {
+      ok: false,
+      error: `Échec d'écriture pour la clé "${key}" (détail non repris — voir les journaux du trousseau OS si besoin).`,
+    };
   }
 }
 
@@ -166,9 +174,25 @@ export async function runProvisionLegifranceSecrets(
   const idKey = legifranceClientIdSecretKey('sandbox');
   const secretKey = legifranceClientSecretSecretKey('sandbox');
 
+  // Arrêt immédiat sur une erreur de vérification — jamais interprétée
+  // comme « clé absente » (ce qui laisserait écraser silencieusement un
+  // secret existant) — et avant toute écriture.
+  let idExists: boolean;
+  try {
+    idExists = await deps.secretStore.has(idKey);
+  } catch {
+    return { status: 'existence_check_failed', key: idKey };
+  }
+  let secretExists: boolean;
+  try {
+    secretExists = await deps.secretStore.has(secretKey);
+  } catch {
+    return { status: 'existence_check_failed', key: secretKey };
+  }
+
   const existing: string[] = [];
-  if (await deps.secretStore.has(idKey)) existing.push(idKey);
-  if (await deps.secretStore.has(secretKey)) existing.push(secretKey);
+  if (idExists) existing.push(idKey);
+  if (secretExists) existing.push(secretKey);
 
   if (existing.length > 0) {
     const confirmed = await confirmOverwrite(deps, existing);
@@ -226,6 +250,11 @@ export function describeProvisionOutcome(outcome: ProvisionOutcome): readonly st
       ];
     case 'cancelled':
       return ['Provisionnement annulé — aucun secret écrit.'];
+    case 'existence_check_failed':
+      return [
+        `Vérification d'existence impossible pour la clé "${outcome.key}" — ` +
+          'provisionnement arrêté avant toute écriture, aucun secret écrit.',
+      ];
     case 'declined_overwrite':
       return [`Écrasement refusé pour : ${outcome.keys.join(', ')} — aucun secret écrit.`];
     case 'empty_value':

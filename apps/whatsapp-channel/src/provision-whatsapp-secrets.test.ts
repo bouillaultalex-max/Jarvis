@@ -285,19 +285,50 @@ describe('runProvisionWhatsAppSecrets — orchestration', () => {
     expect(readText()).not.toContain('old-app-secret');
   });
 
-  it('erreur de lecture du store (has() lève) → se propage, aucune saisie entamée, aucune valeur impliquée', async () => {
+  it('erreur de lecture du store (has() lève) → statut explicite dédié, JAMAIS interprétée comme « absente », arrêt avant toute saisie/écriture', async () => {
     const stdin = fakeTty();
     const { output } = collectingOutput();
+    const setSpy = vi.fn(() => Promise.reject(new Error('jamais appelé')));
     const secretStore: SecretStore = {
-      set: () => Promise.reject(new Error('jamais appelé')),
+      set: setSpy,
       get: () => Promise.reject(new Error('jamais appelé')),
       has: () => Promise.reject(new Error('trousseau indisponible')),
       delete: () => Promise.reject(new Error('jamais appelé')),
     };
 
-    await expect(runProvisionWhatsAppSecrets({ stdin, output, secretStore })).rejects.toThrow(
-      'trousseau indisponible',
-    );
+    const outcome = await runProvisionWhatsAppSecrets({ stdin, output, secretStore });
+
+    expect(outcome).toEqual({ status: 'existence_check_failed', key: WHATSAPP_APP_SECRET_KEY });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("erreur de has() contenant plusieurs valeurs sensibles → aucune ne fuit dans le résultat, l'affichage ou la sortie terminal", async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    const leakedSecretA = 'leaked-os-keychain-master-token';
+    const leakedSecretB = 'leaked-other-account-password';
+    const secretStore: SecretStore = {
+      set: () => Promise.reject(new Error('jamais appelé')),
+      get: () => Promise.reject(new Error('jamais appelé')),
+      has: () =>
+        Promise.reject(
+          new Error(
+            `keychain backend failure, context: token=${leakedSecretA} session=${leakedSecretB}`,
+          ),
+        ),
+      delete: () => Promise.reject(new Error('jamais appelé')),
+    };
+
+    const outcome = await runProvisionWhatsAppSecrets({ stdin, output, secretStore });
+
+    expect(outcome).toEqual({ status: 'existence_check_failed', key: WHATSAPP_APP_SECRET_KEY });
+    for (const line of describeProvisionOutcome(outcome)) {
+      expect(line).not.toContain(leakedSecretA);
+      expect(line).not.toContain(leakedSecretB);
+      expect(line).not.toContain('keychain backend failure');
+    }
+    expect(readText()).not.toContain(leakedSecretA);
+    expect(readText()).not.toContain(leakedSecretB);
   });
 
   it("échec d'écriture (accessToken refusé par le store) → motif fixe nommant la clé, jamais le message d'origine, appSecret/verifyToken non supprimés", async () => {
@@ -418,6 +449,7 @@ describe('describeProvisionOutcome — jamais une valeur de secret', () => {
     { status: 'not_a_tty' } as const,
     { status: 'cancelled' } as const,
     { status: 'stdin_closed' } as const,
+    { status: 'existence_check_failed', key: WHATSAPP_APP_SECRET_KEY } as const,
     { status: 'declined_overwrite', keys: [WHATSAPP_APP_SECRET_KEY] } as const,
     { status: 'empty_value', label: 'appSecret' } as const,
     {

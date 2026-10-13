@@ -50,6 +50,7 @@ function buildWorker(
   tempDirs.push(dir);
   const store = SqliteMessageStore.open({
     filePath: join(dir, 'messages.db'),
+    mode: 'simulated',
     maxActiveDepth: overrides.maxActiveDepth ?? 10,
   });
   const worker = new DurableMessageWorker({
@@ -154,7 +155,7 @@ describe('DurableMessageWorker — drain et fermeture', () => {
     const dir = mkdtempSync(join(tmpdir(), 'whatsapp-worker-'));
     tempDirs.push(dir);
     const dbPath = join(dir, 'messages.db');
-    const store = SqliteMessageStore.open({ filePath: dbPath });
+    const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
     const worker = new DurableMessageWorker({
       store,
       allowlist: new InMemoryAllowlist(new Set([AUTHORIZED_SENDER_ID])),
@@ -169,7 +170,9 @@ describe('DurableMessageWorker — drain et fermeture', () => {
     // Reproduit exactement la décision de `main.ts` : ne JAMAIS appeler
     // `store.close()` ici — le verrou doit donc rester détenu, preuve
     // qu'une seconde ouverture échoue toujours.
-    expect(() => SqliteMessageStore.open({ filePath: dbPath })).toThrow(ExclusivityError);
+    expect(() => SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' })).toThrow(
+      ExclusivityError,
+    );
     // Le process réel se terminerait ici (`process.exit(1)`) ; dans ce
     // test, on ferme explicitement pour permettre le nettoyage du répertoire.
     store.close();
@@ -298,6 +301,7 @@ describe('DurableMessageWorker — relivraison : compte des appels service/trans
     tempDirs.push(dir);
     const store = SqliteMessageStore.open({
       filePath: join(dir, 'messages.db'),
+      mode: 'simulated',
       maxAdmissionAttempts: 3,
     });
     const worker = new DurableMessageWorker({

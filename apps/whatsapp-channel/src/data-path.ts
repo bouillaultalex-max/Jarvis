@@ -1,26 +1,68 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import type { ChannelMode } from './channel-mode.js';
+
 /**
- * Emplacement par défaut du store durable — même convention que
- * `defaultAccountsFilePath()` (`apps/desktop/src/main.ts`) :
- * `JARVIS_DATA_DIR` si défini, sinon répertoire de données applicatif par
- * OS. Partagé par `main.ts` et `purge-retained-content.ts` pour qu'ils
- * s'accordent toujours sur le même fichier sans dupliquer la logique.
+ * Répertoire de données applicatif par défaut — `JARVIS_DATA_DIR` si
+ * défini, sinon convention par OS (même que
+ * `defaultAccountsFilePath()`, `apps/desktop/src/main.ts`).
  */
-export function defaultMessagesDbPath(): string {
-  const dataDir =
+function defaultDataDir(): string {
+  return (
     process.env.JARVIS_DATA_DIR ??
     (process.platform === 'win32'
       ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'))
       : process.platform === 'darwin'
         ? join(homedir(), 'Library', 'Application Support')
-        : (process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share')));
-
-  return join(dataDir, 'jarvis', 'whatsapp-channel', 'messages.db');
+        : (process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share')))
+  );
 }
 
-/** Même convention de résolution que `main.ts` : override explicite, puis emplacement par défaut. */
-export function resolveMessagesDbPath(): string {
-  return process.env.WHATSAPP_MESSAGES_DB_PATH ?? defaultMessagesDbPath();
+/**
+ * Le mode **réel** vit sous un sous-répertoire `real-trial/` distinct du
+ * mode simulé, par défaut — jamais le même fichier. C'est la protection
+ * principale contre l'envoi réel de travaux admis en mode simulé (ADR-0023
+ * suite, revue de cette mission) : aucun message `queued`/`response_ready`
+ * préexistant du store de développement simulé ne peut jamais être
+ * ramassé par un worker réel qui ouvre, par défaut, un fichier différent.
+ * Aucun store n'est supprimé par ce choix — les deux chemins coexistent.
+ *
+ * Un override explicite (`WHATSAPP_MESSAGES_DB_PATH`/
+ * `WHATSAPP_SEND_ATTEMPT_BUDGET_DB_PATH`) reste possible et **contourne**
+ * volontairement cette séparation — décision de l'opérateur, pas de ce
+ * module, documentée ici plutôt que devinée.
+ */
+function modeSubdirectory(mode: ChannelMode): string {
+  return mode === 'real' ? 'real-trial' : '.';
+}
+
+export function defaultMessagesDbPath(mode: ChannelMode): string {
+  return join(
+    defaultDataDir(),
+    'jarvis',
+    'whatsapp-channel',
+    modeSubdirectory(mode),
+    'messages.db',
+  );
+}
+
+export function defaultSendAttemptBudgetDbPath(mode: ChannelMode): string {
+  return join(
+    defaultDataDir(),
+    'jarvis',
+    'whatsapp-channel',
+    modeSubdirectory(mode),
+    'send-attempt-budget.db',
+  );
+}
+
+/** Override explicite, puis emplacement par défaut dépendant du mode. */
+export function resolveMessagesDbPath(mode: ChannelMode): string {
+  return process.env.WHATSAPP_MESSAGES_DB_PATH ?? defaultMessagesDbPath(mode);
+}
+
+/** Override explicite, puis emplacement par défaut dépendant du mode — n'est jamais ouvert en mode simulé. */
+export function resolveSendAttemptBudgetDbPath(mode: ChannelMode): string {
+  return process.env.WHATSAPP_SEND_ATTEMPT_BUDGET_DB_PATH ?? defaultSendAttemptBudgetDbPath(mode);
 }

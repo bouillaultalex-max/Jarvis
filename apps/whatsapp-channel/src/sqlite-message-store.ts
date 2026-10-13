@@ -56,6 +56,7 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
+import type { ChannelMode } from './channel-mode.js';
 import {
   type AdmissionOutcome,
   type AdmitInput,
@@ -74,6 +75,7 @@ import {
   type StoredMessageRow,
   UnsupportedSchemaError,
 } from './message-store.js';
+import { ensureStoreMode } from './store-mode-tag.js';
 
 /** Codes SQLite distinguant « déjà détenu ailleurs » de « fichier invalide » — voir § ouverture. */
 const SQLITE_BUSY = 5;
@@ -81,7 +83,13 @@ const SQLITE_LOCKED = 6;
 const SQLITE_CORRUPT = 11;
 const SQLITE_NOTADB = 26;
 
-const SUPPORTED_SCHEMA_VERSION = 1;
+/**
+ * `2` depuis la revue finale de cette tranche : ajoute la table
+ * `store_mode` (`store-mode-tag.ts`) — un store créé par le schéma `1` est
+ * donc refusé par `UnsupportedSchemaError`, jamais migré automatiquement
+ * (politique déjà en place, inchangée).
+ */
+const SUPPORTED_SCHEMA_VERSION = 2;
 
 // `MAX_TEXT_LENGTH_CHARS`/`MAX_RESPONSE_TEXT_LENGTH_CHARS` vivent dans
 // `message-store.ts` (voir ce fichier pour la justification) — appliquées
@@ -119,6 +127,8 @@ export const DEFAULT_MAX_ADMISSION_ATTEMPTS = 5;
 
 export interface SqliteMessageStoreOptions {
   readonly filePath: string;
+  /** Vérifié/écrit par `ensureStoreMode()` — jamais de valeur par défaut, voir `store-mode-tag.ts`. */
+  readonly mode: ChannelMode;
   readonly maxActiveDepth?: number;
   readonly maxStoredMessages?: number;
   readonly maxAdmissionAttempts?: number;
@@ -244,7 +254,8 @@ export class SqliteMessageStore implements MessageStore {
     }
 
     const userVersionRow = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (userVersionRow.user_version === 0) {
+    const isFreshSchema = userVersionRow.user_version === 0;
+    if (isFreshSchema) {
       db.exec(CREATE_TABLE_SQL);
       db.exec(`PRAGMA user_version=${SUPPORTED_SCHEMA_VERSION}`);
     } else if (userVersionRow.user_version !== SUPPORTED_SCHEMA_VERSION) {
@@ -254,6 +265,13 @@ export class SqliteMessageStore implements MessageStore {
         `Schéma inattendu dans "${options.filePath}" (user_version=${found}, attendu ` +
           `${SUPPORTED_SCHEMA_VERSION}) — aucune migration automatique dans cette tranche.`,
       );
+    }
+
+    try {
+      ensureStoreMode(db, options.filePath, options.mode, isFreshSchema);
+    } catch (err) {
+      db.close();
+      throw err;
     }
 
     restrictFilePermissions(options.filePath);

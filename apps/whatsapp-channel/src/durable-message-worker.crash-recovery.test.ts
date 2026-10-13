@@ -90,7 +90,7 @@ describe('DurableMessageWorker — reprise après arrêt brutal (sous-processus 
 
     await runUntilHaltThenKill(dbPath, 'processing');
 
-    const store = SqliteMessageStore.open({ filePath: dbPath });
+    const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
     const report = store.recoverAfterRestart(new Date().toISOString());
     expect(report.resumedProcessing).toBe(1);
     expect(store.getRow(PROVIDER_MESSAGE_ID)?.status).toBe('queued');
@@ -104,7 +104,7 @@ describe('DurableMessageWorker — reprise après arrêt brutal (sous-processus 
 
     await runUntilHaltThenKill(dbPath, 'response_ready');
 
-    const store = SqliteMessageStore.open({ filePath: dbPath });
+    const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
     const report = store.recoverAfterRestart(new Date().toISOString());
     expect(report.pendingResponseReady).toBe(1);
     const row = store.getRow(PROVIDER_MESSAGE_ID);
@@ -123,7 +123,7 @@ describe('DurableMessageWorker — reprise après arrêt brutal (sous-processus 
 
     await runUntilHaltThenKill(dbPath, 'sending');
 
-    const store = SqliteMessageStore.open({ filePath: dbPath });
+    const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
     const report = store.recoverAfterRestart(new Date().toISOString());
     expect(report.quarantinedSending).toBe(1);
     const row = store.getRow(PROVIDER_MESSAGE_ID);
@@ -150,7 +150,7 @@ describe('DurableMessageWorker — reprise après arrêt brutal (sous-processus 
 
     // Aucune attente supplémentaire : la réouverture doit réussir
     // immédiatement, preuve qu'aucun fichier de verrou ambigu ne subsiste.
-    const store = SqliteMessageStore.open({ filePath: dbPath });
+    const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
     expect(store.getRow(PROVIDER_MESSAGE_ID)?.status).toBe('queued');
     store.close();
   }, 15_000);
@@ -167,13 +167,15 @@ describe('DurableMessageWorker — reprise après arrêt brutal (sous-processus 
     // ouverture concurrente depuis ce process de test doit échouer, preuve
     // que le verrou tient pendant toute la durée de vie du worker, pas
     // seulement pendant la transaction d'ouverture initiale.
-    expect(() => SqliteMessageStore.open({ filePath: dbPath })).toThrow(ExclusivityError);
+    expect(() => SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' })).toThrow(
+      ExclusivityError,
+    );
     expect(child.exitCode).toBeNull(); // bien vivant au moment du test ci-dessus
 
     await killAndWaitForExit(child);
 
     // Une fois le process réellement mort, la reprise fonctionne immédiatement.
-    const store = SqliteMessageStore.open({ filePath: dbPath });
+    const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
     expect(store.getRow(PROVIDER_MESSAGE_ID)?.status).toBeDefined();
     store.close();
   }, 15_000);

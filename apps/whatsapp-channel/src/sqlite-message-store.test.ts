@@ -13,6 +13,7 @@ import {
 } from './message-store.js';
 import { DatabaseSync } from 'node:sqlite';
 import { SqliteMessageStore } from './sqlite-message-store.js';
+import { StoreModeMismatchError } from './store-mode-tag.js';
 
 let dir: string;
 let dbPath: string;
@@ -28,12 +29,13 @@ afterEach(() => {
 
 function openStore(
   overrides: Partial<{
+    mode: 'simulated' | 'real';
     maxActiveDepth: number;
     maxStoredMessages: number;
     maxAdmissionAttempts: number;
   }> = {},
 ): SqliteMessageStore {
-  return SqliteMessageStore.open({ filePath: dbPath, ...overrides });
+  return SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated', ...overrides });
 }
 
 const NOW = '2026-10-10T10:00:00.000Z';
@@ -353,7 +355,9 @@ describe('SqliteMessageStore — données et rétention', () => {
 describe('SqliteMessageStore — exclusivité de process', () => {
   it("une seconde ouverture sur le même fichier échoue immédiatement (pas d'attente, pas de fichier de verrou ambigu)", () => {
     const store = openStore();
-    expect(() => SqliteMessageStore.open({ filePath: dbPath })).toThrow(ExclusivityError);
+    expect(() => SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' })).toThrow(
+      ExclusivityError,
+    );
     store.close();
   });
 
@@ -392,7 +396,9 @@ describe('SqliteMessageStore — exclusivité de process', () => {
     // verrou `locking_mode=EXCLUSIVE` est tenu par la connexion elle-même,
     // pas par une transaction ponctuelle.
     store.getRow('inexistant');
-    expect(() => SqliteMessageStore.open({ filePath: dbPath })).toThrow(ExclusivityError);
+    expect(() => SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' })).toThrow(
+      ExclusivityError,
+    );
     store.close();
   });
 });
@@ -562,13 +568,32 @@ describe('SqliteMessageStore — purge manuelle de rétention', () => {
 });
 
 describe('SqliteMessageStore — schéma versionné', () => {
-  it('user_version est fixé à 1 après la première ouverture', () => {
+  it('user_version est fixé à 2 après la première ouverture (table store_mode ajoutée en revue finale)', () => {
     const store = openStore();
     store.close();
     const direct = new DatabaseSync(dbPath);
     const version = (direct.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version;
-    expect(version).toBe(1);
+    expect(version).toBe(2);
     direct.close();
+  });
+});
+
+describe('SqliteMessageStore — provenance du mode, refuse une convergence simulé/réel', () => {
+  it('un store créé en mode simulated refuse d’être rouvert en mode real — même chemin explicite', () => {
+    openStore({ mode: 'simulated' }).close();
+    expect(() => SqliteMessageStore.open({ filePath: dbPath, mode: 'real' })).toThrow(
+      StoreModeMismatchError,
+    );
+  });
+
+  it('un store créé en mode real refuse d’être rouvert en mode simulated', () => {
+    SqliteMessageStore.open({ filePath: dbPath, mode: 'real' }).close();
+    expect(() => openStore({ mode: 'simulated' })).toThrow(StoreModeMismatchError);
+  });
+
+  it('rouvrir dans le MÊME mode reste toujours permis', () => {
+    openStore({ mode: 'real' }).close();
+    expect(() => openStore({ mode: 'real' })).not.toThrow();
   });
 });

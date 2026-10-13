@@ -82,6 +82,7 @@ function buildHarness(
 
   const store = SqliteMessageStore.open({
     filePath: join(dir, 'messages.db'),
+    mode: 'simulated',
     maxActiveDepth: overrides.maxActiveDepth ?? 10,
   });
 
@@ -632,6 +633,49 @@ describe('POST /webhooks/whatsapp — erreur de stockage pendant l’admission',
     expect(res.statusCode).toBe(503);
     expect(res.json().admissions[0].kind).toBe('storage_error');
     void app; // harnais par défaut non utilisé dans ce test, construit pour la cohérence du fichier
+  });
+});
+
+describe('POST /webhooks/whatsapp — exception inattendue (hors du try/catch d’admission)', () => {
+  it('une exception inattendue (ex. allowlist.isAuthorized qui lève) → 500 générique, jamais err.message/pile/secret dans la réponse', async () => {
+    const secretLookingMessage = 'app-secret-should-never-leak-in-response';
+    const throwingAllowlist = {
+      isAuthorized(): boolean {
+        throw new Error(secretLookingMessage);
+      },
+    };
+    const config = buildLocalSyntheticConfig({
+      appSecret: TEST_APP_SECRET,
+      verifyToken: TEST_VERIFY_TOKEN,
+      allowedSenderId: AUTHORIZED_SENDER_ID,
+    });
+    const worker = new DurableMessageWorker({
+      store: {} as MessageStore, // jamais atteint — l'exception survient avant
+      allowlist: throwingAllowlist,
+      conversationalService: new ScriptedConversationalService(),
+      transport: new SimulatedOutboundTransport(),
+      maxConcurrency: 1,
+    });
+    const dedicatedApp = buildWhatsAppChannelServer({
+      config,
+      allowlist: throwingAllowlist,
+      signatureVerifier: new HmacSha256SignatureVerifier(config.appSecret),
+      worker,
+    });
+
+    const res = await dedicatedApp.inject({
+      method: 'POST',
+      url: WEBHOOK_PATH,
+      ...signedRequest(
+        buildTextMessagePayload({ id: 'wamid.unexpected', from: AUTHORIZED_SENDER_ID, body: 'x' }),
+      ),
+    });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ status: 'internal_error' });
+    expect(res.body).not.toContain(secretLookingMessage);
+    expect(res.body).not.toContain(TEST_APP_SECRET);
+    expect(res.body.toLowerCase()).not.toContain('.ts:'); // aucune pile/référence de fichier
   });
 });
 

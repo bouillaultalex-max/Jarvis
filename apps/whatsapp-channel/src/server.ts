@@ -80,7 +80,17 @@ export function buildWhatsAppChannelServer(
     if (code === 'FST_ERR_CTP_BODY_TOO_LARGE' || statusCode === 413) {
       return reply.code(413).send({ error: 'Corps de requête trop volumineux.' });
     }
-    throw err;
+    // Toute autre exception : réponse **générique fixe**, jamais
+    // `err.message`/une pile/un chemin — `logger: false` ci-dessus ne
+    // journalise rien nativement, donc seul ce `console.error` donne de la
+    // visibilité à l'opérateur, volontairement limité au nom de l'erreur
+    // (jamais son message, qui pourrait un jour référencer un détail
+    // interne) — jamais la pile, jamais un chemin de fichier, jamais un
+    // secret, exposés ni dans la réponse ni dans ce log.
+    console.error(
+      `[whatsapp-channel] erreur serveur inattendue (${err instanceof Error ? err.name : typeof err}).`,
+    );
+    return reply.code(500).send({ status: 'internal_error' });
   });
 
   app.get(WEBHOOK_PATH, async (request, reply) => {

@@ -35,7 +35,7 @@ function main(): void {
     process.exit(2);
   }
 
-  const store = SqliteMessageStore.open({ filePath: dbPath });
+  const store = SqliteMessageStore.open({ filePath: dbPath, mode: 'simulated' });
   store.admit({
     providerMessageId: PROVIDER_MESSAGE_ID,
     senderId: SENDER_ID,

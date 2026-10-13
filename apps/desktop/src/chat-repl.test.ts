@@ -3,7 +3,13 @@ import { PassThrough, Writable } from 'node:stream';
 import type { LlmConversationMessage, LlmProvider, LlmResponse } from '@jarvis/core';
 import { describe, expect, it, vi } from 'vitest';
 
-import { describeChatError, describeStopReason, runChatRepl } from './chat-repl.js';
+import {
+  MAX_HISTORY_CONTEXT_CHARS,
+  MAX_HISTORY_MESSAGES,
+  describeChatError,
+  describeStopReason,
+  runChatRepl,
+} from './chat-repl.js';
 
 /**
  * Tests de `chat-repl.ts` — exclusivement avec un `LlmProvider` simulé
@@ -106,7 +112,7 @@ describe('runChatRepl — une demande, une réponse', () => {
     expect(readText()).toContain('réponse simulée');
   });
 
-  it('la bannière de démarrage annonce la portée mono-tour, le coût API et la configuration du modèle', async () => {
+  it("la bannière de démarrage annonce la mémoire de session bornée, /reset, l'absence de stockage et le coût API", async () => {
     const stdin = fakeTty();
     const { output, readText } = collectingOutput();
     const llm = new RecordingLlmProvider(() => ({ content: 'x' }));
@@ -116,18 +122,19 @@ describe('runChatRepl — une demande, une réponse', () => {
     await promise;
 
     const text = readText();
-    expect(text).toContain('mono-tour');
+    expect(text).toContain('/reset');
+    expect(text).toContain('jamais écrit sur disque');
     expect(text).toContain('facturé');
     expect(text).toContain('ANTHROPIC_MODEL');
   });
 });
 
-describe('runChatRepl — plusieurs tours indépendants, aucun historique', () => {
-  it('deux messages successifs → deux appels, chacun avec une conversation fraîche (un seul message user)', async () => {
+describe('runChatRepl — contexte transmis au deuxième tour', () => {
+  it('deux messages successifs → le second appel reçoit le premier échange (user+assistant) PUIS le nouveau message', async () => {
     const stdin = fakeTty();
     const { output, readText } = collectingOutput();
     const llm = new RecordingLlmProvider((messages) => ({
-      content: `écho:${(messages[0] as { content: string }).content}`,
+      content: `écho:${(messages[messages.length - 1] as { content: string }).content}`,
     }));
 
     const promise = runChatRepl({ llm, input: stdin, output });
@@ -138,10 +145,186 @@ describe('runChatRepl — plusieurs tours indépendants, aucun historique', () =
     sendLine(stdin, '/quit');
     await promise;
 
-    expect(llm.calls[0]).toHaveLength(1);
-    expect(llm.calls[1]).toHaveLength(1);
+    expect(llm.calls[0]).toEqual([{ role: 'user', content: 'premier message' }]);
+    expect(llm.calls[1]).toEqual([
+      { role: 'user', content: 'premier message' },
+      { role: 'assistant', content: 'écho:premier message' },
+      { role: 'user', content: 'second message' },
+    ]);
     expect(readText()).toContain('écho:premier message');
     expect(readText()).toContain('écho:second message');
+  });
+});
+
+describe('runChatRepl — /reset', () => {
+  it("efface l'historique sans appeler le provider, le tour suivant repart d'une conversation vierge", async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    const llm = new RecordingLlmProvider(() => ({ content: 'ok' }));
+
+    const promise = runChatRepl({ llm, input: stdin, output });
+    sendLine(stdin, 'premier message');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(1));
+    sendLine(stdin, '/reset');
+    await vi.waitFor(() => expect(readText()).toContain('Historique de session effacé'));
+    sendLine(stdin, 'après reset');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(2));
+    sendLine(stdin, '/quit');
+    await promise;
+
+    // `/reset` lui-même n'a déclenché aucun appel : seulement 2 appels pour
+    // 2 messages réels, jamais 3.
+    expect(llm.calls.length).toBe(2);
+    expect(llm.calls[1]).toEqual([{ role: 'user', content: 'après reset' }]);
+  });
+});
+
+describe('runChatRepl — bornes de nombre et de taille (nouveau message inclus)', () => {
+  it(
+    `plus de ${MAX_HISTORY_MESSAGES / 2} échanges courts → l'historique conservé ne dépasse ` +
+      `jamais ${MAX_HISTORY_MESSAGES} messages, les plus anciens sont retirés`,
+    async () => {
+      const stdin = fakeTty();
+      const { output } = collectingOutput();
+      const llm = new RecordingLlmProvider((messages) => ({
+        content: `r:${(messages[messages.length - 1] as { content: string }).content}`,
+      }));
+
+      const promise = runChatRepl({ llm, input: stdin, output });
+      const exchanges = MAX_HISTORY_MESSAGES / 2 + 3; // dépasse délibérément la borne
+      for (let i = 1; i <= exchanges; i += 1) {
+        sendLine(stdin, `msg${i}`);
+        await vi.waitFor(() => expect(llm.calls.length).toBe(i));
+      }
+      sendLine(stdin, '/quit');
+      await promise;
+
+      const lastCallHistory = llm.calls[llm.calls.length - 1]!;
+      // Le dernier appel transmet l'historique (sans compter son propre
+      // message `user`, déjà inclus dans `lastCallHistory`) : jamais plus
+      // que la borne.
+      expect(lastCallHistory.length).toBeLessThanOrEqual(MAX_HISTORY_MESSAGES + 1);
+      // Le tout premier échange (« msg1 ») a été retiré — il ne figure plus
+      // nulle part dans ce qui a été transmis au dernier appel (égalité
+      // exacte, pas une sous-chaîne : « msg13 » contient « msg1 »).
+      expect(lastCallHistory.some((m) => m.content === 'msg1')).toBe(false);
+      expect(lastCallHistory.some((m) => m.content === 'r:msg1')).toBe(false);
+    },
+  );
+
+  it(
+    `réponses volontairement longues → troncature par taille déclenchée bien avant ` +
+      `d'atteindre ${MAX_HISTORY_MESSAGES} messages`,
+    async () => {
+      const stdin = fakeTty();
+      const { output, readText } = collectingOutput();
+      const longReply = 'x'.repeat(Math.floor(MAX_HISTORY_CONTEXT_CHARS / 2));
+      const llm = new RecordingLlmProvider(() => ({ content: longReply }));
+
+      const promise = runChatRepl({ llm, input: stdin, output });
+      sendLine(stdin, 'premier');
+      await vi.waitFor(() => expect(llm.calls.length).toBe(1));
+      sendLine(stdin, 'second');
+      await vi.waitFor(() => expect(llm.calls.length).toBe(2));
+      sendLine(stdin, 'troisième');
+      await vi.waitFor(() => expect(llm.calls.length).toBe(3));
+      sendLine(stdin, '/quit');
+      await promise;
+
+      // Deux réponses de ~moitié du budget chacune dépassent déjà le budget
+      // total : la plus ancienne paire doit avoir été retirée avant le
+      // troisième appel, bien en deçà de la borne de nombre (6 messages < 20).
+      const thirdCallHistory = llm.calls[2]!;
+      expect(thirdCallHistory.length).toBeLessThan(2 * 2 + 1); // < 2 paires + le nouveau message
+      expect(readText()).toContain('respecter la limite de taille');
+    },
+  );
+
+  it('message dépassant seul la limite de contexte → refusé localement, aucun appel, historique conservé tel quel', async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    const llm = new RecordingLlmProvider(() => ({ content: 'ok' }));
+    const tooLong = 'y'.repeat(MAX_HISTORY_CONTEXT_CHARS + 1);
+
+    const promise = runChatRepl({ llm, input: stdin, output });
+    sendLine(stdin, 'message normal établissant un historique');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(1));
+    sendLine(stdin, tooLong);
+    await vi.waitFor(() => expect(readText()).toContain('refusé'));
+    sendLine(stdin, 'message suivant normal');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(2));
+    sendLine(stdin, '/quit');
+    await promise;
+
+    // Le message trop long n'a jamais déclenché d'appel.
+    expect(llm.calls.length).toBe(2);
+    // L'historique établi par le premier message est toujours là pour le
+    // second appel « normal » : rien n'a été perdu par le refus local.
+    expect(llm.calls[1]).toEqual([
+      { role: 'user', content: 'message normal établissant un historique' },
+      { role: 'assistant', content: 'ok' },
+      { role: 'user', content: 'message suivant normal' },
+    ]);
+  });
+
+  it("réponse trop volumineuse pour être conservée → affichée, mais absente de l'historique transmis au tour suivant", async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    const hugeReply = 'z'.repeat(MAX_HISTORY_CONTEXT_CHARS + 1);
+    let callCount = 0;
+    const llm = new RecordingLlmProvider(() => {
+      callCount += 1;
+      return { content: callCount === 1 ? hugeReply : 'réponse normale' };
+    });
+
+    const promise = runChatRepl({ llm, input: stdin, output });
+    sendLine(stdin, 'déclenche une réponse énorme');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(1));
+    await vi.waitFor(() => expect(readText()).toContain(hugeReply));
+    sendLine(stdin, 'message suivant');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(2));
+    sendLine(stdin, '/quit');
+    await promise;
+
+    expect(readText()).toContain('trop volumineuse pour être conservée');
+    // Le second appel ne porte AUCUNE trace de l'échange précédent — la
+    // paire (énorme) n'a jamais été ajoutée à l'historique conservé.
+    expect(llm.calls[1]).toEqual([{ role: 'user', content: 'message suivant' }]);
+  });
+});
+
+describe('runChatRepl — erreur avec historique déjà établi : aucune corruption', () => {
+  it("un tour en échec ne modifie jamais l'historique conservé — le tour suivant reçoit l'historique d'avant l'échec, inchangé", async () => {
+    const stdin = fakeTty();
+    const { output, readText } = collectingOutput();
+    let callCount = 0;
+    const llm = new RecordingLlmProvider(() => {
+      callCount += 1;
+      if (callCount === 2) {
+        throw new Error('erreur fournisseur simulée');
+      }
+      return { content: `réponse ${callCount}` };
+    });
+
+    const promise = runChatRepl({ llm, input: stdin, output });
+    sendLine(stdin, 'premier');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(1));
+    sendLine(stdin, 'deuxième (va échouer)');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(2));
+    await vi.waitFor(() => expect(readText()).toContain('Le fournisseur LLM a renvoyé une erreur'));
+    sendLine(stdin, 'troisième');
+    await vi.waitFor(() => expect(llm.calls.length).toBe(3));
+    sendLine(stdin, '/quit');
+    await promise;
+
+    // Le troisième appel reçoit exactement l'historique issu du PREMIER
+    // échange réussi — ni le message/la réponse ratés du deuxième tour, ni
+    // une corruption quelconque.
+    expect(llm.calls[2]).toEqual([
+      { role: 'user', content: 'premier' },
+      { role: 'assistant', content: 'réponse 1' },
+      { role: 'user', content: 'troisième' },
+    ]);
   });
 });
 
@@ -260,6 +443,60 @@ describe('runChatRepl — Ctrl+C pendant un appel en vol, avec une ligne déjà 
     },
   );
 
+  it(
+    'avec un historique déjà établi par un échange précédent : le second appel en vol ' +
+      'reçoit bien cet historique, Ctrl+C + ligne déjà en attente → toujours aucun troisième appel',
+    async () => {
+      const stdin = fakeTty();
+      const { output } = collectingOutput();
+
+      let releaseSecond: (() => void) | undefined;
+      const secondGate = new Promise<void>((resolve) => {
+        releaseSecond = resolve;
+      });
+
+      let callCount = 0;
+      const llm = new RecordingLlmProvider(async () => {
+        callCount += 1;
+        if (callCount === 2) {
+          await secondGate;
+        }
+        return { content: `réponse ${callCount}` };
+      });
+
+      const promise = runChatRepl({ llm, input: stdin, output });
+
+      // Premier échange, terminé normalement → établit un historique.
+      sendLine(stdin, 'premier');
+      await vi.waitFor(() => expect(llm.calls.length).toBe(1));
+
+      // Second message : déclenche l'appel 2, bloqué sur `secondGate`.
+      sendLine(stdin, 'second');
+      await vi.waitFor(() => expect(llm.calls.length).toBe(2));
+
+      // Troisième ligne déjà disponible AVANT l'interruption.
+      sendLine(stdin, 'troisième-jamais-traité');
+      stdin.write('\u0003');
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(llm.calls.length).toBe(2);
+
+      releaseSecond?.();
+      await promise;
+
+      // Le second appel (en vol au moment de Ctrl+C) a bien reçu
+      // l'historique du premier échange — l'interruption ne l'a pas vidé
+      // ni corrompu.
+      expect(llm.calls[1]).toEqual([
+        { role: 'user', content: 'premier' },
+        { role: 'assistant', content: 'réponse 1' },
+        { role: 'user', content: 'second' },
+      ]);
+      // Et toujours aucun troisième appel, malgré la ligne déjà en attente.
+      expect(llm.calls.length).toBe(2);
+    },
+  );
+
   it('/quit suivi de lignes déjà en attente → aucune demande après /quit, même déjà disponibles', async () => {
     const stdin = fakeTty();
     const { output } = collectingOutput();
@@ -289,7 +526,7 @@ describe('runChatRepl — séquentialité (aucun appel concurrentiel)', () => {
 
     const callOrder: string[] = [];
     const llm = new RecordingLlmProvider(async (messages) => {
-      const text = (messages[0] as { content: string }).content;
+      const text = (messages[messages.length - 1] as { content: string }).content;
       callOrder.push(`start:${text}`);
       if (text === 'premier') {
         await firstGate;

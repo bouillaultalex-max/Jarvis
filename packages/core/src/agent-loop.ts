@@ -1,4 +1,9 @@
-import type { LlmConversationMessage, LlmProvider, LlmToolDefinition } from '@jarvis/llm';
+import type {
+  LlmConversationMessage,
+  LlmMessage,
+  LlmProvider,
+  LlmToolDefinition,
+} from '@jarvis/llm';
 import {
   LexicalMemorySelector,
   MemoryPromoter,
@@ -135,6 +140,55 @@ export interface AgentLoopOptions {
   readonly memoryPromotionPolicy?: MemoryPromotionPolicy;
 }
 
+/**
+ * Un échange textuel passé — **jamais** `system`/`tool_use`/`tool_result` :
+ * contrat volontairement plus étroit que {@link LlmConversationMessage},
+ * réservé à un historique de conversation déjà résolu (voir
+ * {@link AgentRunOptions.history}), pas à la reconstruction d'un tour à
+ * appels d'outils.
+ */
+export interface AgentHistoryMessage {
+  readonly role: 'user' | 'assistant';
+  readonly content: string;
+}
+
+/** Pourquoi `history` a été rejeté — voir {@link InvalidHistoryError}. */
+export type InvalidHistoryReason = 'odd_length' | 'wrong_role_order' | 'non_string_content';
+
+/**
+ * `history` ne respecte pas le contrat de paires `user`/`assistant`
+ * complètes attendu par {@link AgentRunOptions.history} — rejeté avant tout
+ * appel au provider, jamais réinterprété ni corrigé silencieusement.
+ */
+export class InvalidHistoryError extends Error {
+  constructor(public readonly reason: InvalidHistoryReason) {
+    super(`AgentLoop.run : « history » invalide (${reason}).`);
+    this.name = 'InvalidHistoryError';
+  }
+}
+
+/**
+ * Vérifie que `history` est une suite de paires complètes `user` puis
+ * `assistant`, contenu textuel — jamais `system`/`tool_use`/`tool_result`,
+ * jamais un rôle à la mauvaise position. Lève avant toute construction du
+ * tableau de messages transmis au provider.
+ */
+function validateHistory(history: readonly AgentHistoryMessage[]): void {
+  if (history.length % 2 !== 0) {
+    throw new InvalidHistoryError('odd_length');
+  }
+  for (let i = 0; i < history.length; i += 1) {
+    const expectedRole = i % 2 === 0 ? 'user' : 'assistant';
+    const entry = history[i]!;
+    if (entry.role !== expectedRole) {
+      throw new InvalidHistoryError('wrong_role_order');
+    }
+    if (typeof entry.content !== 'string') {
+      throw new InvalidHistoryError('non_string_content');
+    }
+  }
+}
+
 export interface AgentRunOptions {
   /**
    * Noms d'outils pour lesquels une confirmation utilisateur a déjà été
@@ -142,6 +196,23 @@ export interface AgentRunOptions {
    * que si son nom figure ici.
    */
   readonly confirmedTools?: readonly string[];
+  /**
+   * Transcript antérieur, préfixé **tel quel** (recopié dans des objets
+   * neufs — jamais les références de l'appelant, jamais muté) avant le
+   * nouveau message `user` de ce tour. Validé par {@link validateHistory} :
+   * uniquement des paires `user`/`assistant` complètes, contenu textuel —
+   * un `history` qui ne respecte pas cette forme lève
+   * {@link InvalidHistoryError} avant tout appel au provider.
+   *
+   * Absent (ou vide) → comportement **strictement inchangé** : un seul
+   * message `user` initial, exactement comme avant cette option. Aucun
+   * consommateur existant (`apps/api`) ne fournit `history` aujourd'hui.
+   *
+   * N'implique rien sur `tool_blocked`/`max_iterations` : ces statuts
+   * restent traités normalement (voir {@link AgentLoop}), jamais supposés
+   * inatteignables par la seule présence ou absence de `history`.
+   */
+  readonly history?: readonly AgentHistoryMessage[];
 }
 
 const DEFAULT_MAX_ITERATIONS = 5;
@@ -272,7 +343,17 @@ export class AgentLoop {
     options: AgentRunOptions,
   ): Promise<ConversationOutcome> {
     const confirmed = new Set(options.confirmedTools ?? []);
+    const history = options.history ?? [];
+    validateHistory(history);
+    // Copie défensive : des objets **neufs**, jamais les références de
+    // l'appelant — `history` (et chacune de ses entrées) reste inchangé
+    // après cet appel, quel qu'en soit le résultat.
+    const historyMessages: LlmMessage[] = history.map((entry) => ({
+      role: entry.role,
+      content: entry.content,
+    }));
     const messages: LlmConversationMessage[] = [
+      ...historyMessages,
       { role: 'user', content: this.composeFirstUserMessage(message) },
     ];
     const toolOutcomes: ToolExecutionResult[] = [];

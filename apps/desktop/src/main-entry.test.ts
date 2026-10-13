@@ -88,7 +88,7 @@ describe('main() — vrai point d’entrée, process réel (tsx src/main.ts)', (
     const { status, stdout, stderr } = runMain(['chat'], {}, '');
 
     expect(status).toBe(0);
-    expect(stdout).toContain('mono-tour');
+    expect(stdout).toContain('/reset');
     expect(stdout).toContain('facturé');
     expect(stderr).not.toContain('GMAIL_CLIENT_ID');
   });

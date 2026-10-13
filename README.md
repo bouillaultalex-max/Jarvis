@@ -56,7 +56,7 @@ une conclusion juridique vérifiée ; n'écrit jamais de dossier (`LegalCase`) ;
 testé uniquement avec des doubles — **aucun appel réel à la Sandbox PISTE
 n'a été exécuté**. Détail : `PROJECT_STATE.md` → `apps/desktop`.
 
-### `chat` (conversation locale, mono-tour, sans outil)
+### `chat` (conversation locale, mémoire de session bornée, sans outil)
 
 ```bash
 node_modules/.bin/tsx apps/desktop/src/main.ts chat
@@ -66,9 +66,19 @@ Boucle interactive : une ligne tapée → une réponse de Jarvis affichée, jusq
 `/quit`, Ctrl+C, ou la fin de l'entrée. **Portée volontairement minimale** :
 `AgentLoop` est construit **sans** `ToolExecutor` — aucun outil n'est présenté
 au modèle (`gmail.*`/`legal-search` restent des commandes séparées, non
-accessibles depuis ce chat) ; aucun historique entre deux messages, aucune
-mémoire persistante — chaque ligne est un tour entièrement indépendant.
-Annoncé explicitement dans la bannière affichée au démarrage.
+accessibles depuis ce chat).
+
+**Mémoire de session (RAM uniquement)** : l'historique (paires `user`/
+`assistant` complètes) est conservé dans une variable locale du process,
+**jamais écrit sur disque, jamais journalisé** — perdu à l'arrêt du process.
+Borné à 20 messages et 8 000 caractères (`MAX_HISTORY_MESSAGES`/
+`MAX_HISTORY_CONTEXT_CHARS`, `chat-repl.ts`) — un comptage de **caractères**,
+pas de tokens : aucun plafond de tokens ni de coût monétaire n'est garanti.
+Au-delà, les échanges les plus anciens sont retirés (jamais un texte tronqué
+en son milieu) et c'est annoncé à l'écran. Un message qui dépasse seul la
+limite est refusé localement, sans appel ; une réponse trop volumineuse est
+affichée mais jamais conservée. `/reset` efface tout instantanément, sans
+appel réseau.
 
 Prérequis : `ANTHROPIC_API_KEY` (sinon message d'erreur contrôlé au premier
 message, aucun appel réseau tenté). **N'exige ni configuration Gmail, ni
@@ -79,9 +89,13 @@ actuellement disponible.
 
 **Chaque message non vide déclenche un appel réel à l'API Anthropic et peut
 être facturé** — l'abonnement Claude Code ne couvre pas cette consommation.
-Ctrl+C n'annule jamais un appel déjà en cours (aucun mécanisme d'annulation
-câblé dans ce dépôt) : une réponse en vol au moment de l'interruption
-s'affiche quand même avant la fermeture effective de la boucle.
+Conserver un historique **augmente le coût d'entrée de chaque tour suivant**
+(il est renvoyé en entier à chaque appel) — à mettre en balance avec
+l'absence de budget pour un essai réel. Ctrl+C n'annule jamais un appel déjà
+en cours (aucun mécanisme d'annulation câblé dans ce dépôt) : une réponse en
+vol au moment de l'interruption s'affiche quand même avant la fermeture
+effective de la boucle, mais aucune ligne suivante, même déjà en attente,
+n'est jamais traitée.
 
 ## Développement local
 

@@ -106,6 +106,28 @@ describe('AnthropicProvider — conversation classique', () => {
     );
   });
 
+  it(
+    'historique multi-tour texte simple (user/assistant alterné, sans outil) → transmis tel quel, ' +
+      'même forme que celle produite par AgentLoop.run(message, { history }) — vérifie la ' +
+      'contrainte structurelle sans appel payant',
+    async () => {
+      const { client, calls } = fakeClient(fakeMessage({ text: 'Et voici la suite.' }));
+      const provider = new AnthropicProvider({ client });
+
+      await provider.chat([
+        { role: 'user', content: 'Premier message' },
+        { role: 'assistant', content: 'Première réponse' },
+        { role: 'user', content: 'Deuxième message' },
+      ]);
+
+      expect(calls[0].messages).toEqual([
+        { role: 'user', content: 'Premier message' },
+        { role: 'assistant', content: 'Première réponse' },
+        { role: 'user', content: 'Deuxième message' },
+      ]);
+    },
+  );
+
   it('ANTHROPIC_MODEL surcharge le modèle par défaut', async () => {
     vi.stubEnv('ANTHROPIC_MODEL', 'claude-opus-5');
     const { client, calls } = fakeClient(fakeMessage({ text: 'ok' }));

@@ -41,6 +41,20 @@ export class ProvisionCancelledError extends Error {
   }
 }
 
+/**
+ * `stdin` s'est terminé (`'end'`) avant Entrée/Ctrl+C — ex. redirection
+ * depuis un fichier/pipe épuisé, ou session de terminal interrompue.
+ * Défaut corrigé en revue : sans cet écouteur, `readMaskedLine()` ne se
+ * résolvait **jamais**, laissant l'écouteur `data` et le mode brut actifs
+ * indéfiniment (vérifié par test).
+ */
+export class ProvisionStdinClosedError extends Error {
+  constructor() {
+    super('stdin fermé avant la fin de la saisie — aucun secret écrit.');
+    this.name = 'ProvisionStdinClosedError';
+  }
+}
+
 /** Sous-ensemble de `process.stdin` nécessaire ici — permet l'injection d'un double en test. */
 export type ProvisionStdin = NodeJS.ReadableStream & {
   readonly isTTY?: boolean;
@@ -68,8 +82,14 @@ export function readMaskedLine(io: ProvisionIo, prompt: string): Promise<string>
 
     const cleanup = (): void => {
       stdin.removeListener('data', onData);
+      stdin.removeListener('end', onEnd);
       stdin.setRawMode?.(false);
     };
+
+    function onEnd(): void {
+      cleanup();
+      reject(new ProvisionStdinClosedError());
+    }
 
     function onData(chunk: Buffer | string): void {
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
@@ -95,6 +115,7 @@ export function readMaskedLine(io: ProvisionIo, prompt: string): Promise<string>
     }
 
     stdin.on('data', onData);
+    stdin.once('end', onEnd);
   });
 }
 
@@ -145,6 +166,7 @@ const SECRET_FIELDS: readonly SecretField[] = [
 export type ProvisionOutcome =
   | { readonly status: 'not_a_tty' }
   | { readonly status: 'cancelled' }
+  | { readonly status: 'stdin_closed' }
   | { readonly status: 'declined_overwrite'; readonly keys: readonly string[] }
   | { readonly status: 'empty_value'; readonly label: string }
   | { readonly status: 'written'; readonly keys: readonly string[] }
@@ -163,8 +185,14 @@ async function trySet(
     await store.set(key, value);
     return { ok: true };
   } catch (err) {
-    // Jamais `value` dans le message — voir OsCredentialSecretStore.set().
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const message = err instanceof Error ? err.message : String(err);
+    // Défense en profondeur, pas une simple confiance dans l'appelant : même
+    // si une implémentation de `SecretStore` embarquait par erreur la valeur
+    // dans son message (jamais censé arriver — voir `OsCredentialSecretStore.set()`
+    // — mais vérifié ici plutôt que supposé, revue finale), elle est retirée
+    // avant de quitter cette fonction, donc avant tout affichage/log.
+    const error = value.length === 0 ? message : message.split(value).join('[valeur masquée]');
+    return { ok: false, error };
   }
 }
 
@@ -203,6 +231,7 @@ export async function runProvisionWhatsAppSecrets(
       value = await readMaskedLine(deps, field.prompt);
     } catch (err) {
       if (err instanceof ProvisionCancelledError) return { status: 'cancelled' };
+      if (err instanceof ProvisionStdinClosedError) return { status: 'stdin_closed' };
       throw err;
     }
     if (value.length === 0) {
@@ -241,6 +270,8 @@ export function describeProvisionOutcome(outcome: ProvisionOutcome): readonly st
       ];
     case 'cancelled':
       return ['Provisionnement annulé — aucun secret écrit.'];
+    case 'stdin_closed':
+      return ['Entrée standard fermée avant la fin de la saisie — aucun secret écrit.'];
     case 'declined_overwrite':
       return [`Écrasement refusé pour : ${outcome.keys.join(', ')} — aucun secret écrit.`];
     case 'empty_value':

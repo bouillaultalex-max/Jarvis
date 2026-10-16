@@ -13,6 +13,6 @@
     "@jarvis/llm": "0.1.0",
     "@jarvis/tools": "0.1.0",
     "@jarvis/types": "0.1.0",
-    "fastify": "^5.0.0"
+    "fastify": "^5.12.5"
   }
 }

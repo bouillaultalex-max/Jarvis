@@ -27,6 +27,16 @@ describe('parseProjectArgs', () => {
       decisionId: 'dec-1',
     });
     expect(parseProjectArgs(['next-question', 'p1'])).toEqual({ op: 'next-question', id: 'p1' });
+    expect(parseProjectArgs(['export-markdown', 'p1', '--output', '/tmp/x.md'])).toEqual({
+      op: 'export-markdown',
+      id: 'p1',
+      outputPath: '/tmp/x.md',
+    });
+  });
+
+  it('export-markdown exige le drapeau --output', () => {
+    expect(() => parseProjectArgs(['export-markdown', 'p1', '/tmp/x.md'])).toThrow(/--output/);
+    expect(() => parseProjectArgs(['export-markdown', 'p1'])).toThrow(/--output/);
   });
 
   it('rejette une sous-commande inconnue avant tout accès disque', () => {

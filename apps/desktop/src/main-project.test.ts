@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
@@ -103,5 +103,31 @@ describe('dispatch — project (câblage CLI)', () => {
     const next = await run('next-question', 'p1');
     expect(next).toContain('Une question');
     expect(process.exitCode).toBe(0);
+  });
+
+  it('export-markdown : parcours CLI complet avec fichier temporaire réel', async () => {
+    const run = async (...argv: string[]): Promise<string> => {
+      const { output, readText } = collectingOutput();
+      await dispatch(['project', ...argv], INERT_DESKTOP_DEPS, { output });
+      return readText();
+    };
+
+    await run('create', 'p1', 'Projet');
+    await run('add-fact', 'p1', 'Un fait exporté');
+
+    const outputPath = join(dir, 'export.md');
+    const exported = await run('export-markdown', 'p1', '--output', outputPath);
+    expect(exported).toContain(outputPath);
+    expect(process.exitCode).toBe(0);
+
+    const markdown = readFileSync(outputPath, 'utf-8');
+    expect(markdown).toContain('Un fait exporté');
+    expect(markdown).toContain('Instantané exporté');
+
+    // Une seconde tentative sur le même chemin est refusée, jamais écrasée.
+    const retried = await run('export-markdown', 'p1', '--output', outputPath);
+    expect(retried).toContain('existe déjà');
+    expect(process.exitCode).toBe(1);
+    expect(readFileSync(outputPath, 'utf-8')).toBe(markdown);
   });
 });

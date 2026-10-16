@@ -8,12 +8,15 @@ import {
 
 import type { ProjectInput } from './project-args.js';
 
+/** `export-markdown` est géré séparément par `runExportMarkdownFlow` (lecture seule, écriture de fichier). */
+export type MutableProjectInput = Exclude<ProjectInput, { readonly op: 'export-markdown' }>;
+
 export interface ProjectFlowDeps {
   readonly store: FileProjectBriefStore;
 }
 
 export type ProjectFlowResult =
-  | { readonly status: 'ok'; readonly op: ProjectInput['op']; readonly brief: ProjectBrief }
+  | { readonly status: 'ok'; readonly op: MutableProjectInput['op']; readonly brief: ProjectBrief }
   | { readonly status: 'not-found'; readonly id: string }
   | { readonly status: 'next-question'; readonly result: NextQuestionResult }
   | { readonly status: 'error'; readonly reason: string; readonly message: string };
@@ -26,7 +29,10 @@ export type ProjectFlowResult =
  * d'un argument mal formé (rejeté plus tôt par `parseProjectArgs`, avant
  * même d'atteindre cette fonction).
  */
-export function runProjectFlow(input: ProjectInput, deps: ProjectFlowDeps): ProjectFlowResult {
+export function runProjectFlow(
+  input: MutableProjectInput,
+  deps: ProjectFlowDeps,
+): ProjectFlowResult {
   try {
     switch (input.op) {
       case 'create':

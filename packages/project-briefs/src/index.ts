@@ -43,3 +43,5 @@ export type { FileProjectBriefStoreOptions } from './project-brief-file-store.js
 
 export { pickNextQuestion } from './next-question.js';
 export type { NextQuestionResult } from './next-question.js';
+
+export { escapeMarkdownText, renderProjectBriefMarkdown } from './project-brief-markdown.js';

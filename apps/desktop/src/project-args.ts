@@ -20,7 +20,8 @@ export type ProjectInput =
   | { readonly op: 'add-decision'; readonly id: string; readonly text: string }
   | { readonly op: 'validate-decision'; readonly id: string; readonly decisionId: string }
   | { readonly op: 'obsolete-decision'; readonly id: string; readonly decisionId: string }
-  | { readonly op: 'next-question'; readonly id: string };
+  | { readonly op: 'next-question'; readonly id: string }
+  | { readonly op: 'export-markdown'; readonly id: string; readonly outputPath: string };
 
 function requireArg(value: string | undefined, label: string): string {
   if (value === undefined || value.length === 0) {
@@ -105,11 +106,21 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
       requireArity(rest, 1, 'usage : project next-question <id>');
       return { op: 'next-question', id: requireArg(rest[0], 'id') };
     }
+    case 'export-markdown': {
+      if (rest.length !== 3 || rest[1] !== '--output') {
+        throw new Error('project : usage : project export-markdown <id> --output <chemin.md>');
+      }
+      return {
+        op: 'export-markdown',
+        id: requireArg(rest[0], 'id'),
+        outputPath: requireArg(rest[2], 'chemin'),
+      };
+    }
     default:
       throw new Error(
         `project : sous-commande inconnue « ${sub ?? ''} » — attendu l'une de : create, show, ` +
           'add-fact, add-hypothesis, add-question, answer-question, add-decision, ' +
-          'validate-decision, obsolete-decision, next-question.',
+          'validate-decision, obsolete-decision, next-question, export-markdown.',
       );
   }
 }

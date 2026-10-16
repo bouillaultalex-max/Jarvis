@@ -111,6 +111,7 @@ apps/desktop project add-decision boutique-asiatique "texte"
 apps/desktop project validate-decision boutique-asiatique <decision-id>
 apps/desktop project obsolete-decision boutique-asiatique <decision-id>
 apps/desktop project next-question boutique-asiatique
+apps/desktop project export-markdown boutique-asiatique --output chemin.md
 ```
 
 N'exige **aucun** credential (ni Gmail, ni Légifrance, ni `ANTHROPIC_API_KEY`) :
@@ -135,6 +136,16 @@ verrou issu d'un process tué en cours d'opération reste en place jusqu'à
 suppression manuelle du fichier `<id>.json.lock` (aucune récupération
 automatique). Ce chantier est un domaine séparé, **pas** une généralisation
 de la Situation (`ADR-0010`) ni de la mémoire contrôlée (`@jarvis/memory`).
+
+`export-markdown <id> --output <chemin.md>` écrit un **instantané** Markdown
+de la fiche (rendu pur dans `@jarvis/project-briefs`, écriture exclusive côté
+desktop) : aucun retour vers Jarvis, aucune synchronisation — modifier le
+fichier exporté ne met jamais à jour la fiche JSON. Création **exclusive**
+(`O_CREAT|O_EXCL`) : un fichier destination déjà existant est toujours
+refusé, jamais écrasé. Ne modifie jamais le JSON source ni sa révision
+(lecture seule). Sur un chemin NTFS monté via WSL (`/mnt/c/...`), les
+permissions effectives du fichier dépendent des ACL Windows, pas du mode
+Unix demandé par le code — aucune garantie `0600` sur ce type de chemin.
 
 ## Développement local
 

@@ -56,6 +56,11 @@ import { parseLegalSearchArgs } from './legal-search-args.js';
 import { parsePrepareReplyArgs } from './prepare-reply-args.js';
 import { parseProjectArgs } from './project-args.js';
 import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
+import {
+  describeExportMarkdownResult,
+  exportMarkdownExitCode,
+  runExportMarkdownFlow,
+} from './project-export-markdown.js';
 import { describeProjectResult, projectExitCode, runProjectFlow } from './run-project-flow.js';
 import {
   defaultLegalSearchDeps,
@@ -883,6 +888,14 @@ export async function dispatch(
     // ne construit jamais le store.
     const input = parseProjectArgs(argv.slice(1));
     const store = new FileProjectBriefStore({ baseDir: defaultProjectBriefsDir() });
+    if (input.op === 'export-markdown') {
+      const exportResult = runExportMarkdownFlow(input, { store });
+      for (const line of describeExportMarkdownResult(exportResult)) {
+        write(line);
+      }
+      process.exitCode = exportMarkdownExitCode(exportResult);
+      return;
+    }
     const result = runProjectFlow(input, { store });
     for (const line of describeProjectResult(result)) {
       write(line);

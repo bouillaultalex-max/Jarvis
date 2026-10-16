@@ -330,6 +330,27 @@ module.exports = tseslint.config(
   },
 
   {
+    // packages/project-briefs : fiches projet du rôle product builder, feuille pure
+    // (comme @jarvis/types/@jarvis/llm/@jarvis/memory) — espace étanche séparé de
+    // @jarvis/memory et du prototype Situation (ADR-0010 : pas une généralisation).
+    files: ['packages/project-briefs/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@jarvis/*'],
+              message:
+                '@jarvis/project-briefs est une feuille : aucune dépendance vers un autre package @jarvis/*.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
     // packages/legal-research : Provider juridique au-dessus du Connector (LEGAL-02B.3) —
     // ne dépend que de @jarvis/core (ToolExecutor, injecté — jamais contourné) et
     // @jarvis/legal-core (LegalSource/LegalCitation). Ne connaît ni SecretStore, ni

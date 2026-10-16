@@ -46,13 +46,17 @@ import {
   UnknownAccountError,
 } from '@jarvis/connectors';
 
+import { FileProjectBriefStore } from '@jarvis/project-briefs';
+
 import { runChatRepl } from './chat-repl.js';
 import { startGmailOAuthCallbackServer } from './gmail-oauth-callback-server.js';
 import { describeInboxResult } from './inbox-view.js';
 import { parseGmailSendArgs } from './gmail-send-args.js';
 import { parseLegalSearchArgs } from './legal-search-args.js';
 import { parsePrepareReplyArgs } from './prepare-reply-args.js';
+import { parseProjectArgs } from './project-args.js';
 import { runGmailSend, type RunGmailSendResult } from './gmail-send.js';
+import { describeProjectResult, projectExitCode, runProjectFlow } from './run-project-flow.js';
 import {
   defaultLegalSearchDeps,
   describeLegalSearchResult,
@@ -95,6 +99,27 @@ function defaultAccountsFilePath(): string {
         : (process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share')));
 
   return join(dataDir, 'jarvis', 'accounts.json');
+}
+
+/**
+ * Répertoire de données privé des fiches projet — hors dépôt, même
+ * convention que {@link defaultAccountsFilePath}. `JARVIS_PROJECT_BRIEFS_DIR`
+ * permet un override explicite (utilisé par les tests, répertoire temporaire
+ * isolé) sans jamais toucher au répertoire réel de l'utilisateur.
+ */
+function defaultProjectBriefsDir(): string {
+  if (process.env.JARVIS_PROJECT_BRIEFS_DIR !== undefined) {
+    return process.env.JARVIS_PROJECT_BRIEFS_DIR;
+  }
+  const dataDir =
+    process.env.JARVIS_DATA_DIR ??
+    (process.platform === 'win32'
+      ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'))
+      : process.platform === 'darwin'
+        ? join(homedir(), 'Library', 'Application Support')
+        : (process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share')));
+
+  return join(dataDir, 'jarvis', 'project-briefs');
 }
 
 function openSystemBrowser(url: string): void {
@@ -815,7 +840,7 @@ function parseReadNaturalArgs(argv: readonly string[]): string {
   return text;
 }
 
-/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat`. */
+/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat` | `project`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -848,6 +873,21 @@ export async function dispatch(
       ...(io.input !== undefined ? { input: io.input } : {}),
       output,
     });
+    return;
+  }
+
+  if (command === 'project') {
+    // Aucune dépendance Gmail/Légifrance/LLM construite ou touchée ici,
+    // comme 'chat' et 'legal-search' ci-dessus — fonctionne sans aucun
+    // credential. Parsing avant tout accès disque : un argument mal formé
+    // ne construit jamais le store.
+    const input = parseProjectArgs(argv.slice(1));
+    const store = new FileProjectBriefStore({ baseDir: defaultProjectBriefsDir() });
+    const result = runProjectFlow(input, { store });
+    for (const line of describeProjectResult(result)) {
+      write(line);
+    }
+    process.exitCode = projectExitCode(result);
     return;
   }
 
@@ -942,7 +982,7 @@ function noopDesktopDeps(): DesktopDeps {
 }
 
 /** Commandes dont `dispatch()` n'accède jamais à `deps` (Gmail) — voir {@link noopDesktopDeps}. */
-const NO_GMAIL_DEPS_COMMANDS = new Set(['legal-search', 'chat']);
+const NO_GMAIL_DEPS_COMMANDS = new Set(['legal-search', 'chat', 'project']);
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

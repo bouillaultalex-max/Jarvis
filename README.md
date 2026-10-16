@@ -14,7 +14,7 @@ Assistant IA personnel — monorepo npm workspaces (TypeScript strict, Node 24, 
 
 ```
 apps/api          Serveur HTTP Fastify
-apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search / chat)
+apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search / chat / project)
 packages/types      Types partagés
 packages/llm        Abstraction LLM (Anthropic)
 packages/core       AgentLoop, Tool, PermissionManager, ToolExecutor
@@ -22,6 +22,7 @@ packages/tools      Outils locaux
 packages/connectors Connecteurs externes (Gmail…), AccountStore, SecretStore
 packages/classification  Classification des emails
 packages/inbox      Orchestration inbox (fetch → classify → attention → résumé)
+packages/project-briefs  Fiches projet persistantes (product builder), sans LLM
 ```
 
 Graphe de dépendances détaillé : voir `PROJECT_STATE.md` → « Workspaces & dépendances ».
@@ -96,6 +97,44 @@ en cours (aucun mécanisme d'annulation câblé dans ce dépôt) : une réponse 
 vol au moment de l'interruption s'affiche quand même avant la fermeture
 effective de la boucle, mais aucune ligne suivante, même déjà en attente,
 n'est jamais traitée.
+
+### `project` (fiches projet persistantes, product builder — sans LLM)
+
+```bash
+apps/desktop project create boutique-asiatique "Boutique asiatique"
+apps/desktop project show boutique-asiatique
+apps/desktop project add-fact boutique-asiatique "texte"
+apps/desktop project add-hypothesis boutique-asiatique "texte"
+apps/desktop project add-question boutique-asiatique "texte"
+apps/desktop project answer-question boutique-asiatique <question-id> "réponse"
+apps/desktop project add-decision boutique-asiatique "texte"
+apps/desktop project validate-decision boutique-asiatique <decision-id>
+apps/desktop project obsolete-decision boutique-asiatique <decision-id>
+apps/desktop project next-question boutique-asiatique
+```
+
+N'exige **aucun** credential (ni Gmail, ni Légifrance, ni `ANTHROPIC_API_KEY`) :
+règles déterministes, aucun appel LLM. Persistance : un fichier JSON
+versionné par projet (`@jarvis/project-briefs`), dans un répertoire privé
+hors dépôt — `JARVIS_PROJECT_BRIEFS_DIR` si définie, sinon la convention par
+OS déjà utilisée pour `accounts.json` (`$XDG_DATA_HOME`/`AppData`/
+`Application Support`, sous-dossier `jarvis/project-briefs/`).
+
+Faits, hypothèses, décisions et questions sont des catégories séparées, à
+identifiants stables (jamais un index de tableau). Une décision suit
+`proposed → validated`/`obsolete` (jamais l'inverse depuis `obsolete`) ;
+répondre à une question (`answer-question`) ne promeut jamais la réponse en
+fait ni en décision validée. `next-question` applique une **règle fixe**
+(première question `open`, dans l'ordre d'ajout) — explicitement annoncée
+comme telle, jamais présentée comme un raisonnement.
+
+Concurrence entre deux commandes sur le même projet : verrou coopératif par
+fichier (création atomique `O_CREAT|O_EXCL`) — la seconde commande est
+refusée explicitement (jamais une perte silencieuse). Limite assumée : un
+verrou issu d'un process tué en cours d'opération reste en place jusqu'à
+suppression manuelle du fichier `<id>.json.lock` (aucune récupération
+automatique). Ce chantier est un domaine séparé, **pas** une généralisation
+de la Situation (`ADR-0010`) ni de la mémoire contrôlée (`@jarvis/memory`).
 
 ## Développement local
 

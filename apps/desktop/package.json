@@ -14,7 +14,8 @@
     "@jarvis/inbox": "0.1.0",
     "@jarvis/legal-research": "0.1.0",
     "@jarvis/legifrance-client": "0.1.0",
-    "@jarvis/llm": "0.1.0"
+    "@jarvis/llm": "0.1.0",
+    "@jarvis/project-briefs": "0.1.0"
   },
   "devDependencies": {
     "@jarvis/types": "0.1.0"

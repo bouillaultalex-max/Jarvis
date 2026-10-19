@@ -4,7 +4,12 @@ Vue d'ensemble condensée. Le détail (raisons, invariants, tests) vit dans
 `PROJECT_STATE.md` ; le détail actionnable vit dans `MASTER_BACKLOG.md`.
 Cette page ne fait que positionner chaque élément dans le temps.
 
-_Dernière mise à jour : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & Case Engine, premier jalon — implémentée et validée pour commit ; suite non planifiée)._
+_Dernière mise à jour : 2026-10-19 (synchronisation documentaire : composants livrés du
+2026-09-30 au checkpoint `a92cca3` — Légifrance CLI, banc d'interfaces d'outils, canal
+WhatsApp, chat local, fiches projet ; étapes Product Builder PB-01 à PB-06 reprises de
+Notion comme séquencement proposé, correspondance partielle établie)._
+
+_Mise à jour précédente : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & Case Engine, premier jalon — implémentée et validée pour commit ; suite non planifiée)._
 
 ## DONE
 
@@ -25,6 +30,8 @@ _Dernière mise à jour : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & 
 CLI de briques déjà existantes, aucun nouveau jalon)
 - `apps/desktop` expose désormais six commandes :
   `connect` / `read` / `inbox` / `prepare-reply` / `send` / `disconnect`.
+  _(État au 2026-09-26. Commandes ajoutées depuis : `legal-search`, `chat`,
+  `project` — voir « Composants livrés depuis 2026-09-30 » ci-dessous.)_
 - `disconnect` — câblage CLI de `disconnectGmailAccount()` (`cc2e8a4`).
 - `read` — câblage CLI du Tool `gmail.read` (`9c24cb7`).
 - `inbox` — câblage CLI de `fetchAndClassifyEmails` (`@jarvis/inbox`) ;
@@ -135,6 +142,27 @@ Détail complet de M8 (contexte, invariants, tests) : `PROJECT_STATE.md` →
 2481 tests / 135 fichiers dans l'arbre de travail (vérifié le 2026-09-26 avant le commit LEGAL-04.1 ; dont 3 tests d'un POC non commité, soit 2478 sans eux ; inclut le domaine juridique), tous verts ; `eslint .` et `tsc --noEmit` propres ; tests d'architecture verts. Un test préexistant
 instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE.md`). _(Historique : 1719 tests / 112 fichiers au 2026-09-24, avant LegalCase v3 ; 530 tests / 50 fichiers à l'issue de M8/VS-02.)_
 
+**Composants livrés depuis 2026-09-30** (hors numérotation de jalon — chaque
+commit est un **composant**, pas un jalon achevé ; aucun ne clôt à lui seul un
+chantier). Légende : _livré_ = code versionné et testé ; _validation simulée_ =
+tests ou essais sans service réel (doubles, simulateurs, données fictives) ;
+_usage réel_ = utilisation documentée sur un service ou des données réels ;
+_chantier global_ = objectif plus large, qui reste ouvert.
+
+| Capacité | Commits | Livré | Validation simulée | Usage réel | Chantier global |
+|---|---|---|---|---|---|
+| Recherche Légifrance CLI `legal-search` (lecture seule) et provisionnement interactif des secrets Légifrance | `17e5297`, `b58780a`, `682455c`, `f6c1ea5`, `adca17b` | oui | doubles uniquement (`fetchFn` mocké, `InMemorySecretStore`) | rapport externe transmis par Alexandre (essai Sandbox du 2026-10-02 : cinq résultats partiels, puis collecte ciblée de deux articles pour expliquer `invalid_interval`) — preuve non archivée dans le dépôt | domaine juridique — suite non planifiée (voir NEXT) |
+| Banc d'évaluation des interfaces d'outils (`prototypes/tool-interface-bench/`, hors workspaces) | `7719baa` | oui (prototype) | 20 missions synthétiques, `ScriptedLlmProvider`, chemin réel `ToolRegistry` → `AgentLoop` | aucun pilote réel documenté (`run-live.ts` manuel, payant, jamais lancé par `npm test`) | aucun chantier rattaché dans ces documents |
+| Canal WhatsApp : prototype webhook, canal simulé local, transport Graph API inactif, réception durable SQLite, mode réel opt-in, provisionnement des secrets | `70a4c3b`, `1d2c9f7`, `5e48873`, `c50039a`, `5dae0f2`, `e7cd02e`, `5e5453e`, `880553a`, `5508767`, `adca17b` | oui | canal simulé par défaut, `SimulatedLlmProvider`, tests SQLite multi-process | provisionnement et mode opt-in implémentés ; serveur et tunnel lancés puis arrêtés ; aucun échange réel rapporté — rapport externe transmis par Alexandre, non archivé dans le dépôt ; activité reportée par Alexandre | **reporté** (voir LATER) ; ADR-0022 et ADR-0023 restent `Proposed` |
+| Chat local multi-tour, historique en RAM borné, **sans outils** (`chat`) | `370159e`, `1bfd518` | oui | `LlmProvider` factice uniquement | non documenté dans le dépôt (chaque message est un appel Anthropic réel, potentiellement facturé) | aucun outil branché ; aucune suite décidée dans ces documents |
+| Fiches projet persistantes (`@jarvis/project-briefs`), export Markdown, entretien interactif à règle fixe (`project ...`) | `fc92fab`, `be0d670`, `a92cca3` | oui | tests ciblés et essai CLI sur projet fictif (2026-10-19, répertoire temporaire) | fiche réelle `boutique-asiatique` créée (révision 11 : 5 faits, 5 questions ouvertes, aucune réponse) et un export Markdown — rapporté 2026-10-16 ; **entretien réel pas encore lancé** | Product Builder — PB-01 et PB-02 partiellement couverts, PB-03 à PB-06 non démontrés (voir NEXT) |
+
+Checkpoint publié : **`a92cca3`** (2026-10-19, `main` = `origin/main`). Suite
+complète **historique** : 3111 tests / 181 fichiers (rapportée, non rejouée pour
+cette synchronisation documentaire). Rejoué lors de la clôture de l'entretien
+interactif (2026-10-19) : 91 tests / 11 fichiers ciblés, `tsc --noEmit`, ESLint,
+hooks pre-commit, essai CLI fictif.
+
 ## NEXT
 
 - **Domaine juridique — suite du Fact & Case Engine** : **non planifiée**. LEGAL-04.0 et
@@ -142,6 +170,30 @@ instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE
   hors périmètre de LEGAL-04.1 — propositions LLM, validation humaine, corrections,
   projection des faits écartés, persistance — attendent une décision). Aucun LEGAL-03C
   n'est planifié.
+- **Product Builder — chantier ouvert.** Étapes **PB-01 à PB-06** tenues dans Notion
+  (« Chantier Product Builder » : https://app.notion.com/p/3f0ba52b3dae819898f6da141fb7e30b — page
+  modifiée le 2026-10-05, lue par ChatGPT le 2026-10-19 et transmise par Alexandre).
+  C'est un **séquencement proposé**, pas six jalons validés ou terminés :
+  - PB-01 — modèle du dossier produit et traçabilité besoin → source → décision → exigence ;
+  - PB-02 — entretien guidé, extraction documentaire et détection des contradictions ;
+  - PB-03 — comparaison des solutions et génération du cahier des charges ;
+  - PB-04 — évaluation V1 avec dossiers de référence et revue humaine ;
+  - PB-05 — maquettes, backlog et gestion des changements après validation V1 ;
+  - PB-06 — construction assistée et validation du produit après maîtrise des
+    permissions, outils et preuves.
+  Correspondance avec les travaux inspectés : PB-01 **partiellement couvert**
+  (`@jarvis/project-briefs`, sans les liens de traçabilité) ; PB-02 **partiellement
+  couvert** (`project interview`, sans extraction documentaire ni détection des
+  contradictions) ; PB-03 à PB-06 **non démontrés** dans les travaux inspectés.
+  Matrice et critères V1 proposés : `MASTER_BACKLOG.md` → « Product Builder ». Aucune
+  numérotation parallèle n'est créée. La priorité actuelle donnée par Alexandre au
+  rôle product builder ne vaut pas validation des prérequis de la roadmap.
+  - **Proposition de preuve utilisateur — non validée, non historique** :
+    entretien réel `project interview boutique-asiatique` avec au moins une
+    réponse confirmée, suivi d'un `project export-markdown` daté. À rattacher à
+    un jalon PB existant après vérification dans Notion.
+- L'ordre relatif entre Product Builder et la suite juridique n'est pas établi par
+  ces documents. Aucune phase « chat avec outils » n'y est planifiée.
 
 ## LATER
 
@@ -169,6 +221,12 @@ instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE
   tout MVP ; aucune bibliothèque ni fournisseur n'est choisi à ce stade.
   Détail, périmètre envisagé et questions ouvertes : `MASTER_BACKLOG.md` →
   « Pistes non encore validées ».
+  - **État au 2026-10-19** : des composants techniques existent (voir DONE →
+    « Composants livrés depuis 2026-09-30 » ; `apps/whatsapp-channel`, simulé par
+    défaut). Ils ne valent ni clôture de l'étude de faisabilité ni MVP : ADR-0022 et
+    ADR-0023 restent `Proposed`. Serveur et tunnel ont été lancés puis arrêtés ; aucun
+    échange réel n'est rapporté (rapport externe, non archivé dans le dépôt).
+    **Activation WhatsApp et tests payants restent reportés** par Alexandre.
 - **Domaine juridique — autres points ouverts** (non planifiés, non décidés ;
   l'ordre relatif à LEGAL-04 n'est pas établi) : query planning, `LegalResearchItem` (rôle, lien à la question,
   synthèse), ANALYZE / VERIFY / PREPARE, pertinence et « evidence-used », stockage
@@ -179,3 +237,13 @@ instable dans `legifrance-source-mapping.test.ts` est connu (voir `PROJECT_STATE
   Research → Case / Content Exposure et **attentions A1–A4** de LegalCase v3 :
   `PROJECT_STATE.md` → « Domaine juridique → Points OUVERTS » et
   `MASTER_BACKLOG.md`.
+
+## Essais d'outils et de skills (registre externe)
+
+Les essais issus des veilles sont tenus dans la **Roadmap outillage** Notion
+(https://app.notion.com/p/3ebba52b3dae81118b91f7b97afc278c) : objectif, phase, protocole, coût, réussite,
+statut, source. Ce document **ne duplique pas** ce catalogue. Une entrée du
+registre ne vaut ni adoption ni planification ; un essai se rattache à sa phase
+et ne remplace pas une mission produit. Journal Notion :
+https://app.notion.com/p/3ebba52b3dae81f3b404d61c8aeb57c1. _(Registre rapporté le 2026-10-19,
+non consulté lors de cette synchronisation.)_

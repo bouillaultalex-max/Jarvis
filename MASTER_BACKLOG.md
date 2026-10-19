@@ -7,7 +7,10 @@ une décision explicitement ouverte dans `PROJECT_STATE.md`.
 
 Voir aussi `MASTER_ROADMAP.md` pour la vue synthétique DONE / LATER.
 
-_Dernière mise à jour : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & Case Engine, premier jalon — implémentée et validée pour commit ; suite non planifiée)._
+_Dernière mise à jour : 2026-10-19 (synchronisation documentaire jusqu'au checkpoint
+`a92cca3` ; Product Builder PB-01 à PB-06 repris de Notion, correspondance partielle)._
+
+_Mise à jour précédente : 2026-09-26 (domaine juridique : LEGAL-04.1 — Fact & Case Engine, premier jalon — implémentée et validée pour commit ; suite non planifiée)._
 
 ## Jalons fonctionnels terminés
 
@@ -54,7 +57,9 @@ CLI réutilisant le noyau M8.
   `gmail.send`). (`753f4d0`)
 
 `apps/desktop` expose donc six commandes : `connect` / `read` / `inbox` /
-`prepare-reply` / `send` / `disconnect`.
+`prepare-reply` / `send` / `disconnect`. _(État au 2026-09-26. Commandes ajoutées
+depuis : `legal-search`, `chat`, `project` — voir « Composants livrés depuis
+2026-09-30 ».)_
 
 ## VS-02 — Lecture naturelle contrôlée, readonly (`apps/desktop`, committé `8fb7ff4`)
 
@@ -208,6 +213,69 @@ injectée) ; `LegalSourceProvider` typé Légifrance. Le cycle de packages
 `connectors` ↔ `legifrance-client` a été corrigé (voir `PROJECT_STATE.md`).
 Les points d'attention des derniers blocs sont conservés dans « Domaine
 juridique — points ouverts » ci-dessous.
+
+## Composants livrés depuis 2026-09-30 (composants, pas jalons)
+
+Tableau détaillé (livré / validation simulée / usage réel / chantier global) :
+`MASTER_ROADMAP.md` → DONE → « Composants livrés depuis 2026-09-30 ». Détail
+technique : `PROJECT_STATE.md` → « Composants livrés depuis 2026-09-30 ».
+
+- Légifrance CLI `legal-search` + provisionnement interactif (`17e5297`, `b58780a`,
+  `682455c`, `f6c1ea5`, `adca17b`) — tests avec doubles ; usage réel : rapport externe transmis par Alexandre (essai Sandbox du 2026-10-02 : cinq résultats partiels, puis collecte ciblée de deux articles pour expliquer `invalid_interval`) — preuve non archivée dans le dépôt.
+- Banc d'interfaces d'outils (`7719baa`) — déterministe ; pilote réel non documenté.
+- Canal WhatsApp simulé, réception durable SQLite, mode réel opt-in (`70a4c3b` →
+  `adca17b`) — provisionnement et mode opt-in implémentés ; serveur et tunnel lancés puis arrêtés ; aucun échange réel rapporté — rapport externe transmis par Alexandre, non archivé dans le dépôt ; activité reportée par Alexandre ; ADR-0022/0023 `Proposed`.
+- Chat local multi-tour sans outils (`370159e`, `1bfd518`).
+- Fiches projet, export Markdown, entretien interactif (`fc92fab`, `be0d670`,
+  `a92cca3`) — essai CLI fictif validé le 2026-10-19 ; entretien réel non lancé.
+
+Commits du 2026-09-26 au 2026-09-30 **pas encore réconciliés** dans ces documents
+(sujet de commit uniquement, statut à documenter, rien n'est affirmé au-delà) :
+`8cdeb2e` feat(legal): add legal case engine (LEGAL-04.1) ;
+`94f6f53` refactor: extract shared array bounds validation ;
+`b10c248` test(legal): stabilize Legifrance source mapping ;
+`3cd0643` feat(desktop): show summaries in inbox ;
+`5ef8d44` feat(legal): add file-based legal case store ;
+`ed4d778` feat(legal): project research items into cases ;
+`2ee2381` fix(legal): remove circular package dependency ;
+`ab9b6d6` fix(confirmation): bind execution to verified payload ;
+`b590120` docs(roadmap): add WhatsApp conversational channel.
+
+## Product Builder — chantier ouvert (étapes tenues dans Notion)
+
+Source : « Chantier Product Builder », https://app.notion.com/p/3f0ba52b3dae819898f6da141fb7e30b — page
+modifiée le 2026-10-05, lue par ChatGPT le 2026-10-19, transmise par Alexandre.
+**Séquencement proposé**, pas six jalons validés ou terminés. Priorité actuelle
+donnée par Alexandre au rôle product builder ; elle ne vaut pas validation des
+prérequis de la roadmap.
+
+| Étape (libellé Notion) | Correspondance avec les travaux inspectés |
+|---|---|
+| PB-01 — modèle du dossier produit et traçabilité besoin → source → décision → exigence | **Partiellement couvert** par `@jarvis/project-briefs` (`fc92fab`) : dossier persistant, faits / hypothèses / décisions (`proposed` → `validated` / `obsolete`) / questions séparés, identifiants stables, compteur de révision. **Absents du modèle** (`project-brief.ts`) : entité « besoin » ; entité ou champ « source » (aucune provenance par élément, les faits sont seulement « rapportés par l'utilisateur ») ; entité « exigence » ; tout lien entre éléments (besoin → source, source → décision, décision → exigence, décision → faits / hypothèses, réponse → fait) ; auteur et date de validation d'une décision ; historique des changements au-delà du compteur. |
+| PB-02 — entretien guidé, extraction documentaire et détection des contradictions | **Partiellement couvert** par `project interview` (`a92cca3`) : entretien guidé à règle fixe, confirmation explicite, refus `already_answered`. Extraction documentaire et détection des contradictions **non démontrées**. |
+| PB-03 — comparaison des solutions et génération du cahier des charges | Non démontré dans les travaux inspectés. |
+| PB-04 — évaluation V1 avec dossiers de référence et revue humaine | Non démontré dans les travaux inspectés. |
+| PB-05 — maquettes, backlog et gestion des changements après validation V1 | Non démontré dans les travaux inspectés. |
+| PB-06 — construction assistée et validation du produit après maîtrise des permissions, outils et preuves | Non démontré dans les travaux inspectés. |
+
+« Non démontré » signifie seulement qu'aucune preuve n'apparaît dans les travaux
+inspectés (`@jarvis/project-briefs`, `apps/desktop project`) — pas une inexistence
+vérifiée sur tout le dépôt.
+
+**Critères V1 proposés dans Notion** (recopiés tels quels, aucun n'est déclaré
+atteint) :
+- exigence sourcée ou marquée hypothèse ;
+- contradictions et informations manquantes visibles ;
+- aucune fonctionnalité approuvée sans validation humaine ;
+- comparaison d'une automatisation lorsque le problème réel est une double saisie ;
+- impacts des changements de besoin visibles ;
+- absence de fuite entre dossiers ;
+- revue humaine de trois dossiers : complet, incomplet, contradictoire.
+- **Proposition de preuve utilisateur (non validée)** : entretien réel
+  `project interview boutique-asiatique` avec au moins une réponse confirmée,
+  puis `project export-markdown` daté. Reste une proposition tant qu'elle n'est
+  ni rattachée à un PB ni validée.
+- Absence de lien entre `chat` et les fiches : constat, aucune décision.
 
 ## Prérequis pour M8 — tous résolus
 
@@ -386,6 +454,23 @@ conservés, **NON résolus**, aucun n'est bloquant) :
   - envoi autonome à d'autres contacts ;
   - toute connexion effective, création de compte ou manipulation de
     secrets.
+
+  _Note 2026-10-19 : des composants techniques ont été livrés depuis (canal simulé,
+  réception durable SQLite, transport Graph inactif, mode réel opt-in borné à une
+  tentative d'envoi, script de provisionnement des secrets — voir « Composants
+  livrés depuis 2026-09-30 »). Cela ne clôt ni l'étude ni le MVP : ADR-0022/0023
+  restent `Proposed`, et l'**activation reste reportée**, comme les tests payants.
+  L'exclusion « manipulation de secrets » ci-dessus est le **périmètre historique**
+  du MVP ; il a ensuite été étendu par autorisation pour implémenter le
+  provisionnement et le mode opt-in. Cette extension ne vaut pas autorisation
+  générale future. Serveur et tunnel ont été lancés puis arrêtés ; aucun échange
+  réel n'est rapporté (rapport externe transmis par Alexandre, non archivé dans le
+  dépôt) ; activité reportée par Alexandre._
+
+- **Essais d'outils et de skills issus des veilles** : registre tenu dans la
+  Roadmap outillage Notion (https://app.notion.com/p/3ebba52b3dae81118b91f7b97afc278c) — objectif,
+  phase, protocole, coût, réussite, statut, source. Non dupliqué ici ; aucune
+  entrée n'est adoptée ou planifiée du seul fait d'y figurer.
 
 Ces pistes sont mentionnées dans `PROJECT_STATE.md` comme décisions
 ouvertes ; aucune n'est priorisée par rapport aux autres à ce stade. La

@@ -1,6 +1,19 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-09-26 — **domaine juridique : LEGAL-04.1 (Fact & Case
+_Dernière mise à jour : 2026-10-19 — **synchronisation documentaire jusqu'au checkpoint
+`a92cca3`** (publié, `main` = `origin/main`). Ajout des composants livrés depuis le
+2026-09-30 (voir « Composants livrés depuis 2026-09-30 ») : Légifrance CLI et
+provisionnement, banc d'interfaces d'outils, canal WhatsApp (simulé par défaut, mode
+réel opt-in : serveur et tunnel lancés puis arrêtés, aucun échange réel rapporté), chat local sans outils, fiches projet /
+export / entretien interactif. Ce sont des **composants**, pas des jalons achevés.
+Étapes Product Builder PB-01 à PB-06 (Notion, séquencement proposé) : PB-01 et PB-02
+partiellement couverts, PB-03 à PB-06 non démontrés (`MASTER_BACKLOG.md` →
+« Product Builder »). Suite complète **historique** : 3111 tests /
+181 fichiers (rapportée, non rejouée ici) ; rejoué le 2026-10-19 à la clôture de
+l'entretien : 91 tests / 11 fichiers, `tsc --noEmit`, ESLint, hooks pre-commit, essai
+CLI fictif. Rien n'est validé en production._
+
+_Mise à jour précédente (2026-09-26, état **historique**) — **domaine juridique : LEGAL-04.1 (Fact & Case
 Engine, premier jalon) implémentée et validée pour commit.** Nouveau package
 `@jarvis/legal-case-engine` (dépendance runtime unique : `@jarvis/legal-core`, **non
 modifié**), livré dans un commit dédié (`feat(legal): add legal case engine`) ; son état
@@ -145,6 +158,10 @@ apps/api                → @jarvis/core, @jarvis/llm, @jarvis/tools, fastify
 apps/desktop            → @jarvis/connectors, @jarvis/legal-research, @jarvis/legifrance-client
                            (depuis `legal-search`, lecture seule — voir « Domaine juridique »
                            et `apps/desktop` ci-dessous)
+                           + @jarvis/core, @jarvis/llm (`chat`, `370159e`), @jarvis/project-briefs
+                           (`project`, `fc92fab`), @jarvis/classification, @jarvis/inbox
+apps/whatsapp-channel   → @jarvis/core, @jarvis/connectors, fastify (Node ≥ 24.20.0)
+@jarvis/project-briefs  (aucune dépendance interne ; feuille)
 
 Domaine juridique (LEGAL-01 → Content Exposure ; `legal-core` versionné depuis `85e7e6e`, le reste depuis `979fa19` — publié sur `origin/main`) :
 @jarvis/legal-core      (aucune dépendance interne ; feuille imposée par ESLint)
@@ -187,8 +204,10 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/legal-research` | `LegifranceSourceProvider`/mapping (LEGAL-02B.3) ; types et ports du Research Engine (LEGAL-03A) ; `LegifranceSearchAdapter`, `LegifranceRetrievalAdapter`, `ResearchEngine` borné (LEGAL-03B) ; `VersionResolver` pur et son intégration au moteur (ADR-0018) ; récupération bornée de la version résolue, `resolvedRetrieval` (ADR-0019) ; projection pure `projectCitations` ResearchResult → sources + citations (ADR-0020) ; contenu transitoire vérifié `RetrievedContent` et contrat de hash `computeContentHash` (ADR-0021) | versionné (`979fa19`, publié sur `origin/main`) ; dépend de `@jarvis/core` + `@jarvis/legal-core` uniquement ; n'importe ni `connectors` ni `legifrance-client` (ESLint + test) ; **consommé par `apps/desktop`** (`legal-search`, lecture seule) — `projectCitations`/`attachSourcesAndCitations`/`@jarvis/legal-case-store` restent non câblés (aucune écriture de dossier) |
 | `@jarvis/legal-case-engine` | Moteur de faits et de dossiers (LEGAL-04.1) : `addOpenQuestion`, `recordReportedFact`, `findEquivalentFacts`, `LegalCaseEngineError`, contexte et horloge injectés (`systemClock` explicite) | commit dédié (LEGAL-04.1) ; dépend **uniquement** de `@jarvis/legal-core` (ESLint + tests) ; pas de réseau, de persistance, de LLM ni d'horloge cachée ; aucune application ne le consomme |
 | `@jarvis/legifrance-client` | Client PISTE/Légifrance (LEGAL-02B.1) : configuration sandbox/production, OAuth `client_credentials`, `LegifranceHttpClient`, erreurs typées | versionné (`979fa19`, publié sur `origin/main`) ; feuille (aucune dépendance `@jarvis/*`, ESLint + test) ; résolution des credentials via `SecretStore` déplacée dans `@jarvis/connectors` (`resolveLegifranceCredentials`, cycle de packages corrigé) |
+| `@jarvis/project-briefs` | Fiches projet persistantes (faits / hypothèses / décisions / questions, identifiants stables), verrou coopératif par fichier, `pickNextQuestion` (règle fixe), rendu Markdown pur | `fc92fab`, `be0d670`, `a92cca3` ; feuille ; aucun LLM ; consommé par `apps/desktop` (`project`) |
+| `apps/whatsapp-channel` | Canal conversationnel WhatsApp local (ADR-0022/0023, `Proposed`) : simulé par défaut, réception durable SQLite, transport Graph API, mode réel opt-in borné | `70a4c3b` → `adca17b` ; `SimulatedLlmProvider`, `AgentLoop` sans `ToolExecutor` ; **activation reportée** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
-| `apps/desktop` | Client CLI (`connect`, `read`, `read-natural`, `inbox`, `prepare-reply`, `send`, `disconnect`, `legal-search`) | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`). **`legal-search`** (premier parcours Légifrance, lecture seule) : `--asOf <YYYY-MM-DD> "<texte>"` → `legifranceConnector` (`legifrance.search`/`legifrance.get_article`, seuls Tools autorisés, `default: 'deny'`) → `ToolExecutor` → `LegifranceSearchAdapter`/`LegifranceRetrievalAdapter` → `ResearchEngine` (budget fixe : 1 page, 5 candidats, 5 récupérations) ; présente candidats/rejets/lacunes, jamais le contenu transitoire (ADR-0021), jamais une conclusion de droit applicable ; aucun Tool `execute`, aucun `AgentLoop`, aucune écriture de dossier (`projectCitations`/`attachSourcesAndCitations`/`@jarvis/legal-case-store` non appelés). Prérequis : `SecretStore` peuplé (`legifrance.<sandbox\|production>.clientId`/`clientSecret`, aucun script de provisionnement fourni) ; `LEGIFRANCE_ENVIRONMENT` optionnelle (défaut `sandbox`, valeur reconnue sinon rejet). N'exige ni configuration Gmail ni `ANTHROPIC_API_KEY`. Testé exclusivement avec doubles (`fetchFn` mocké) — **aucun test contre la Sandbox PISTE réelle n'a été exécuté**. |
+| `apps/desktop` | Client CLI (`connect`, `read`, `read-natural`, `inbox`, `prepare-reply`, `send`, `disconnect`, `legal-search`, `chat`, `project`) — `chat` et `project` : voir « Composants livrés depuis 2026-09-30 » | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`). **`legal-search`** (premier parcours Légifrance, lecture seule) : `--asOf <YYYY-MM-DD> "<texte>"` → `legifranceConnector` (`legifrance.search`/`legifrance.get_article`, seuls Tools autorisés, `default: 'deny'`) → `ToolExecutor` → `LegifranceSearchAdapter`/`LegifranceRetrievalAdapter` → `ResearchEngine` (budget fixe : 1 page, 5 candidats, 5 récupérations) ; présente candidats/rejets/lacunes, jamais le contenu transitoire (ADR-0021), jamais une conclusion de droit applicable ; aucun Tool `execute`, aucun `AgentLoop`, aucune écriture de dossier (`projectCitations`/`attachSourcesAndCitations`/`@jarvis/legal-case-store` non appelés). Prérequis : `SecretStore` peuplé (`legifrance.<sandbox\|production>.clientId`/`clientSecret` ; script de provisionnement interactif fourni depuis `682455c`, erreurs assainies par `adca17b`) ; `LEGIFRANCE_ENVIRONMENT` optionnelle (défaut `sandbox`, valeur reconnue sinon rejet). N'exige ni configuration Gmail ni `ANTHROPIC_API_KEY`. Testé exclusivement avec doubles (`fetchFn` mocké) — **aucun test automatisé contre la Sandbox PISTE réelle n'a été exécuté** ; un essai manuel en Sandbox (2026-10-02) est rapporté hors dépôt (voir « Composants livrés depuis 2026-09-30 »). |
 
 ## Ce qui fonctionne
 
@@ -653,6 +672,53 @@ Foundation` (flux de connexion initiale, stockage sécurisé du refresh
 token, modèle de confirmation utilisateur) sont **toutes tranchées et
 implémentées par M8** (voir section dédiée ci-dessus). Point encore ouvert,
 non prioritaire : `apps/api` reste sans aucun outil connecteur branché.
+
+## Composants livrés depuis 2026-09-30 (après LEGAL-04.1)
+
+Chaque entrée est un **composant** livré (code versionné et testé), pas un jalon
+achevé. Pour chacune : validation simulée, usage réel documenté, chantier global
+restant ouvert.
+
+- **Légifrance CLI** — `legal-search` lecture seule (`17e5297`), codes de sortie
+  dérivés du statut (`b58780a`), présentation temporelle clarifiée (`f6c1ea5`),
+  provisionnement interactif des secrets (`682455c`), erreurs de provisionnement
+  assainies (`adca17b`). Validation simulée : doubles uniquement. Usage réel :
+  rapport externe transmis par Alexandre (essai Sandbox du 2026-10-02 : cinq résultats partiels, puis collecte ciblée de deux articles pour expliquer `invalid_interval`) — preuve non archivée dans le dépôt. Chantier : domaine juridique, suite non planifiée.
+- **Banc d'interfaces d'outils** — `prototypes/tool-interface-bench/` (`7719baa`),
+  hors workspaces : 3 représentations d'interface × 20 missions synthétiques sur le
+  chemin réel `ToolRegistry` → `PermissionManager` → `ToolExecutor` → `AgentLoop`,
+  piloté par `ScriptedLlmProvider`. Runner réel `run-live.ts` manuel, payant, jamais
+  déclenché par `npm test` ; aucun résultat de pilote réel documenté. Chantier
+  rattaché : aucun dans ces documents (essais d'outils : registre Notion, voir
+  `MASTER_ROADMAP.md`).
+- **Canal WhatsApp** (`apps/whatsapp-channel`) — prototype webhook isolé (`70a4c3b`),
+  canal simulé local (`1d2c9f7`), transport Graph API inactif (`5e48873`),
+  réception durable SQLite (`c50039a`, ADR-0023), alignement Node 24.20.0
+  (`5dae0f2`, `e7cd02e`), mode réel opt-in (`WHATSAPP_CHANNEL_MODE=real`) avec budget
+  durable d'une tentative d'envoi et provisionnement des secrets (`5e5453e`),
+  couverture et assainissement du provisionnement (`880553a`, `5508767`, `adca17b`).
+  Validation simulée : défaut simulé, `SimulatedLlmProvider`, tests SQLite
+  multi-process. Usage réel : provisionnement et mode opt-in implémentés ; serveur et tunnel lancés puis arrêtés ; aucun échange réel rapporté — rapport externe transmis par Alexandre, non archivé dans le dépôt ; activité reportée par Alexandre. Chantier : **reporté** ; ADR-0022 et
+  ADR-0023 restent `Proposed`.
+- **Chat local** (`apps/desktop chat`) — mono-tour sans outils (`370159e`), puis
+  historique multi-tour en RAM borné (20 messages, 8000 caractères, `/reset`) via le
+  champ additif `history` d'`AgentLoop` (`1bfd518`). `AgentLoop` construit sans
+  `ToolExecutor`. Validation simulée : `LlmProvider` factice. Usage réel : non
+  documenté dans le dépôt (chaque message = appel Anthropic réel potentiellement
+  facturé). Aucun outil branché ; aucune suite décidée dans ces documents.
+- **Fiches projet / Product Builder** — `@jarvis/project-briefs` et `project ...`
+  (`fc92fab`), export Markdown en instantané sans écrasement (`be0d670`), entretien
+  interactif à règle fixe avec confirmation explicite et refus `already_answered`
+  (`a92cca3`). Validation simulée : tests ciblés et essai CLI sur projet fictif
+  (2026-10-19). Usage réel (rapporté 2026-10-16) : fiche `boutique-asiatique`
+  révision 11 (5 faits, 5 questions ouvertes, aucune réponse) et un export ;
+  entretien réel non lancé. Chantier : étapes **PB-01 à PB-06** dans Notion
+  (https://app.notion.com/p/3f0ba52b3dae819898f6da141fb7e30b), séquencement proposé : PB-01 partiel
+  (pas de besoin, source, exigence ni liens de traçabilité dans le modèle), PB-02
+  partiel (pas d'extraction documentaire ni de détection des contradictions),
+  PB-03 à PB-06 non démontrés (`MASTER_BACKLOG.md` → « Product Builder »). Proposition de preuve
+  utilisateur **non validée** : entretien réel avec au moins une réponse confirmée,
+  suivi d'un export daté.
 
 ## Domaine juridique (LEGAL-00 → LegalCase v3)
 
@@ -1550,8 +1616,7 @@ Domaine juridique (état au 2026-09-26) :
   `LEGAL_SPECIFICATION`, roadmap, backlog). Publié sur `origin/main`.
 - `59cb8db` **Synchronisation post-push** (statuts « publié sur `origin/main` »).
   Publié sur `origin/main`.
-- **LEGAL-04.1** (commit dédié, message `feat(legal): add legal case engine`, hash non
-  figé dans ce document) : `packages/legal-case-engine/`, `eslint.config.js` (frontières),
+- **LEGAL-04.1** (commit dédié `8cdeb2e`, message `feat(legal): add legal case engine`) : `packages/legal-case-engine/`, `eslint.config.js` (frontières),
   `package-lock.json` (workspace) et les documents d'état. `packages/legal-core` inchangé.
 
 `AUDIT_STATE.md` reste **non suivi par git**, comme les documents de cadrage des

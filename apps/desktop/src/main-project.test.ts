@@ -157,4 +157,41 @@ describe('dispatch — project (câblage CLI)', () => {
       expect(shown).not.toContain('seconde réponse');
     },
   );
+
+  it(
+    'sources et justifications de bout en bout : liens affichés par show, justification ' +
+      'refusée après validation, sans mutation',
+    async () => {
+      const run = async (...argv: string[]): Promise<string> => {
+        const { output, readText } = collectingOutput();
+        await dispatch(['project', ...argv], INERT_DESKTOP_DEPS, { output });
+        return readText();
+      };
+
+      await run('create', 'p1', 'Projet');
+      await run('add-fact', 'p1', 'Retrait au comptoir prévu');
+      await run('add-source', 'p1', 'Échange oral fictif');
+      await run('link-source', 'p1', 'fact-1', 'src-1');
+      await run('add-decision', 'p1', 'Proposer le retrait');
+      const justified = await run('justify-decision', 'p1', 'dec-1', 'fact-1');
+      expect(process.exitCode).toBe(0);
+      expect(justified).toContain('[dec-1:proposed] Proposer le retrait {justifiée par : fact-1}');
+      expect(justified).toContain('[fact-1] Retrait au comptoir prévu {sources : src-1}');
+      expect(justified).toContain('Sources déclarées, non vérifiées (1)');
+
+      await run('validate-decision', 'p1', 'dec-1');
+      const before = readFileSync(join(dir, 'p1.json'), 'utf-8');
+      await run('add-fact', 'p1', 'Autre fait');
+      const afterFact = readFileSync(join(dir, 'p1.json'), 'utf-8');
+      const refused = await run('justify-decision', 'p1', 'dec-1', 'fact-2');
+      expect(refused).toContain('invalid_transition');
+      expect(process.exitCode).toBe(1);
+      expect(readFileSync(join(dir, 'p1.json'), 'utf-8')).toBe(afterFact);
+      expect(afterFact).not.toBe(before);
+
+      const unknown = await run('link-source', 'p1', 'fact-2', 'src-9');
+      expect(unknown).toContain('unknown_source');
+      expect(process.exitCode).toBe(1);
+    },
+  );
 });

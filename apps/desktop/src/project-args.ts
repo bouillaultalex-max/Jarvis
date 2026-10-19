@@ -21,8 +21,41 @@ export type ProjectInput =
   | { readonly op: 'add-decision'; readonly id: string; readonly text: string }
   | { readonly op: 'validate-decision'; readonly id: string; readonly decisionId: string }
   | { readonly op: 'obsolete-decision'; readonly id: string; readonly decisionId: string }
+  | { readonly op: 'add-source'; readonly id: string; readonly text: string }
+  | {
+      readonly op: 'link-source';
+      readonly id: string;
+      readonly item: ProjectItemRef;
+      readonly sourceId: string;
+    }
+  | {
+      readonly op: 'justify-decision';
+      readonly id: string;
+      readonly decisionId: string;
+      readonly item: ProjectItemRef;
+    }
   | { readonly op: 'next-question'; readonly id: string }
   | { readonly op: 'export-markdown'; readonly id: string; readonly outputPath: string };
+
+/** Miroir local d'`ItemRef` (`@jarvis/project-briefs`) — ce module ne fait que parser. */
+export interface ProjectItemRef {
+  readonly kind: 'fact' | 'hypothesis';
+  readonly id: string;
+}
+
+/**
+ * Côté CLI seulement, le type est déduit du préfixe produit par le store
+ * (`fact-…` / `hyp-…`) ; le modèle stocke ensuite une référence typée
+ * explicite, jamais un id nu.
+ */
+function parseItemRef(value: string | undefined): ProjectItemRef {
+  const id = requireArg(value, 'élément');
+  if (id.startsWith('fact-')) return { kind: 'fact', id };
+  if (id.startsWith('hyp-')) return { kind: 'hypothesis', id };
+  throw new Error(
+    `project : élément « ${id} » invalide — attendu un fait (fact-…) ou une hypothèse (hyp-…).`,
+  );
+}
 
 function requireArg(value: string | undefined, label: string): string {
   if (value === undefined || value.length === 0) {
@@ -103,6 +136,32 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
         decisionId: requireArg(rest[1], 'decision-id'),
       };
     }
+    case 'add-source': {
+      requireArity(rest, 2, 'usage : project add-source <id> "texte"');
+      return {
+        op: 'add-source',
+        id: requireArg(rest[0], 'id'),
+        text: requireArg(rest[1], 'texte'),
+      };
+    }
+    case 'link-source': {
+      requireArity(rest, 3, 'usage : project link-source <id> <fact-n|hyp-n> <source-id>');
+      return {
+        op: 'link-source',
+        id: requireArg(rest[0], 'id'),
+        item: parseItemRef(rest[1]),
+        sourceId: requireArg(rest[2], 'source-id'),
+      };
+    }
+    case 'justify-decision': {
+      requireArity(rest, 3, 'usage : project justify-decision <id> <decision-id> <fact-n|hyp-n>');
+      return {
+        op: 'justify-decision',
+        id: requireArg(rest[0], 'id'),
+        decisionId: requireArg(rest[1], 'decision-id'),
+        item: parseItemRef(rest[2]),
+      };
+    }
     case 'next-question': {
       requireArity(rest, 1, 'usage : project next-question <id>');
       return { op: 'next-question', id: requireArg(rest[0], 'id') };
@@ -125,7 +184,8 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
       throw new Error(
         `project : sous-commande inconnue « ${sub ?? ''} » — attendu l'une de : create, show, ` +
           'add-fact, add-hypothesis, add-question, answer-question, add-decision, ' +
-          'validate-decision, obsolete-decision, next-question, export-markdown, interview.',
+          'validate-decision, obsolete-decision, add-source, link-source, justify-decision, ' +
+          'next-question, export-markdown, interview.',
       );
   }
 }

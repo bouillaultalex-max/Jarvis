@@ -35,6 +35,40 @@ describe('parseProjectArgs', () => {
     expect(parseProjectArgs(['interview', 'p1'])).toEqual({ op: 'interview', id: 'p1' });
   });
 
+  it('sources et justifications : référence typée déduite du préfixe côté CLI', () => {
+    expect(parseProjectArgs(['add-source', 'p1', 'Échange oral'])).toEqual({
+      op: 'add-source',
+      id: 'p1',
+      text: 'Échange oral',
+    });
+    expect(parseProjectArgs(['link-source', 'p1', 'fact-2', 'src-1'])).toEqual({
+      op: 'link-source',
+      id: 'p1',
+      item: { kind: 'fact', id: 'fact-2' },
+      sourceId: 'src-1',
+    });
+    expect(parseProjectArgs(['link-source', 'p1', 'hyp-1', 'src-1'])).toEqual({
+      op: 'link-source',
+      id: 'p1',
+      item: { kind: 'hypothesis', id: 'hyp-1' },
+      sourceId: 'src-1',
+    });
+    expect(parseProjectArgs(['justify-decision', 'p1', 'dec-1', 'hyp-3'])).toEqual({
+      op: 'justify-decision',
+      id: 'p1',
+      decisionId: 'dec-1',
+      item: { kind: 'hypothesis', id: 'hyp-3' },
+    });
+  });
+
+  it('sources et justifications : élément non typable ou arité incorrecte rejetés', () => {
+    expect(() => parseProjectArgs(['link-source', 'p1', 'q-1', 'src-1'])).toThrow(/fact-|hyp-/);
+    expect(() => parseProjectArgs(['justify-decision', 'p1', 'dec-1', 'src-1'])).toThrow();
+    expect(() => parseProjectArgs(['link-source', 'p1', 'fact-1'])).toThrow();
+    expect(() => parseProjectArgs(['add-source', 'p1'])).toThrow();
+    expect(() => parseProjectArgs(['justify-decision', 'p1', 'dec-1', 'fact-1', 'trop'])).toThrow();
+  });
+
   it('export-markdown exige le drapeau --output', () => {
     expect(() => parseProjectArgs(['export-markdown', 'p1', '/tmp/x.md'])).toThrow(/--output/);
     expect(() => parseProjectArgs(['export-markdown', 'p1'])).toThrow(/--output/);

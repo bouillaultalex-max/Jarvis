@@ -1,7 +1,9 @@
 import {
   ProjectBriefStoreError,
+  describeDecisionBasis,
   type FileProjectBriefStore,
   type ProjectBrief,
+  type SourcedItem,
   pickNextQuestion,
   type NextQuestionResult,
 } from '@jarvis/project-briefs';
@@ -80,6 +82,20 @@ export function runProjectFlow(
           op: input.op,
           brief: deps.store.obsoleteDecision(input.id, input.decisionId),
         };
+      case 'add-source':
+        return { status: 'ok', op: input.op, brief: deps.store.addSource(input.id, input.text) };
+      case 'link-source':
+        return {
+          status: 'ok',
+          op: input.op,
+          brief: deps.store.linkSource(input.id, input.item, input.sourceId),
+        };
+      case 'justify-decision':
+        return {
+          status: 'ok',
+          op: input.op,
+          brief: deps.store.justifyDecision(input.id, input.decisionId, input.item),
+        };
       case 'next-question': {
         const brief = deps.store.get(input.id);
         if (brief === undefined) {
@@ -96,15 +112,28 @@ export function runProjectFlow(
   }
 }
 
+function sourcedItemLabel(item: SourcedItem): string {
+  const sources =
+    item.sourceIds === undefined
+      ? 'source non renseignée'
+      : `sources : ${item.sourceIds.join(', ')}`;
+  return `[${item.id}] ${item.text} {${sources}}`;
+}
+
 function briefSummaryLines(brief: ProjectBrief): string[] {
   return [
     `Projet « ${brief.id} » — ${brief.name} (révision ${brief.revision}, mis à jour ${brief.updatedAt}).`,
-    `Faits (${brief.facts.length}) : ${brief.facts.map((f) => `[${f.id}] ${f.text}`).join(' | ') || '(aucun)'}`,
+    `Sources déclarées, non vérifiées (${brief.sources.length}) : ${
+      brief.sources.map((s) => `[${s.id}] ${s.text}`).join(' | ') || '(aucune)'
+    }`,
+    `Faits (${brief.facts.length}) : ${brief.facts.map(sourcedItemLabel).join(' | ') || '(aucun)'}`,
     `Hypothèses (${brief.hypotheses.length}) : ${
-      brief.hypotheses.map((h) => `[${h.id}] ${h.text}`).join(' | ') || '(aucune)'
+      brief.hypotheses.map(sourcedItemLabel).join(' | ') || '(aucune)'
     }`,
     `Décisions (${brief.decisions.length}) : ${
-      brief.decisions.map((d) => `[${d.id}:${d.status}] ${d.text}`).join(' | ') || '(aucune)'
+      brief.decisions
+        .map((d) => `[${d.id}:${d.status}] ${d.text} {${describeDecisionBasis(d)}}`)
+        .join(' | ') || '(aucune)'
     }`,
     `Questions (${brief.questions.length}) : ${
       brief.questions

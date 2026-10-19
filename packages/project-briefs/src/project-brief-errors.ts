@@ -5,7 +5,15 @@
  * importé : packages feuilles indépendants.
  */
 export type ProjectBriefFileErrorReason =
-  'empty_file' | 'invalid_json' | 'unknown_version' | 'invalid_structure' | 'duplicate_id';
+  | 'empty_file'
+  | 'invalid_json'
+  | 'unknown_version'
+  | 'invalid_structure'
+  | 'duplicate_id'
+  /** Référence (`sourceIds`/`basis`) vers un élément absent de la fiche. */
+  | 'dangling_reference'
+  /** Même référence répétée dans une liste de liens. */
+  | 'duplicate_reference';
 
 export class ProjectBriefFileError extends Error {
   constructor(
@@ -32,7 +40,10 @@ export type ProjectBriefStoreErrorReason =
   | 'unknown_question'
   | 'unknown_decision'
   | 'invalid_transition'
-  | 'already_answered';
+  | 'already_answered'
+  | 'unknown_source'
+  | 'unknown_item'
+  | 'already_linked';
 
 export class ProjectBriefStoreError extends Error {
   constructor(

@@ -9,9 +9,11 @@
  */
 export {
   CURRENT_PROJECT_BRIEF_FILE_VERSION,
+  LEGACY_PROJECT_BRIEF_FILE_VERSION,
   MAX_ANSWER_CHARS,
   MAX_ID_CHARS,
   MAX_ITEM_CHARS,
+  MAX_LINKS_PER_ITEM,
   MAX_LIST_ITEMS,
   MAX_NAME_CHARS,
   PROJECT_ID_PATTERN,
@@ -22,9 +24,13 @@ export {
 export type {
   Decision,
   DecisionStatus,
+  ItemRef,
   ProjectBrief,
+  ProjectBriefFileVersion,
   Question,
   QuestionStatus,
+  Source,
+  SourcedItem,
   TextItem,
 } from './project-brief.js';
 
@@ -44,4 +50,8 @@ export type { FileProjectBriefStoreOptions } from './project-brief-file-store.js
 export { pickNextQuestion } from './next-question.js';
 export type { NextQuestionResult } from './next-question.js';
 
-export { escapeMarkdownText, renderProjectBriefMarkdown } from './project-brief-markdown.js';
+export {
+  describeDecisionBasis,
+  escapeMarkdownText,
+  renderProjectBriefMarkdown,
+} from './project-brief-markdown.js';

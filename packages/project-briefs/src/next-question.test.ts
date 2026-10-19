@@ -9,6 +9,7 @@ function brief(questions: ProjectBrief['questions']): ProjectBrief {
     name: 'Projet',
     formatVersion: 1,
     revision: 1,
+    sources: [],
     facts: [],
     hypotheses: [],
     decisions: [],

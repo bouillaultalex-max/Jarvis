@@ -12,14 +12,19 @@ import {
 import { dirname, join } from 'node:path';
 
 import {
+  CURRENT_PROJECT_BRIEF_FILE_VERSION,
+  LEGACY_PROJECT_BRIEF_FILE_VERSION,
   MAX_ANSWER_CHARS,
   MAX_ID_CHARS,
   MAX_ITEM_CHARS,
+  MAX_LINKS_PER_ITEM,
   MAX_LIST_ITEMS,
   MAX_NAME_CHARS,
   type Decision,
+  type ItemRef,
   type ProjectBrief,
   type Question,
+  type SourcedItem,
   isBoundedNonEmptyText,
   isValidProjectId,
   nextStableId,
@@ -73,8 +78,9 @@ export class FileProjectBriefStore {
       return {
         id,
         name,
-        formatVersion: 1,
+        formatVersion: LEGACY_PROJECT_BRIEF_FILE_VERSION,
         revision: 1,
+        sources: [],
         facts: [],
         hypotheses: [],
         decisions: [],
@@ -181,7 +187,107 @@ export class FileProjectBriefStore {
     });
   }
 
+  /**
+   * Source **déclarée** par l'utilisateur — jamais vérifiée. Première notion
+   * v2 : la fiche passe en `formatVersion: 2` et n'en redescend jamais.
+   */
+  addSource(id: string, text: string): ProjectBrief {
+    this.assertBoundedText(text, MAX_ITEM_CHARS, 'text');
+    return this.mutate(id, (current) => {
+      const brief = this.requireExisting(id, current);
+      this.assertListRoom(brief.sources, 'sources');
+      const item = { id: nextStableId(brief.sources, 'src'), text };
+      return this.touch(asV2({ ...brief, sources: [...brief.sources, item] }));
+    });
+  }
+
+  /**
+   * Relie un fait ou une hypothèse à une source existante. Reste permis
+   * après validation d'une décision qui s'appuie sur cet élément : ce lien
+   * enrichit la fiche, il ne constitue pas un instantané de justification.
+   */
+  linkSource(id: string, ref: ItemRef, sourceId: string): ProjectBrief {
+    return this.mutate(id, (current) => {
+      const brief = this.requireExisting(id, current);
+      const item = this.requireItem(brief, ref);
+      if (!brief.sources.some((s) => s.id === sourceId)) {
+        throw new ProjectBriefStoreError('unknown_source', `Source « ${sourceId} » introuvable.`);
+      }
+      const sourceIds = item.sourceIds ?? [];
+      if (sourceIds.includes(sourceId)) {
+        throw new ProjectBriefStoreError(
+          'already_linked',
+          `« ${ref.id} » est déjà relié à la source « ${sourceId} ».`,
+        );
+      }
+      this.assertLinkRoom(sourceIds, ref.id);
+      const updated: SourcedItem = { ...item, sourceIds: [...sourceIds, sourceId] };
+      const replace = (items: readonly SourcedItem[]): SourcedItem[] =>
+        items.map((i) => (i.id === ref.id ? updated : i));
+      return this.touch(
+        asV2(
+          ref.kind === 'fact'
+            ? { ...brief, facts: replace(brief.facts) }
+            : { ...brief, hypotheses: replace(brief.hypotheses) },
+        ),
+      );
+    });
+  }
+
+  /**
+   * Ajoute un fait ou une hypothèse à la justification (`basis`) d'une
+   * décision **`proposed`** uniquement — refusé (`invalid_transition`) dès
+   * qu'elle est validée ou obsolète. Ne change jamais le statut de la
+   * décision : justifier n'est pas valider.
+   */
+  justifyDecision(id: string, decisionId: string, ref: ItemRef): ProjectBrief {
+    return this.mutate(id, (current) => {
+      const brief = this.requireExisting(id, current);
+      const decision = this.requireDecision(brief, decisionId);
+      if (decision.status !== 'proposed') {
+        throw new ProjectBriefStoreError(
+          'invalid_transition',
+          `Décision « ${decisionId} » ${decision.status === 'validated' ? 'validée' : 'obsolète'} : ` +
+            'sa justification ne peut plus être modifiée.',
+        );
+      }
+      this.requireItem(brief, ref);
+      const basis = decision.basis ?? [];
+      if (basis.some((r) => r.kind === ref.kind && r.id === ref.id)) {
+        throw new ProjectBriefStoreError(
+          'already_linked',
+          `« ${ref.id} » justifie déjà la décision « ${decisionId} ».`,
+        );
+      }
+      this.assertLinkRoom(basis, decisionId);
+      const updated: Decision = { ...decision, basis: [...basis, { kind: ref.kind, id: ref.id }] };
+      const decisions = brief.decisions.map((d) => (d.id === decisionId ? updated : d));
+      return this.touch(asV2({ ...brief, decisions }));
+    });
+  }
+
   // ── aides internes ─────────────────────────────────────────────────────
+
+  private requireItem(brief: ProjectBrief, ref: ItemRef): SourcedItem {
+    const items = ref.kind === 'fact' ? brief.facts : brief.hypotheses;
+    const item = items.find((i) => i.id === ref.id);
+    if (item === undefined) {
+      throw new ProjectBriefStoreError(
+        'unknown_item',
+        `${ref.kind === 'fact' ? 'Fait' : 'Hypothèse'} « ${ref.id} » introuvable.`,
+      );
+    }
+    return item;
+  }
+
+  private assertLinkRoom(links: readonly unknown[], itemId: string): void {
+    if (links.length >= MAX_LINKS_PER_ITEM) {
+      throw new ProjectBriefStoreError(
+        'invalid_input',
+        `Limite de liens atteinte pour « ${itemId} » (${MAX_LINKS_PER_ITEM} maximum).`,
+      );
+    }
+  }
 
   private requireDecision(brief: ProjectBrief, decisionId: string): Decision {
     const decision = brief.decisions.find((d) => d.id === decisionId);
@@ -332,4 +438,9 @@ export class FileProjectBriefStore {
 
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
+}
+
+/** Passage v1 → v2 à la première notion v2 ; idempotent, jamais l'inverse. */
+function asV2(brief: ProjectBrief): ProjectBrief {
+  return { ...brief, formatVersion: CURRENT_PROJECT_BRIEF_FILE_VERSION };
 }

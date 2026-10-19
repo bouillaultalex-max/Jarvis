@@ -10,9 +10,23 @@
  * explicitement incertaine ; une décision a un cycle de vie
  * (proposée → validée, ou → obsolète) ; une question a un cycle de vie
  * séparé (ouverte → résolue, avec réponse).
+ *
+ * Format v2 (PB-01, partiel) : **sources déclarées** par l'utilisateur,
+ * liens fait/hypothèse → sources (`sourceIds`) et justifications décision →
+ * faits/hypothèses (`basis`). Une source déclarée n'est **jamais vérifiée**
+ * par Jarvis ; une justification relie une décision à des éléments
+ * déclarés, elle ne **prouve pas** la validité de la décision. `basis` est
+ * figée dès qu'une décision n'est plus `proposed`, mais les sources
+ * attachées aux faits/hypothèses restent enrichissables ensuite : ce modèle
+ * n'est ni un instantané historique de justification, ni une preuve
+ * immuable de ce que l'utilisateur a validé.
  */
 
-export const CURRENT_PROJECT_BRIEF_FILE_VERSION = 1;
+/** Format historique (sans sources ni liens) — toujours lu, conservé tant qu'aucune notion v2 n'est utilisée. */
+export const LEGACY_PROJECT_BRIEF_FILE_VERSION = 1;
+export const CURRENT_PROJECT_BRIEF_FILE_VERSION = 2;
+export type ProjectBriefFileVersion =
+  typeof LEGACY_PROJECT_BRIEF_FILE_VERSION | typeof CURRENT_PROJECT_BRIEF_FILE_VERSION;
 
 export const MAX_ID_CHARS = 64;
 export const MAX_NAME_CHARS = 200;
@@ -20,6 +34,8 @@ export const MAX_ITEM_CHARS = 1000;
 export const MAX_ANSWER_CHARS = 2000;
 /** Par catégorie (facts / hypotheses / decisions / questions), indépendamment. */
 export const MAX_LIST_ITEMS = 50;
+/** Par élément : `sourceIds` d'un fait/d'une hypothèse, `basis` d'une décision. */
+export const MAX_LINKS_PER_ITEM = 20;
 
 /** Identifiant restreint, vérifié avant tout accès disque (voir le store). */
 export const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -33,8 +49,24 @@ export interface TextItem {
   readonly text: string;
 }
 
+/** Source déclarée par l'utilisateur (ex. « échange oral du 16/10 ») — jamais vérifiée. */
+export type Source = TextItem;
+
+/** Fait ou hypothèse. `sourceIds` absent = source non renseignée — jamais déduite ni inventée. */
+export interface SourcedItem extends TextItem {
+  readonly sourceIds?: readonly string[];
+}
+
+/** Référence typée explicite — le type n'est jamais déduit du préfixe de l'id. */
+export interface ItemRef {
+  readonly kind: 'fact' | 'hypothesis';
+  readonly id: string;
+}
+
 export interface Decision extends TextItem {
   readonly status: DecisionStatus;
+  /** Absent = aucune justification enregistrée. Modifiable seulement tant que `proposed`. */
+  readonly basis?: readonly ItemRef[];
 }
 
 export interface Question extends TextItem {
@@ -46,7 +78,11 @@ export interface Question extends TextItem {
 export interface ProjectBrief {
   readonly id: string;
   readonly name: string;
-  readonly formatVersion: typeof CURRENT_PROJECT_BRIEF_FILE_VERSION;
+  /**
+   * Version du fichier lu ou à écrire. Passe à 2 dès qu'une notion v2 est
+   * utilisée (source, lien, justification) ; ne redescend jamais à 1.
+   */
+  readonly formatVersion: ProjectBriefFileVersion;
   /**
    * Compteur de révision : incrémenté à chaque mutation, toujours relu
    * depuis le disque (sous verrou, voir `project-brief-lock.ts`) avant
@@ -55,9 +91,11 @@ export interface ProjectBrief {
    * lui-même (voir le store pour le mécanisme réel).
    */
   readonly revision: number;
+  /** Toujours vide pour un fichier v1 (jamais écrite en v1). */
+  readonly sources: readonly Source[];
   /** Rapportés par l'utilisateur — jamais présentés comme vérifiés de l'extérieur. */
-  readonly facts: readonly TextItem[];
-  readonly hypotheses: readonly TextItem[];
+  readonly facts: readonly SourcedItem[];
+  readonly hypotheses: readonly SourcedItem[];
   readonly decisions: readonly Decision[];
   readonly questions: readonly Question[];
   readonly createdAt: string;

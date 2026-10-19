@@ -110,6 +110,9 @@ apps/desktop project answer-question boutique-asiatique <question-id> "réponse"
 apps/desktop project add-decision boutique-asiatique "texte"
 apps/desktop project validate-decision boutique-asiatique <decision-id>
 apps/desktop project obsolete-decision boutique-asiatique <decision-id>
+apps/desktop project add-source boutique-asiatique "texte"
+apps/desktop project link-source boutique-asiatique <fact-n|hyp-n> <source-id>
+apps/desktop project justify-decision boutique-asiatique <decision-id> <fact-n|hyp-n>
 apps/desktop project next-question boutique-asiatique
 apps/desktop project export-markdown boutique-asiatique --output chemin.md
 apps/desktop project interview boutique-asiatique
@@ -153,6 +156,31 @@ question entre son affichage et sa confirmation (`already_answered`), le
 conflit est signalé explicitement et la réponse abandonnée n'est jamais
 resoumise automatiquement — seule une nouvelle sélection, après relecture,
 suit.
+
+**Sources déclarées et justifications (PB-01, partiel).** `add-source`
+enregistre une source **déclarée** par l'utilisateur (`src-n`, texte libre —
+ex. « échange oral du 16/10 ») : Jarvis ne la vérifie jamais. `link-source`
+relie un fait ou une hypothèse à une source existante ; `justify-decision`
+relie une décision **`proposed`** à un fait ou une hypothèse — refusé
+(`invalid_transition`) dès que la décision est validée ou obsolète, et
+justifier ne valide jamais. Références vérifiées sous le verrou
+(`unknown_source`, `unknown_item`, `unknown_decision`), doublons refusés
+(`already_linked`), au plus 20 liens par élément ; un refus n'écrit rien.
+`show` et l'export affichent « source non renseignée », « aucune
+justification enregistrée » ou « validée sans justification enregistrée »
+plutôt que de rien déduire. Une justification relie une décision à des
+éléments déclarés : elle ne prouve pas sa validité. Les sources d'un fait
+restent enrichissables après validation d'une décision qui s'y appuie : ce
+n'est ni un instantané historique de justification, ni une preuve immuable de
+ce qui a été validé. Pas d'entités « besoin » ni « exigence », pas de
+suppression de lien, pas d'historique. `interview` est inchangé : ses
+réponses ne sont pas sourcées automatiquement.
+
+Compatibilité : un fichier **v1** (format historique) est lu tel quel et
+jamais réécrit par une lecture ; une mutation du modèle historique le laisse
+en v1. La première source ou justification le fait passer en **v2**, qui ne
+redescend jamais en v1. Aucune provenance n'est attribuée aux éléments
+existants.
 
 Concurrence entre deux commandes sur le même projet : verrou coopératif par
 fichier (création atomique `O_CREAT|O_EXCL`) — la seconde commande est

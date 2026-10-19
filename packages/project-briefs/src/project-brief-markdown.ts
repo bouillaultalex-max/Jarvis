@@ -1,5 +1,5 @@
 import { pickNextQuestion } from './next-question.js';
-import type { Decision, ProjectBrief, Question, TextItem } from './project-brief.js';
+import type { Decision, ProjectBrief, Question, SourcedItem, TextItem } from './project-brief.js';
 
 /**
  * Rendu Markdown **pur et déterministe** d'une fiche projet — aucune I/O
@@ -29,18 +29,59 @@ export function escapeMarkdownText(text: string): string {
   return flattened.replace(/[\\`*_{}[\]()#+\-.!|>~<]/g, (ch) => `\\${ch}`);
 }
 
+/**
+ * Identifiants rendus échappés comme tout texte : le format JSON n'exige
+ * qu'une chaîne non vide, un fichier accepté peut donc en porter un contenant
+ * du Markdown/HTML/wikilien. Seul le rendu change, jamais la valeur stockée.
+ */
+const esc = escapeMarkdownText;
+
 function renderTextItemList(items: readonly TextItem[], emptyLabel: string): string[] {
   if (items.length === 0) {
     return [emptyLabel];
   }
-  return items.map((item) => `- [${item.id}] ${escapeMarkdownText(item.text)}`);
+  return items.map((item) => `- [${esc(item.id)}] ${escapeMarkdownText(item.text)}`);
+}
+
+/** Absence de source affichée explicitement — jamais déduite ni inventée. */
+function renderSourcedItemList(items: readonly SourcedItem[], emptyLabel: string): string[] {
+  if (items.length === 0) {
+    return [emptyLabel];
+  }
+  return items.map((item) => {
+    const sources =
+      item.sourceIds === undefined
+        ? 'source non renseignée'
+        : `sources : ${item.sourceIds.map(esc).join(', ')}`;
+    return `- [${esc(item.id)}] ${escapeMarkdownText(item.text)} — ${sources}`;
+  });
+}
+
+/**
+ * Une décision validée sans justification est signalée, jamais masquée.
+ * `formatId` : identité par défaut (sortie terminal) ; l'export Markdown
+ * passe {@link escapeMarkdownText}.
+ */
+export function describeDecisionBasis(
+  decision: Decision,
+  formatId: (id: string) => string = (id) => id,
+): string {
+  if (decision.basis !== undefined) {
+    return `justifiée par : ${decision.basis.map((r) => formatId(r.id)).join(', ')}`;
+  }
+  return decision.status === 'validated'
+    ? 'validée sans justification enregistrée'
+    : 'aucune justification enregistrée';
 }
 
 function renderDecisions(decisions: readonly Decision[]): string[] {
   if (decisions.length === 0) {
     return ['(aucune)'];
   }
-  return decisions.map((d) => `- [${d.id}:${d.status}] ${escapeMarkdownText(d.text)}`);
+  return decisions.map(
+    (d) =>
+      `- [${esc(d.id)}:${d.status}] ${escapeMarkdownText(d.text)} — ${describeDecisionBasis(d, esc)}`,
+  );
 }
 
 function renderQuestions(questions: readonly Question[], status: Question['status']): string[] {
@@ -50,8 +91,8 @@ function renderQuestions(questions: readonly Question[], status: Question['statu
   }
   return filtered.map((q) =>
     q.answer === undefined
-      ? `- [${q.id}] ${escapeMarkdownText(q.text)}`
-      : `- [${q.id}] ${escapeMarkdownText(q.text)} — Réponse : ${escapeMarkdownText(q.answer)}`,
+      ? `- [${esc(q.id)}] ${escapeMarkdownText(q.text)}`
+      : `- [${esc(q.id)}] ${escapeMarkdownText(q.text)} — Réponse : ${escapeMarkdownText(q.answer)}`,
   );
 }
 
@@ -59,7 +100,7 @@ function renderNextQuestion(brief: ProjectBrief): string {
   const result = pickNextQuestion(brief);
   return result.status === 'none'
     ? 'Aucune question ouverte restante (règle fixe) — rien à sélectionner.'
-    : `[${result.question.id}] ${escapeMarkdownText(result.question.text)} ` +
+    : `[${esc(result.question.id)}] ${escapeMarkdownText(result.question.text)} ` +
         "(sélection par règle fixe — première question ouverte, ordre d'ajout ; pas un raisonnement)";
 }
 
@@ -69,22 +110,30 @@ export function renderProjectBriefMarkdown(brief: ProjectBrief): string {
     '',
     `> ${EXPORT_WARNING}`,
     '',
-    `- Identifiant : \`${brief.id}\``,
+    `- Identifiant : ${esc(brief.id)}`,
     `- Nom : ${escapeMarkdownText(brief.name)}`,
     `- Révision : ${brief.revision}`,
     `- Dernière modification : ${brief.updatedAt}`,
+    '',
+    '## Sources déclarées',
+    '',
+    "(déclarées par l'utilisateur — jamais vérifiées par Jarvis ni par cet export)",
+    '',
+    ...renderTextItemList(brief.sources, '(aucune)'),
     '',
     '## Faits déclarés',
     '',
     "(rapportés par l'utilisateur — jamais vérifiés de l'extérieur par cet export)",
     '',
-    ...renderTextItemList(brief.facts, '(aucun)'),
+    ...renderSourcedItemList(brief.facts, '(aucun)'),
     '',
     '## Hypothèses',
     '',
-    ...renderTextItemList(brief.hypotheses, '(aucune)'),
+    ...renderSourcedItemList(brief.hypotheses, '(aucune)'),
     '',
     '## Décisions',
+    '',
+    '(une justification relie une décision à des éléments déclarés — elle ne prouve pas sa validité)',
     '',
     ...renderDecisions(brief.decisions),
     '',

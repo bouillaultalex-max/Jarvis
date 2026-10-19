@@ -112,6 +112,7 @@ apps/desktop project validate-decision boutique-asiatique <decision-id>
 apps/desktop project obsolete-decision boutique-asiatique <decision-id>
 apps/desktop project next-question boutique-asiatique
 apps/desktop project export-markdown boutique-asiatique --output chemin.md
+apps/desktop project interview boutique-asiatique
 ```
 
 N'exige **aucun** credential (ni Gmail, ni Légifrance, ni `ANTHROPIC_API_KEY`) :
@@ -128,6 +129,30 @@ répondre à une question (`answer-question`) ne promeut jamais la réponse en
 fait ni en décision validée. `next-question` applique une **règle fixe**
 (première question `open`, dans l'ordre d'ajout) — explicitement annoncée
 comme telle, jamais présentée comme un raisonnement.
+
+**Une question déjà résolue refuse toute nouvelle réponse** (erreur
+`already_answered`, détectée sur la relecture fraîche faite sous le verrou
+du fichier — jamais sur un état potentiellement périmé) : ni
+`answer-question`, ni `interview` (ci-dessous) ne peuvent jamais écraser
+silencieusement une réponse existante. Aucune commande de réécriture ou de
+réouverture n'existe pour contourner ce refus.
+
+`interview <id>` propose un questionnaire interactif — **toujours la même
+règle fixe que `next-question`**, jamais un LLM, explicitement annoncé comme
+tel au démarrage. Pour chaque question : taper une réponse l'enregistre
+seulement après confirmation explicite (`y`/`yes`/`oui`, insensible à la
+casse) ; toute autre confirmation, la fin de l'entrée (EOF) ou Ctrl+C
+abandonnent la réponse proposée sans jamais l'enregistrer. `/passer` passe la
+question **pour cette session seulement** — la fiche n'est jamais modifiée
+par un passage, et une nouvelle session (nouvel appel) retrouve la même
+question en premier. Si toutes les questions restantes ont été passées, la
+commande s'arrête avec « Questions restantes passées pour cette session »
+sans boucler et sans jamais prétendre qu'elles sont résolues. Une seule
+interface terminal gère tout le parcours ; si une autre commande résout la
+question entre son affichage et sa confirmation (`already_answered`), le
+conflit est signalé explicitement et la réponse abandonnée n'est jamais
+resoumise automatiquement — seule une nouvelle sélection, après relecture,
+suit.
 
 Concurrence entre deux commandes sur le même projet : verrou coopératif par
 fichier (création atomique `O_CREAT|O_EXCL`) — la seconde commande est

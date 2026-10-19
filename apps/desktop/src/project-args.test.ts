@@ -32,6 +32,7 @@ describe('parseProjectArgs', () => {
       id: 'p1',
       outputPath: '/tmp/x.md',
     });
+    expect(parseProjectArgs(['interview', 'p1'])).toEqual({ op: 'interview', id: 'p1' });
   });
 
   it('export-markdown exige le drapeau --output', () => {
@@ -47,6 +48,8 @@ describe('parseProjectArgs', () => {
     expect(() => parseProjectArgs(['create', 'p1'])).toThrow();
     expect(() => parseProjectArgs(['show'])).toThrow();
     expect(() => parseProjectArgs(['show', 'p1', 'trop'])).toThrow();
+    expect(() => parseProjectArgs(['interview'])).toThrow();
+    expect(() => parseProjectArgs(['interview', 'p1', 'trop'])).toThrow();
   });
 
   it('rejette un argument vide', () => {

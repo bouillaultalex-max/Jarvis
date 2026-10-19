@@ -31,7 +31,8 @@ export type ProjectBriefStoreErrorReason =
   | 'locked'
   | 'unknown_question'
   | 'unknown_decision'
-  | 'invalid_transition';
+  | 'invalid_transition'
+  | 'already_answered';
 
 export class ProjectBriefStoreError extends Error {
   constructor(

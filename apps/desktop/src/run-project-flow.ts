@@ -8,8 +8,15 @@ import {
 
 import type { ProjectInput } from './project-args.js';
 
-/** `export-markdown` est géré séparément par `runExportMarkdownFlow` (lecture seule, écriture de fichier). */
-export type MutableProjectInput = Exclude<ProjectInput, { readonly op: 'export-markdown' }>;
+/**
+ * `export-markdown` est géré séparément par `runExportMarkdownFlow` (lecture
+ * seule, écriture de fichier) ; `interview` est géré séparément par
+ * `runProjectInterview` (boucle interactive, pas une opération unique).
+ */
+export type MutableProjectInput = Exclude<
+  ProjectInput,
+  { readonly op: 'export-markdown' } | { readonly op: 'interview' }
+>;
 
 export interface ProjectFlowDeps {
   readonly store: FileProjectBriefStore;

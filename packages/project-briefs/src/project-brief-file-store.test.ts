@@ -176,6 +176,32 @@ describe('FileProjectBriefStore — opérations et transitions', () => {
     expect(after.decisions).toHaveLength(0);
   });
 
+  it(
+    'already_answered : une question déjà résolue refuse une nouvelle réponse — la réponse, ' +
+      'la révision et les dates existantes restent inchangées',
+    () => {
+      const s = store();
+      s.create('p1', 'Projet');
+      const q = s.addQuestion('p1', 'question').questions.at(-1)!;
+      const resolved = s.answerQuestion('p1', q.id, 'première réponse');
+
+      expect(() => s.answerQuestion('p1', q.id, 'seconde réponse')).toThrow(ProjectBriefStoreError);
+      try {
+        s.answerQuestion('p1', q.id, 'seconde réponse');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ProjectBriefStoreError);
+        expect((err as ProjectBriefStoreError).reason).toBe('already_answered');
+      }
+
+      const after = s.get('p1')!;
+      expect(after.questions.find((x) => x.id === q.id)).toEqual(
+        resolved.questions.find((x) => x.id === q.id),
+      );
+      expect(after.revision).toBe(resolved.revision);
+      expect(after.updatedAt).toBe(resolved.updatedAt);
+    },
+  );
+
   it('révision et updatedAt avancent à chaque mutation', () => {
     const s = store();
     const created = s.create('p1', 'Projet');
@@ -260,4 +286,28 @@ describe('FileProjectBriefStore — concurrence', () => {
     storeB.addFact('p1', 'écrit par B');
     expect(storeA.get('p1')!.facts.map((f) => f.text)).toEqual(['écrit par A', 'écrit par B']);
   });
+
+  it(
+    'deux process répondant à la même question : le second (relecture fraîche sous verrou) voit ' +
+      'already_answered, jamais une réponse écrasée — simule une résolution concurrente entre ' +
+      "l'affichage et la confirmation d'un appelant",
+    () => {
+      const storeA = store();
+      const storeB = new FileProjectBriefStore({ baseDir: dir });
+      storeA.create('p1', 'Projet');
+      const q = storeA.addQuestion('p1', 'question').questions.at(-1)!;
+
+      // A et B ont tous deux « affiché » la question ouverte avant que l'un
+      // des deux ne confirme — A confirme en premier.
+      const afterA = storeA.answerQuestion('p1', q.id, 'réponse de A');
+
+      expect(() => storeB.answerQuestion('p1', q.id, 'réponse de B')).toThrow(
+        ProjectBriefStoreError,
+      );
+      // La réponse de A reste la seule présente, aucune révision supplémentaire.
+      const final = storeA.get('p1')!;
+      expect(final.questions.find((x) => x.id === q.id)!.answer).toBe('réponse de A');
+      expect(final.revision).toBe(afterA.revision);
+    },
+  );
 });

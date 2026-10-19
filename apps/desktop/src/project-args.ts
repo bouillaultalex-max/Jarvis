@@ -8,6 +8,7 @@
 export type ProjectInput =
   | { readonly op: 'create'; readonly id: string; readonly name: string }
   | { readonly op: 'show'; readonly id: string }
+  | { readonly op: 'interview'; readonly id: string }
   | { readonly op: 'add-fact'; readonly id: string; readonly text: string }
   | { readonly op: 'add-hypothesis'; readonly id: string; readonly text: string }
   | { readonly op: 'add-question'; readonly id: string; readonly text: string }
@@ -106,6 +107,10 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
       requireArity(rest, 1, 'usage : project next-question <id>');
       return { op: 'next-question', id: requireArg(rest[0], 'id') };
     }
+    case 'interview': {
+      requireArity(rest, 1, 'usage : project interview <id>');
+      return { op: 'interview', id: requireArg(rest[0], 'id') };
+    }
     case 'export-markdown': {
       if (rest.length !== 3 || rest[1] !== '--output') {
         throw new Error('project : usage : project export-markdown <id> --output <chemin.md>');
@@ -120,7 +125,7 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
       throw new Error(
         `project : sous-commande inconnue « ${sub ?? ''} » — attendu l'une de : create, show, ` +
           'add-fact, add-hypothesis, add-question, answer-question, add-decision, ' +
-          'validate-decision, obsolete-decision, next-question, export-markdown.',
+          'validate-decision, obsolete-decision, next-question, export-markdown, interview.',
       );
   }
 }

@@ -115,7 +115,16 @@ export class FileProjectBriefStore {
     });
   }
 
-  /** Ne promeut jamais la réponse en fait ni en décision validée — ne touche que `questions`. */
+  /**
+   * Ne promeut jamais la réponse en fait ni en décision validée — ne touche
+   * que `questions`. Refuse une question déjà `resolved` (`already_answered`)
+   * — vérifié ici, sur la relecture fraîche faite par `mutate` à l'intérieur
+   * du verrou, jamais sur un état potentiellement périmé : une résolution
+   * concurrente entre la lecture d'un appelant et cet appel est donc
+   * toujours détectée, jamais écrasée silencieusement. En cas de refus,
+   * aucune écriture n'a lieu : réponse, révision et dates restent
+   * inchangées.
+   */
   answerQuestion(id: string, questionId: string, answer: string): ProjectBrief {
     this.assertBoundedText(answer, MAX_ANSWER_CHARS, 'answer');
     return this.mutate(id, (current) => {
@@ -127,8 +136,15 @@ export class FileProjectBriefStore {
           `Question « ${questionId} » introuvable.`,
         );
       }
+      const question = brief.questions[index]!;
+      if (question.status !== 'open') {
+        throw new ProjectBriefStoreError(
+          'already_answered',
+          `Question « ${questionId} » déjà résolue — réponse existante conservée, rien écrasé.`,
+        );
+      }
       const questions = brief.questions.slice();
-      questions[index] = { ...questions[index]!, status: 'resolved', answer };
+      questions[index] = { ...question, status: 'resolved', answer };
       return this.touch({ ...brief, questions });
     });
   }

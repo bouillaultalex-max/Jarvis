@@ -130,4 +130,31 @@ describe('dispatch — project (câblage CLI)', () => {
     expect(process.exitCode).toBe(1);
     expect(readFileSync(outputPath, 'utf-8')).toBe(markdown);
   });
+
+  it(
+    'answer-question (commande existante) refuse une seconde réponse sur une question déjà ' +
+      "résolue — la protection already_answered du store s'applique ici aussi, sans commande " +
+      "d'écrasement ni de réouverture",
+    async () => {
+      const run = async (...argv: string[]): Promise<string> => {
+        const { output, readText } = collectingOutput();
+        await dispatch(['project', ...argv], INERT_DESKTOP_DEPS, { output });
+        return readText();
+      };
+
+      await run('create', 'p1', 'Projet');
+      await run('add-question', 'p1', 'Une question');
+      const first = await run('answer-question', 'p1', 'q-1', 'première réponse');
+      expect(first).toContain('première réponse');
+      expect(process.exitCode).toBe(0);
+
+      const second = await run('answer-question', 'p1', 'q-1', 'seconde réponse');
+      expect(second).toContain('already_answered');
+      expect(process.exitCode).toBe(1);
+
+      const shown = await run('show', 'p1');
+      expect(shown).toContain('première réponse');
+      expect(shown).not.toContain('seconde réponse');
+    },
+  );
 });

@@ -62,6 +62,7 @@ import {
   runExportMarkdownFlow,
 } from './project-export-markdown.js';
 import { describeProjectResult, projectExitCode, runProjectFlow } from './run-project-flow.js';
+import { runProjectInterview } from './run-project-interview.js';
 import {
   defaultLegalSearchDeps,
   describeLegalSearchResult,
@@ -894,6 +895,14 @@ export async function dispatch(
         write(line);
       }
       process.exitCode = exportMarkdownExitCode(exportResult);
+      return;
+    }
+    if (input.op === 'interview') {
+      process.exitCode = await runProjectInterview(input.id, {
+        store,
+        ...(io.input !== undefined ? { input: io.input } : {}),
+        output,
+      });
       return;
     }
     const result = runProjectFlow(input, { store });

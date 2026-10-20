@@ -75,7 +75,11 @@ export function createInMemorySendVerifier(
 ): PostconditionVerifier<InMemorySendSnapshot, ExpectedSentRecord> {
   return {
     snapshot(): InMemorySendSnapshot {
-      return { sent: client.listSent() };
+      // `listSent()` copie le tableau mais pas les enregistrements qu'il
+      // contient : sans cette copie champ-à-champ, une mutation ultérieure
+      // d'une référence déjà renvoyée (par `send()` ou `listSent()`)
+      // modifierait un instantané déjà capturé.
+      return { sent: client.listSent().map((record) => ({ ...record })) };
     },
 
     expectedFrom(request: ToolRequest): ExpectedSentRecord {

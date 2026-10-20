@@ -294,6 +294,38 @@ describe('createInMemorySendVerifier — détachement des instantanés', () => {
     expect(before.sent).toHaveLength(0);
     expect(client.listSent()).toHaveLength(1);
   });
+
+  it('les enregistrements capturés restent inchangés même si la référence renvoyée par send/listSent est mutée', async () => {
+    const client = new InMemoryMailClient([]);
+    const sent = client.send({ to: 'early@example.test', subject: 'avant', body: 'b' });
+    const verifier = createInMemorySendVerifier(client);
+
+    const snapshotA = await verifier.snapshot();
+
+    // FAUTE INJECTÉE : alias mutable explicite pour contourner `readonly` et
+    // simuler une mutation externe de la référence renvoyée par `send()`.
+    (sent as { to: string }).to = 'mutated-via-send@example.test';
+
+    const [listed] = client.listSent();
+    if (listed === undefined) throw new Error('unreachable');
+    // FAUTE INJECTÉE : alias mutable explicite pour contourner `readonly` et
+    // simuler une mutation externe de la référence renvoyée par `listSent()`.
+    (listed as { subject: string }).subject = 'mutated-via-listSent';
+
+    expect(snapshotA.sent).toEqual([
+      { id: 'sent-1', to: 'early@example.test', subject: 'avant', body: 'b' },
+    ]);
+
+    const snapshotB = await verifier.snapshot();
+    expect(snapshotB.sent).toEqual([
+      {
+        id: 'sent-1',
+        to: 'mutated-via-send@example.test',
+        subject: 'mutated-via-listSent',
+        body: 'b',
+      },
+    ]);
+  });
 });
 
 /**

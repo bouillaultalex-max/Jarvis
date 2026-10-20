@@ -55,6 +55,7 @@ export * from './tool.js';
 export * from './tool-registry.js';
 export * from './permissions.js';
 export * from './tool-executor.js';
+export * from './verification.js';
 export * from './agent-loop.js';
 
 /**

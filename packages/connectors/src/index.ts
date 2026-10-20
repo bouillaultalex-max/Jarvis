@@ -105,6 +105,12 @@ export type {
 export { inMemoryConnector } from './in-memory/in-memory-connector.js';
 
 export type {
+  InMemorySendSnapshot,
+  ExpectedSentRecord,
+} from './in-memory/in-memory-send-verification.js';
+export { createInMemorySendVerifier } from './in-memory/in-memory-send-verification.js';
+
+export type {
   GmailCredentials,
   GmailAppCredentials,
   AccessTokenProvider,

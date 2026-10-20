@@ -2,7 +2,6 @@ import {
   ConfirmationService,
   InMemoryMailClient,
   PermissionManager,
-  ToolExecutor,
   ToolRegistry,
   createInMemorySendVerifier,
   inMemoryConnector,
@@ -15,6 +14,13 @@ import {
   type ProposeConfirmationResult,
 } from '@jarvis/connectors';
 import { runWithVerification, type VerificationOutcome } from '@jarvis/core';
+
+import {
+  TracingToolExecutor,
+  VerifyDemoTraceRecorder,
+  type TracePhase,
+  type VerifyDemoTrace,
+} from './verify-demo-trace.js';
 
 /**
  * Démonstration CLI `verify-demo` — câble, pour la première fois dans
@@ -116,6 +122,15 @@ export type VerifyDemoResult =
       readonly verification: VerificationOutcome | undefined;
     };
 
+/**
+ * Retour obligatoire de {@link runVerifyDemo} : le résultat applicatif
+ * existant ({@link VerifyDemoResult}, conservé pour les fixtures de rendu
+ * `describeVerifyDemoResult`/`verifyDemoExitCode`) augmenté de la trace
+ * structurée en mémoire — un champ de retour du flux, jamais une persistance
+ * ni une garantie d'audit durable (voir `verify-demo-trace.ts`).
+ */
+export type VerifyDemoRunResult = VerifyDemoResult & { readonly trace: VerifyDemoTrace };
+
 export interface RunVerifyDemoOptions {
   /** Décision utilisateur sur la demande de confirmation affichable — jamais de double partagé. */
   readonly confirm: (request: ConfirmationRequest) => boolean | Promise<boolean>;
@@ -123,9 +138,14 @@ export interface RunVerifyDemoOptions {
   readonly confirmationService?: ConfirmationService;
 }
 
-export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<VerifyDemoResult> {
+export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<VerifyDemoRunResult> {
   const { confirm } = options;
   const confirmationService = options.confirmationService ?? new ConfirmationService();
+  const recorder = new VerifyDemoTraceRecorder();
+  // Phase courante au moment du prochain appel réel `executor.run(...)` —
+  // mise à jour aux deux seuls points d'appel de ce flux (proposition, puis
+  // tentative d'exécution), jamais devinée depuis le résultat.
+  let currentPhase: TracePhase = 'proposal';
 
   // Client neuf, privé à cette invocation — jamais partagé avec un autre
   // écrivain concurrent (voir en-tête).
@@ -140,7 +160,9 @@ export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<Veri
     rules: { [SEND_TOOL]: 'require_confirmation' },
     default: 'deny',
   });
-  const executor = new ToolExecutor(registry, permissionManager);
+  const executor = new TracingToolExecutor(registry, permissionManager, (invocationId, result) => {
+    recorder.record(currentPhase, result.status, invocationId);
+  });
   const verifier = createInMemorySendVerifier(client);
 
   let proposed: ProposeConfirmationResult;
@@ -156,7 +178,8 @@ export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<Veri
     // Aucune erreur brute ne doit jamais remonter jusqu'à l'appelant (et,
     // in fine, `main().catch()`) — échec contrôlé, zéro effet, avant toute
     // exécution.
-    return { kind: 'internal_error' };
+    recorder.record('confirmation_decision', 'error');
+    return { kind: 'internal_error', trace: recorder.snapshot() };
   }
 
   const proposedResult = proposed.result;
@@ -164,7 +187,11 @@ export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<Veri
     proposedResult.status !== 'awaiting_confirmation' ||
     proposed.confirmationRequest === undefined
   ) {
-    return { kind: 'not_awaiting_confirmation', technicalStatus: proposedResult.status };
+    return {
+      kind: 'not_awaiting_confirmation',
+      technicalStatus: proposedResult.status,
+      trace: recorder.snapshot(),
+    };
   }
 
   const confirmationRequest = proposed.confirmationRequest;
@@ -188,7 +215,8 @@ export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<Veri
       // test défaillant ne doit cependant jamais transformer un refus en
       // exception brute — le refus (zéro effet) reste le résultat rendu.
     }
-    return { kind: 'declined' };
+    recorder.record('confirmation_decision', 'declined');
+    return { kind: 'declined', trace: recorder.snapshot() };
   }
 
   // Deux clones INDÉPENDANTS de la même entrée déjà validée par le `Tool`
@@ -217,17 +245,21 @@ export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<Veri
     // Même discipline que la proposition : aucune exception (y compris une
     // chaîne sensible portée par une erreur de double de test) ne doit
     // jamais être reprise telle quelle — échec contrôlé, zéro effet.
-    return { kind: 'internal_error' };
+    recorder.record('confirmation_decision', 'error');
+    return { kind: 'internal_error', trace: recorder.snapshot() };
   }
   if (!verification.ok) {
-    return { kind: 'confirmation_failed' };
+    recorder.record('confirmation_decision', 'failed');
+    return { kind: 'confirmation_failed', trace: recorder.snapshot() };
   }
+  recorder.record('confirmation_decision', 'approved');
 
   // Exécution + vérification de postcondition RÉELLE, sur le même client
   // que `verifier` observe — remplace exactement l'appel final que
   // `confirmAndExecute` ferait lui-même (voir `confirmAndExecute`,
   // `confirmation-flow.ts`), en substituant `runWithVerification`. Utilise
   // exclusivement `executionInput` (jamais `verifyPayload.input`).
+  currentPhase = 'execution';
   const outcome = await runWithVerification(
     executor,
     { tool: executionToolName, input: executionInput, confirmed: true },
@@ -237,14 +269,21 @@ export async function runVerifyDemo(options: RunVerifyDemoOptions): Promise<Veri
   if (outcome.kind === 'preparation_failed') {
     // `runWithVerification` n'a jamais rappelé `ToolExecutor.run()` pour
     // cette tentative : aucun `technicalStatus` ne doit être inventé pour la
-    // simuler.
-    return { kind: 'preparation_failed' };
+    // simuler, et aucun événement `execution` n'est enregistré (voir
+    // `TracingToolExecutor` : seul un appel réel produit un événement).
+    recorder.record('verification', 'preparation_failed');
+    return { kind: 'preparation_failed', trace: recorder.snapshot() };
+  }
+
+  if (outcome.verification !== undefined) {
+    recorder.record('verification', outcome.verification.verdict);
   }
 
   return {
     kind: 'executed',
     technicalStatus: outcome.technicalResult.status,
     verification: outcome.verification,
+    trace: recorder.snapshot(),
   };
 }
 

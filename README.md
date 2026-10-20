@@ -246,6 +246,20 @@ préparation de la vérification, erreur interne contrôlée, absence de preuve)
 — l'affichage sépare toujours le résultat technique du verdict de
 vérification.
 
+#### Trace structurée en mémoire
+
+`runVerifyDemo` renvoie, en plus du résultat applicatif, une trace
+`VerifyDemoTrace` (`verify-demo-trace.ts`) : un `missionId` (UUID, un par
+invocation) et des événements numérotés en séquence, chacun à phase
+(`proposal` | `confirmation_decision` | `execution` | `verification`) et
+statut CONTRÔLÉS — jamais de texte libre, d'input/output/payload/summary,
+de `confirmationId` ni de raison d'exception. Les événements `proposal` et
+`execution` portent un `invocationId` réel, obtenu via
+`ToolExecutor.runTracked` (API existante de `@jarvis/core`, inchangée) sans
+jamais appeler `run()` et `runTracked()` pour la même requête. C'est un champ
+de retour du flux, renvoyé en mémoire — aucune persistance, aucun fichier,
+aucune garantie d'audit durable.
+
 ## Développement local
 
 ```bash

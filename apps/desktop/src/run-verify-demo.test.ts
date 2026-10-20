@@ -73,7 +73,7 @@ describe('runVerifyDemo — confirmation refusée', () => {
 
     const result = await runVerifyDemo({ confirm: alwaysDecline });
 
-    expect(result).toEqual({ kind: 'declined' });
+    expect(result).toMatchObject({ kind: 'declined' });
     expect(verifyDemoExitCode(result)).toBe(1);
     expect(sendSpy).not.toHaveBeenCalled();
   });
@@ -102,7 +102,7 @@ describe('runVerifyDemo — EOF / exception du callback confirm', () => {
 
     const result = await runVerifyDemo({ confirm });
 
-    expect(result).toEqual({ kind: 'declined' });
+    expect(result).toMatchObject({ kind: 'declined' });
     expect(sendSpy).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain('détail interne sensible');
     for (const line of describeVerifyDemoResult(result)) {
@@ -116,7 +116,7 @@ describe('runVerifyDemo — EOF / exception du callback confirm', () => {
 
     const result = await runVerifyDemo({ confirm });
 
-    expect(result).toEqual({ kind: 'declined' });
+    expect(result).toMatchObject({ kind: 'declined' });
     expect(sendSpy).not.toHaveBeenCalled();
   });
 });
@@ -140,7 +140,7 @@ describe('runVerifyDemo — erreurs de proposition/vérification contrôlées', 
 
     const result = await runVerifyDemo({ confirm: alwaysConfirm, confirmationService });
 
-    expect(result).toEqual({ kind: 'internal_error' });
+    expect(result).toMatchObject({ kind: 'internal_error' });
     expect(sendSpy).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain('détail sensible');
     for (const line of describeVerifyDemoResult(result)) {
@@ -154,7 +154,7 @@ describe('runVerifyDemo — erreurs de proposition/vérification contrôlées', 
 
     const result = await runVerifyDemo({ confirm: alwaysConfirm, confirmationService });
 
-    expect(result).toEqual({ kind: 'internal_error' });
+    expect(result).toMatchObject({ kind: 'internal_error' });
     expect(sendSpy).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain('détail sensible');
     for (const line of describeVerifyDemoResult(result)) {
@@ -211,7 +211,7 @@ describe('runVerifyDemo — protocole réel de ConfirmationService', () => {
 
     const result = await runVerifyDemo({ confirm, confirmationService });
 
-    expect(result).toEqual({ kind: 'confirmation_failed' });
+    expect(result).toMatchObject({ kind: 'confirmation_failed' });
     expect(verifyDemoExitCode(result)).toBe(1);
     expect(sendSpy).not.toHaveBeenCalled();
   });
@@ -235,7 +235,7 @@ describe('runVerifyDemo — protocole réel de ConfirmationService', () => {
 
     const result = await runVerifyDemo({ confirm, confirmationService });
 
-    expect(result).toEqual({ kind: 'confirmation_failed' });
+    expect(result).toMatchObject({ kind: 'confirmation_failed' });
     expect(sendSpy).not.toHaveBeenCalled();
   });
 

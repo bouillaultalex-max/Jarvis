@@ -70,6 +70,12 @@ import {
   runLegalSearchFlow,
   type LegalSearchDeps,
 } from './run-legal-search-flow.js';
+import {
+  VERIFY_DEMO_NOTICE,
+  describeVerifyDemoResult,
+  runVerifyDemo,
+  verifyDemoExitCode,
+} from './run-verify-demo.js';
 import { createTerminalConfirm } from './terminal-confirm.js';
 import {
   runReadNaturalLanguageFlow,
@@ -846,7 +852,7 @@ function parseReadNaturalArgs(argv: readonly string[]): string {
   return text;
 }
 
-/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat` | `project`. */
+/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat` | `project` | `verify-demo`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -879,6 +885,30 @@ export async function dispatch(
       ...(io.input !== undefined ? { input: io.input } : {}),
       output,
     });
+    return;
+  }
+
+  if (command === 'verify-demo') {
+    // Aucune dépendance Gmail/Légifrance/LLM construite ou touchée ici,
+    // comme 'chat'/'legal-search'/'project' ci-dessus — et aucun argument
+    // n'est accepté : rejeté avant toute construction (`InMemoryMailClient`
+    // y compris), jamais deviné ni ignoré silencieusement.
+    if (argv.length > 1) {
+      throw new Error('verify-demo : aucun argument accepté.');
+    }
+    // Affiché AVANT toute demande de confirmation (donc avant tout prompt
+    // `createTerminalConfirm`) — l'utilisateur sait que c'est une
+    // démonstration locale avant même de devoir répondre.
+    write(VERIFY_DEMO_NOTICE);
+    const confirm = createTerminalConfirm({
+      ...(io.input !== undefined ? { input: io.input } : {}),
+      output,
+    });
+    const result = await runVerifyDemo({ confirm });
+    for (const line of describeVerifyDemoResult(result)) {
+      write(line);
+    }
+    process.exitCode = verifyDemoExitCode(result);
     return;
   }
 
@@ -983,7 +1013,7 @@ export async function dispatch(
   }
 
   throw new Error(
-    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat).',
+    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat | verify-demo).',
   );
 }
 
@@ -1004,7 +1034,7 @@ function noopDesktopDeps(): DesktopDeps {
 }
 
 /** Commandes dont `dispatch()` n'accède jamais à `deps` (Gmail) — voir {@link noopDesktopDeps}. */
-const NO_GMAIL_DEPS_COMMANDS = new Set(['legal-search', 'chat', 'project']);
+const NO_GMAIL_DEPS_COMMANDS = new Set(['legal-search', 'chat', 'project', 'verify-demo']);
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

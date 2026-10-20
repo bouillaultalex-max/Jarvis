@@ -15,12 +15,14 @@
  * {@link runWithVerification} obtient un comportement identique à un appel
  * direct à `ToolExecutor.run()` (`verification: undefined`).
  *
- * **Portée actuelle** : une capacité de bibliothèque, exercée uniquement par
- * ses propres tests (`verification.test.ts` et, côté connecteur,
- * `in-memory-send-verification.test.ts`). Aucune application (`apps/api`,
- * `apps/desktop`) ni `AgentLoop` n'appelle {@link runWithVerification} à ce
- * jour — ce fichier ne les modifie pas et ne présuppose aucun branchement
- * futur.
+ * **Portée actuelle** : une capacité de bibliothèque, exercée par ses propres
+ * tests (`verification.test.ts` et, côté connecteur,
+ * `in-memory-send-verification.test.ts`), et désormais par une première
+ * utilisation opt-in applicative : `apps/desktop` (commande de démonstration
+ * locale `verify-demo`, `run-verify-demo.ts`). `AgentLoop` et le reste des
+ * commandes de `apps/desktop`/`apps/api` n'appellent toujours pas
+ * {@link runWithVerification} — ce fichier ne les modifie pas et ne
+ * présuppose aucun branchement futur au-delà de `verify-demo`.
  */
 
 import type { ToolExecutionResult, ToolExecutor, ToolRequest } from './tool-executor.js';

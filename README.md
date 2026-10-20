@@ -14,7 +14,7 @@ Assistant IA personnel — monorepo npm workspaces (TypeScript strict, Node 24, 
 
 ```
 apps/api          Serveur HTTP Fastify
-apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search / chat / project)
+apps/desktop       Client CLI terminal (connect / read / inbox / send / disconnect / legal-search / chat / project / verify-demo)
 packages/types      Types partagés
 packages/llm        Abstraction LLM (Anthropic)
 packages/core       AgentLoop, Tool, PermissionManager, ToolExecutor
@@ -199,6 +199,52 @@ refusé, jamais écrasé. Ne modifie jamais le JSON source ni sa révision
 (lecture seule). Sur un chemin NTFS monté via WSL (`/mnt/c/...`), les
 permissions effectives du fichier dépendent des ACL Windows, pas du mode
 Unix demandé par le code — aucune garantie `0600` sur ce type de chemin.
+
+### `verify-demo` (démonstration locale de vérification de postcondition)
+
+```bash
+node_modules/.bin/tsx apps/desktop/src/main.ts verify-demo
+```
+
+Première utilisation, **opt-in**, dans `apps/desktop` de la vérification de
+postcondition de `@jarvis/core` (`runWithVerification`) sur le chemin de
+confirmation réel de `@jarvis/connectors` (`proposeConfirmation` →
+confirmation utilisateur → `ConfirmationService.verify` → exécution,
+`createInMemorySendVerifier`) — voir `run-verify-demo.ts`. Ne prend **aucun
+argument** (tout argument fourni est rejeté avant toute construction) et
+n'exige **aucun** credential (ni Gmail, ni Légifrance, ni
+`ANTHROPIC_API_KEY`).
+
+Entrée entièrement **fixe et synthétique** : destinataire
+`demo@example.test`, objet et corps fixes (`DEMO_SEND_INPUT`,
+`run-verify-demo.ts`) — jamais dérivée d'un argument ni d'une donnée réelle.
+Un `InMemoryMailClient` **neuf et privé** (jamais partagé) est créé à chaque
+invocation ; seul l'outil `inmemory.send` est enregistré dans le
+`ToolRegistry`, sous une politique explicite (`require_confirmation` pour cet
+outil, `deny` par défaut pour tout le reste). L'avis « démonstration locale,
+aucune livraison externe » (`VERIFY_DEMO_NOTICE`) est affiché **avant** toute
+demande de confirmation (après le rejet des arguments). La confirmation
+terminal réutilise `createTerminalConfirm` (y/yes/oui, insensible à la
+casse ; toute autre réponse ou une fin de flux (EOF) valent refus, sans aucun
+effet).
+
+Le payload exécuté et celui transmis à `ConfirmationService.verify()` sont
+deux **clones indépendants** de la même entrée validée, capturés avant le
+seul point de suspension (`await verify(...)`) : même un service de
+confirmation qui muterait sa copie après un `verify()` réussi ne peut jamais
+altérer ce qui est réellement exécuté. Toute exception de
+`proposeConfirmation`/`ConfirmationService.verify`/`deny` est interceptée et
+renvoyée comme un échec contrôlé (zéro effet, jamais le message brut).
+
+**Aucune persistance, aucun appel réseau, aucune livraison externe réelle** :
+un verdict `satisfied` ne prouve qu'un effet simulé **local**, une mutation en
+mémoire d'un client jetable détruit à la fin du process — jamais l'envoi
+réel d'un message. Code de sortie : `0` uniquement si l'outil a réellement
+été exécuté (statut technique `executed`) **et** que le vérificateur observe
+`satisfied` ; `1` dans tous les autres cas (refus, ticket invalide, échec de
+préparation de la vérification, erreur interne contrôlée, absence de preuve)
+— l'affichage sépare toujours le résultat technique du verdict de
+vérification.
 
 ## Développement local
 

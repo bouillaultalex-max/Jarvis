@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "typecheck:tool-interface-bench": "tsc --noEmit -p prototypes/tool-interface-bench/tsconfig.json",
+    "typecheck:verify-postcondition-bench": "tsc --noEmit -p prototypes/verify-postcondition-bench/tsconfig.json",
     "test": "vitest run",
     "bench:tool-interface:live": "tsx prototypes/tool-interface-bench/run-live.ts",
     "test:coverage": "vitest run --coverage",

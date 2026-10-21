@@ -1013,7 +1013,7 @@ export async function dispatch(
   }
 
   throw new Error(
-    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat | verify-demo).',
+    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat | project | verify-demo).',
   );
 }
 

@@ -4,7 +4,12 @@ Vue d'ensemble condensée. Le détail (raisons, invariants, tests) vit dans
 `PROJECT_STATE.md` ; le détail actionnable vit dans `MASTER_BACKLOG.md`.
 Cette page ne fait que positionner chaque élément dans le temps.
 
-_Dernière mise à jour : 2026-10-19 (synchronisation documentaire : composants livrés du
+_Dernière mise à jour : 2026-10-21 (réconciliation documentaire : vérification de
+postcondition opt-in ajoutée — `runWithVerification`, voir « Composants livrés depuis
+2026-09-30 » ci-dessous ; checkpoint local `5478144`, `main` 3 commits en avance sur
+`origin/main`. N'affecte ni les priorités Product Builder ni la suite juridique)._
+
+_Mise à jour précédente : 2026-10-19 (synchronisation documentaire : composants livrés du
 2026-09-30 au checkpoint `a92cca3` — Légifrance CLI, banc d'interfaces d'outils, canal
 WhatsApp, chat local, fiches projet ; étapes Product Builder PB-01 à PB-06 reprises de
 Notion comme séquencement proposé, correspondance partielle établie)._
@@ -156,12 +161,17 @@ _chantier global_ = objectif plus large, qui reste ouvert.
 | Canal WhatsApp : prototype webhook, canal simulé local, transport Graph API inactif, réception durable SQLite, mode réel opt-in, provisionnement des secrets | `70a4c3b`, `1d2c9f7`, `5e48873`, `c50039a`, `5dae0f2`, `e7cd02e`, `5e5453e`, `880553a`, `5508767`, `adca17b` | oui | canal simulé par défaut, `SimulatedLlmProvider`, tests SQLite multi-process | provisionnement et mode opt-in implémentés ; serveur et tunnel lancés puis arrêtés ; aucun échange réel rapporté — rapport externe transmis par Alexandre, non archivé dans le dépôt ; activité reportée par Alexandre | **reporté** (voir LATER) ; ADR-0022 et ADR-0023 restent `Proposed` |
 | Chat local multi-tour, historique en RAM borné, **sans outils** (`chat`) | `370159e`, `1bfd518` | oui | `LlmProvider` factice uniquement | non documenté dans le dépôt (chaque message est un appel Anthropic réel, potentiellement facturé) | aucun outil branché ; aucune suite décidée dans ces documents |
 | Fiches projet persistantes (`@jarvis/project-briefs`), export Markdown, entretien interactif à règle fixe (`project ...`) | `fc92fab`, `be0d670`, `a92cca3` | oui | tests ciblés et essai CLI sur projet fictif (2026-10-19, répertoire temporaire) | fiche réelle `boutique-asiatique` créée (révision 11 : 5 faits, 5 questions ouvertes, aucune réponse) et un export Markdown — rapporté 2026-10-16 ; **entretien réel pas encore lancé** | Product Builder — PB-01 et PB-02 partiellement couverts, PB-03 à PB-06 non démontrés (voir NEXT) |
+| Vérification de postcondition opt-in — `runWithVerification` (`@jarvis/core`), vérificateur `inmemory.send` (`@jarvis/connectors`), démonstration CLI `verify-demo` (`apps/desktop`) | `64702a2`, `748b7a0` (publiés), `f463033`, `f474cd8`, `5478144` (locaux) | oui (bibliothèque + une démonstration) | 76 tests ciblés verts (+ 17 sur un banc exploratoire séparé, non intégré) ; entrée synthétique fixe, `InMemoryMailClient` jetable | aucun — `inmemory.send` est un connecteur fictif, aucune livraison externe ; `gmail.send`, `AgentLoop`, `apps/api` restent non vérifiés | qui déclenche une vérification hors démonstration reste une décision ouverte (`docs/verified-result-boundaries.md` §9) ; aucun vérificateur pour `gmail.send` |
 
-Checkpoint publié : **`a92cca3`** (2026-10-19, `main` = `origin/main`). Suite
+Checkpoint publié sur `origin/main` : **`748b7a0`** (2026-10-19/20). Checkpoint
+local (non publié) : **`5478144`** — `main` est 3 commits en avance sur
+`origin/main` (`f463033`, `f474cd8`, `5478144`). Suite
 complète **historique** : 3111 tests / 181 fichiers (rapportée, non rejouée pour
 cette synchronisation documentaire). Rejoué lors de la clôture de l'entretien
 interactif (2026-10-19) : 91 tests / 11 fichiers ciblés, `tsc --noEmit`, ESLint,
-hooks pre-commit, essai CLI fictif.
+hooks pre-commit, essai CLI fictif. Rejoué pour la vérification de
+postcondition (2026-10-21) : 76 tests ciblés verts (détail :
+`PROJECT_STATE.md` → « Vérifications »).
 
 ## NEXT
 

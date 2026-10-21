@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MAX_LINKS_PER_ITEM } from './project-brief.js';
 import { ProjectBriefStoreError } from './project-brief-errors.js';
@@ -81,12 +81,11 @@ describe('compatibilité v1 → v2', () => {
     const s = store();
     s.addFact('p1', 'Fait ajouté');
     s.addDecision('p1', 'Décision');
-    s.validateDecision('p1', 'dec-1');
     s.answerQuestion('p1', 'q-1', 'Réponse');
     const raw = await rawFile();
     expect(raw.formatVersion).toBe(1);
     expect(raw).not.toHaveProperty('sources');
-    expect(raw.revision).toBe(15);
+    expect(raw.revision).toBe(14);
   });
 
   it('une fiche créée reste v1 tant qu’aucune notion v2 n’est utilisée', async () => {
@@ -111,6 +110,72 @@ describe('compatibilité v1 → v2', () => {
     s.addDecision('p1', 'Décision');
     s.justifyDecision('p1', 'dec-1', { kind: 'fact', id: 'fact-1' });
     expect((await rawFile()).formatVersion).toBe(2);
+  });
+
+  it('valider une décision sur une fiche v1 la passe aussi en v2', async () => {
+    await writeV1();
+    const s = store();
+    s.addDecision('p1', 'Décision');
+    s.validateDecision('p1', 'dec-1');
+    expect((await rawFile()).formatVersion).toBe(2);
+  });
+});
+
+describe('date de validation (validatedAt)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function withDecisions(): FileProjectBriefStore {
+    const s = store();
+    s.create('p1', 'Projet');
+    s.addDecision('p1', 'Une décision');
+    s.addDecision('p1', 'Une autre');
+    return s;
+  }
+
+  it('valider pose la date exacte de l’horloge, persistée et relue', () => {
+    const s = withDecisions();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-21T12:34:56.789Z'));
+    s.validateDecision('p1', 'dec-1');
+    vi.useRealTimers();
+    expect(store().get('p1')!.decisions[0]!.validatedAt).toBe('2026-10-21T12:34:56.789Z');
+    expect(store().get('p1')!.decisions[1]!.validatedAt).toBeUndefined();
+  });
+
+  it('revalider une décision validée est refusé sans écriture ; la date ne change pas', async () => {
+    const s = withDecisions();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-21T12:00:00.000Z'));
+    s.validateDecision('p1', 'dec-1');
+    vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+    await expectRefusedWithoutWrite(() => s.validateDecision('p1', 'dec-1'), 'invalid_transition');
+    vi.useRealTimers();
+    expect(store().get('p1')!.decisions[0]!.validatedAt).toBe('2026-10-21T12:00:00.000Z');
+  });
+
+  it('valider une décision obsolète est refusé sans écriture ; aucune date posée', async () => {
+    const s = withDecisions();
+    s.obsoleteDecision('p1', 'dec-1');
+    await expectRefusedWithoutWrite(() => s.validateDecision('p1', 'dec-1'), 'invalid_transition');
+    expect(store().get('p1')!.decisions[0]!.validatedAt).toBeUndefined();
+  });
+
+  it('proposed → obsolete ne crée aucune date ; validated → obsolete la conserve', () => {
+    const s = withDecisions();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-21T12:00:00.000Z'));
+    s.validateDecision('p1', 'dec-2');
+    vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+    s.obsoleteDecision('p1', 'dec-1');
+    s.obsoleteDecision('p1', 'dec-2');
+    vi.useRealTimers();
+    const [d1, d2] = store().get('p1')!.decisions;
+    expect(d1!.status).toBe('obsolete');
+    expect(d1!.validatedAt).toBeUndefined();
+    expect(d2!.status).toBe('obsolete');
+    expect(d2!.validatedAt).toBe('2026-10-21T12:00:00.000Z');
   });
 });
 

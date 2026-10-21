@@ -1,6 +1,19 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-10-19 — **synchronisation documentaire jusqu'au checkpoint
+_Dernière mise à jour : 2026-10-21 — **vérification de postcondition opt-in**
+ajoutée : `runWithVerification` (`@jarvis/core`), vérificateur `inmemory.send`
+(`@jarvis/connectors`) et démonstration CLI `verify-demo` (`apps/desktop`) —
+voir « Vérification de postcondition (opt-in) » ci-dessous et la section
+dédiée dans `MASTER_ROADMAP.md`. 76 tests ciblés verts (détail dans la
+section dédiée et dans « Vérifications »). Checkpoint local `5478144` —
+`main` est **3 commits en avance sur `origin/main`** : `748b7a0` est le
+dernier commit publié ; `f463033`, `f474cd8` et `5478144` ne sont pas
+poussés. Aucune application de production (`AgentLoop`, `apps/api`,
+`gmail.send`) n'est concernée : seule une démonstration locale sur un
+connecteur fictif l'utilise. N'affecte ni les composants ni les priorités
+décrits par la mise à jour précédente._
+
+_Mise à jour précédente (2026-10-19) — **synchronisation documentaire jusqu'au checkpoint
 `a92cca3`** (publié, `main` = `origin/main`). Ajout des composants livrés depuis le
 2026-09-30 (voir « Composants livrés depuis 2026-09-30 ») : Légifrance CLI et
 provisionnement, banc d'interfaces d'outils, canal WhatsApp (simulé par défaut, mode
@@ -347,6 +360,72 @@ Décisions d'architecture : `docs/adr/0006-confirmation-fingerprint-for-execute-
 `AgentLoop` → `ToolExecutor` autonome) et
 `docs/adr/0007-memory-promotion-policy.md` (policy de promotion de
 référence, conditions préalables à toute promotion automatique élargie).
+
+## Vérification de postcondition (opt-in) (`runWithVerification`)
+
+Package `packages/core/src/verification.ts` (commits `64702a2`, `748b7a0` —
+publiés sur `origin/main`). Répond à la lacune documentée par
+`docs/verified-result-boundaries.md` (2026-09-15) : « exécuté » ne prouvait
+jusqu'ici que « n'a pas levé d'exception », jamais un effet métier réel.
+
+**A. Le package existe** et est testé indépendamment (`verification.test.ts`,
+11 tests) sans modifier `ToolExecutor`, `ToolExecutionResult` ni
+`PermissionManager` — additif, usage strictement opt-in (`verifier` absent =
+comportement identique à un appel direct à `ToolExecutor.run()`). Capture de
+la demande par `structuredClone`, **synchrone et avant le premier `await`**,
+pour qu'une mutation de l'appelant pendant une préparation suspendue ne
+puisse jamais faire exécuter une demande différente de celle vérifiée. Trois
+issues : `verdict` `satisfied` / `contradicted` / `insufficient_evidence`, ou
+`kind: 'preparation_failed'` si la préparation échoue **avant** tout appel à
+`ToolExecutor.run()` — jamais de verdict par défaut, jamais un
+`ToolExecutionResult` inventé.
+
+**B. Un seul vérificateur concret existe**, pour un seul outil fictif :
+`createInMemorySendVerifier` (`packages/connectors/src/in-memory/in-memory-send-verification.ts`,
+même commits, 10 tests) — compare l'état observable
+(`InMemoryMailClient.listSent()`) avant/après, jamais la sortie déclarée par
+l'outil. Trois hypothèses explicites (complétude du store, observation
+immédiate, append-only) qui ne tiennent que pour ce connecteur simulé et
+local ; un verdict `satisfied` ne prouve **jamais** une livraison externe
+réelle.
+
+**C. Une seule utilisation applicative, opt-in et locale** : `apps/desktop
+verify-demo` (`apps/desktop/src/run-verify-demo.ts` + `verify-demo-trace.ts`,
+commits `f463033`, `f474cd8`, `5478144` — **locaux, non publiés sur
+`origin/main`** ; 28 + 11 + 7 = 46 tests). Entrée entièrement fixe et
+synthétique, `InMemoryMailClient` jetable créé à neuf à chaque invocation :
+aucune donnée réelle, aucun secret, aucun LLM, aucun réseau. Câble
+`proposeConfirmation` → confirmation utilisateur réelle →
+`ConfirmationService.verify` → `runWithVerification`, sur le chemin de
+confirmation réel de `@jarvis/connectors`. Une trace structurée **en
+mémoire** (RAM, `VerifyDemoTraceRecorder`) est renvoyée dans le résultat du
+flux — phases et statuts contrôlés uniquement, aucune donnée libre ; **aucune
+persistance, aucun fichier** ; ce n'est ni une intégration avec
+`@jarvis/memory` (le package de mémoire contrôlée, section précédente), ni
+une garantie d'audit durable.
+
+**D. Ce qui n'est PAS branché** : `AgentLoop` n'appelle jamais
+`runWithVerification` ; `apps/api` non plus ; `gmail.send`
+(`apps/desktop/src/gmail-send.ts`) n'a aucun vérificateur et continue de
+renvoyer le résultat brut de `confirmAndExecute()` — l'écart documenté par
+`docs/verified-result-boundaries.md` pour `gmail.send` (preuve d'acceptation
+API, jamais de livraison) reste entier. Aucune autre commande de
+`apps/desktop` n'est concernée.
+
+**E. Banc exploratoire séparé** : `prototypes/verify-postcondition-bench/`
+(commit `64702a2`, hors workspaces, pas un package — même convention que
+`prototypes/tool-interface-bench`) explore le même concept de façon isolée
+(17 tests, `oracle`/`runner`/`verifier` propres au banc). Son propre README
+le dit explicitement : « pas un mécanisme VERIFY intégré à JARVIS ». Il n'est
+ni un prérequis ni une dépendance de `runWithVerification`.
+
+**Travaux encore nécessaires** (voir `docs/verified-result-boundaries.md`
+§9, décisions ouvertes, non modifiées par cette implémentation) : aucun
+vérificateur pour `gmail.send` ou tout autre outil réel ; qui déclenche une
+vérification en dehors d'une démonstration explicite (un mécanisme générique
+dans `ToolExecutor`, une responsabilité par outil, ou une orchestration
+applicative) reste **non tranché** ; aucune génération de `MemoryCandidate`
+à partir d'un verdict de vérification.
 
 ## Architecture connecteurs (`@jarvis/connectors`)
 
@@ -719,6 +798,18 @@ restant ouvert.
   PB-03 à PB-06 non démontrés (`MASTER_BACKLOG.md` → « Product Builder »). Proposition de preuve
   utilisateur **non validée** : entretien réel avec au moins une réponse confirmée,
   suivi d'un export daté.
+- **Vérification de postcondition (opt-in)** — `runWithVerification`
+  (`@jarvis/core`, `64702a2`/`748b7a0`, publiés sur `origin/main`),
+  vérificateur `inmemory.send` (`@jarvis/connectors`, mêmes commits) et
+  démonstration CLI `verify-demo` (`apps/desktop`, `f463033`/`f474cd8`/`5478144`,
+  **locaux, non publiés**). Validation simulée : 76 tests ciblés verts (+ 17
+  tests sur un banc exploratoire séparé, non intégré). Usage réel : aucun —
+  `inmemory.send` est un connecteur fictif, la démonstration ne touche ni
+  réseau ni service externe. Chantier : `gmail.send`, `AgentLoop` et
+  `apps/api` restent sans aucune vérification ; qui déclenche une
+  vérification hors démonstration reste une décision ouverte (voir
+  « Vérification de postcondition (opt-in) » ci-dessous et
+  `docs/verified-result-boundaries.md` §9).
 
 ## Domaine juridique (LEGAL-00 → LegalCase v3)
 
@@ -1560,6 +1651,24 @@ cette mise à jour)** : 82 tests ciblés verts (détail par fichier dans « Lect
 naturelle contrôlée — VS-02 » ci-dessus), `npm run typecheck` et
 `npm run lint` propres sur l'ensemble du dépôt à l'issue de VS-02f.
 
+**Addendum vérification de postcondition (2026-10-21, vérifié par exécution
+ciblée — suite complète non rejouée à cette mise à jour)** : `npx vitest run`
+sur les six fichiers concernés → **76 tests ciblés verts** —
+`packages/core/src/verification.test.ts` (11),
+`packages/connectors/src/in-memory/in-memory-send-verification.test.ts` (10),
+`apps/desktop/src/verify-demo-trace.test.ts` (7),
+`apps/desktop/src/run-verify-demo-trace.test.ts` (11),
+`apps/desktop/src/run-verify-demo.test.ts` (28, dont le process réel `tsx
+src/main.ts verify-demo` sur confirmation acceptée/refusée/EOF/argument
+inattendu),
+`apps/desktop/src/main-verify-demo.test.ts` (9). `npx vitest run
+prototypes/verify-postcondition-bench/bench.test.ts` → **17 tests verts**
+(banc exploratoire séparé, non intégré — voir « Vérification de
+postcondition (opt-in) »). `tsc --noEmit` à la racine du monorepo non
+rejoué à cette mise à jour (hors périmètre de cette vérification ciblée) ;
+aucun appel réseau, LLM ni Gmail réel dans ces tests (entrée synthétique
+fixe, `InMemoryMailClient` jetable).
+
 ## Commits clés
 
 Jalons fonctionnels (`M4` → `M8`, chronologie de référence) :
@@ -1618,6 +1727,17 @@ Domaine juridique (état au 2026-09-26) :
   Publié sur `origin/main`.
 - **LEGAL-04.1** (commit dédié `8cdeb2e`, message `feat(legal): add legal case engine`) : `packages/legal-case-engine/`, `eslint.config.js` (frontières),
   `package-lock.json` (workspace) et les documents d'état. `packages/legal-core` inchangé.
+
+Vérification de postcondition (hors numérotation fonctionnelle — capacité de
+bibliothèque opt-in, voir « Vérification de postcondition (opt-in) » ;
+**seuls les deux premiers sont publiés sur `origin/main`**) :
+
+- `64702a2` banc exploratoire isolé (`prototypes/verify-postcondition-bench/`)
+- `748b7a0` `runWithVerification` (`@jarvis/core`) + vérificateur `inmemory.send`
+  (`@jarvis/connectors`) — **publié sur `origin/main`**
+- `f463033` correctif : détachement des instantanés `InMemoryMailClient` — **local**
+- `f474cd8` démonstration CLI `verify-demo` (`apps/desktop`) — **local**
+- `5478144` trace en mémoire (RAM) des missions `verify-demo` — **local**
 
 `AUDIT_STATE.md` reste **non suivi par git**, comme les documents de cadrage des
 slices et de la situation et `prototypes/situation-poc` (modifié et non commité).

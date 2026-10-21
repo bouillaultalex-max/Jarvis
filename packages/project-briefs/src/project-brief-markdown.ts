@@ -80,8 +80,16 @@ function renderDecisions(decisions: readonly Decision[]): string[] {
   }
   return decisions.map(
     (d) =>
-      `- [${esc(d.id)}:${d.status}] ${escapeMarkdownText(d.text)} — ${describeDecisionBasis(d, esc)}`,
+      `- [${esc(d.id)}:${d.status}] ${escapeMarkdownText(d.text)} — ${describeDecisionBasis(d, esc)}${describeValidationDate(d)}`,
   );
+}
+
+/** Date de validation si enregistrée ; sinon, signalée explicitement pour une décision validée. Jamais déduite. */
+function describeValidationDate(decision: Decision): string {
+  if (decision.validatedAt !== undefined) {
+    return ` — validée le ${escapeMarkdownText(decision.validatedAt)}`;
+  }
+  return decision.status === 'validated' ? ' — validée sans date enregistrée' : '';
 }
 
 function renderQuestions(questions: readonly Question[], status: Question['status']): string[] {

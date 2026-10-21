@@ -67,6 +67,8 @@ export interface Decision extends TextItem {
   readonly status: DecisionStatus;
   /** Absent = aucune justification enregistrée. Modifiable seulement tant que `proposed`. */
   readonly basis?: readonly ItemRef[];
+  /** ISO 8601. Absent = date de validation non enregistrée — jamais déduite ni inventée. */
+  readonly validatedAt?: string;
 }
 
 export interface Question extends TextItem {

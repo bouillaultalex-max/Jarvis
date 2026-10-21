@@ -167,6 +167,32 @@ describe('renderProjectBriefMarkdown — sources et justifications', () => {
     expect(md).toContain('elle ne prouve pas sa validité');
   });
 
+  it('date de validation : rendue si enregistrée, signalée si absente, jamais pour proposed', () => {
+    const md = renderProjectBriefMarkdown(
+      brief({
+        formatVersion: 2,
+        decisions: [
+          {
+            id: 'dec-1',
+            text: 'Datée',
+            status: 'validated',
+            validatedAt: '2026-10-21T12:00:00.000Z',
+          },
+          { id: 'dec-2', text: 'Sans date', status: 'validated' },
+          { id: 'dec-3', text: 'Proposée', status: 'proposed' },
+        ],
+      }),
+    );
+    const line = (id: string): string => md.split('\n').find((l) => l.includes(`[${id}:`))!;
+    expect(line('dec\\-1')).toContain(
+      ` — validée le ${escapeMarkdownText('2026-10-21T12:00:00.000Z')}`,
+    );
+    expect(line('dec\\-2')).toContain(' — validée sans date enregistrée');
+    expect(line('dec\\-2')).not.toContain('validée le');
+    expect(line('dec\\-3')).not.toContain('validée le');
+    expect(line('dec\\-3')).not.toContain('validée sans date');
+  });
+
   it('texte de source échappé : jamais de structure active', () => {
     const md = renderProjectBriefMarkdown(
       brief({

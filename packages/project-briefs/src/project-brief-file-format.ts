@@ -34,7 +34,13 @@ const V2_BRIEF_KEYS: ReadonlySet<string> = new Set([...V1_BRIEF_KEYS, 'sources']
 const TEXT_ITEM_KEYS: ReadonlySet<string> = new Set(['id', 'text']);
 const V2_SOURCED_ITEM_KEYS: ReadonlySet<string> = new Set(['id', 'text', 'sourceIds']);
 const V1_DECISION_KEYS: ReadonlySet<string> = new Set(['id', 'text', 'status']);
-const V2_DECISION_KEYS: ReadonlySet<string> = new Set(['id', 'text', 'status', 'basis']);
+const V2_DECISION_KEYS: ReadonlySet<string> = new Set([
+  'id',
+  'text',
+  'status',
+  'basis',
+  'validatedAt',
+]);
 const QUESTION_KEYS: ReadonlySet<string> = new Set(['id', 'text', 'status', 'answer']);
 const ITEM_REF_KEYS: ReadonlySet<string> = new Set(['kind', 'id']);
 
@@ -127,6 +133,15 @@ function parseItemRef(value: unknown, filePath: string): ItemRef {
   return { kind: kind as ItemRef['kind'], id: requireNonEmptyString(value.id, filePath) };
 }
 
+/** Analyse stricte d'une date ISO 8601 : exactement la forme de toISOString(), et date réelle. */
+function isStrictIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+    return false;
+  }
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.toISOString() === value;
+}
+
 function parseDecision(
   value: unknown,
   filePath: string,
@@ -149,14 +164,22 @@ function parseDecision(
     text: requireNonEmptyString(value.text, filePath),
     status: status as DecisionStatus,
   };
+  let result: Decision = decision;
+  if (value.validatedAt !== undefined) {
+    const validatedAt = requireNonEmptyString(value.validatedAt, filePath);
+    if (!isStrictIsoDate(validatedAt)) {
+      fail('invalid_structure', filePath);
+    }
+    result = { ...result, validatedAt };
+  }
   if (value.basis === undefined) {
-    return decision;
+    return result;
   }
   const basis = requireLinkList(value.basis, filePath).map((raw) => parseItemRef(raw, filePath));
   if (new Set(basis.map(itemRefKey)).size !== basis.length) {
     fail('duplicate_reference', filePath);
   }
-  return { ...decision, basis };
+  return { ...result, basis };
 }
 
 function parseQuestion(value: unknown, filePath: string): Question {
@@ -219,7 +242,7 @@ export function usesV2Features(brief: ProjectBrief): boolean {
   return (
     brief.sources.length > 0 ||
     [...brief.facts, ...brief.hypotheses].some((i) => i.sourceIds !== undefined) ||
-    brief.decisions.some((d) => d.basis !== undefined)
+    brief.decisions.some((d) => d.basis !== undefined || d.validatedAt !== undefined)
   );
 }
 
@@ -326,6 +349,7 @@ export function serializeProjectBriefFile(brief: ProjectBrief): string {
       text: d.text,
       status: d.status,
       ...(d.basis !== undefined ? { basis: d.basis.map((r) => ({ kind: r.kind, id: r.id })) } : {}),
+      ...(d.validatedAt !== undefined ? { validatedAt: d.validatedAt } : {}),
     })),
     questions: brief.questions.map((q) => ({
       id: q.id,

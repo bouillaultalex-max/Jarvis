@@ -169,13 +169,22 @@ export class FileProjectBriefStore {
     return this.mutate(id, (current) => {
       const brief = this.requireExisting(id, current);
       const decision = this.requireDecision(brief, decisionId);
-      if (decision.status === 'obsolete') {
+      if (decision.status !== 'proposed') {
         throw new ProjectBriefStoreError(
           'invalid_transition',
-          `Décision « ${decisionId} » obsolète : ne peut pas être validée.`,
+          decision.status === 'validated'
+            ? `Décision « ${decisionId} » déjà validée.`
+            : `Décision « ${decisionId} » obsolète : ne peut pas être validée.`,
         );
       }
-      return this.touch(this.replaceDecision(brief, decisionId, 'validated'));
+      // validatedAt est une notion v2 : une fiche v1 passe en v2 à la validation (jamais à la lecture).
+      return this.touch(
+        asV2(
+          this.replaceDecision(brief, decisionId, 'validated', {
+            validatedAt: new Date().toISOString(),
+          }),
+        ),
+      );
     });
   }
 
@@ -304,8 +313,11 @@ export class FileProjectBriefStore {
     brief: ProjectBrief,
     decisionId: string,
     status: Decision['status'],
+    extra: Pick<Decision, 'validatedAt'> = {},
   ): ProjectBrief {
-    const decisions = brief.decisions.map((d) => (d.id === decisionId ? { ...d, status } : d));
+    const decisions = brief.decisions.map((d) =>
+      d.id === decisionId ? { ...d, status, ...extra } : d,
+    );
     return { ...brief, decisions };
   }
 

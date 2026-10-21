@@ -97,6 +97,13 @@ describe('format v1 (historique) — lecture stricte, aucune provenance inventé
       decisions: [{ id: 'dec-1', text: 'd', status: 'proposed', basis: [] }],
     };
     expect(reasonOf(withBasis)).toBe('invalid_structure');
+    const withValidatedAt = {
+      ...v1Raw(),
+      decisions: [
+        { id: 'dec-1', text: 'd', status: 'validated', validatedAt: '2026-10-21T12:00:00.000Z' },
+      ],
+    };
+    expect(reasonOf(withValidatedAt)).toBe('invalid_structure');
   });
 
   it('écrire une fiche v1 portant une notion v2 est refusé (jamais d’abaissement silencieux)', () => {
@@ -113,6 +120,45 @@ describe('format v2 — sources, liens et justifications', () => {
     const raw = JSON.parse(text);
     expect(raw.facts[1]).not.toHaveProperty('sourceIds');
     expect(raw.decisions[1]).not.toHaveProperty('basis');
+  });
+
+  it('validatedAt : aller-retour identique ; absent → omis sur disque', () => {
+    const original = v2Brief({
+      decisions: [
+        {
+          id: 'dec-1',
+          text: 'validée',
+          status: 'validated',
+          validatedAt: '2026-10-21T12:00:00.000Z',
+        },
+        { id: 'dec-2', text: 'proposée', status: 'proposed' },
+      ],
+    });
+    const text = serializeProjectBriefFile(original);
+    const parsed = parseProjectBriefFile(JSON.parse(text), 'f.json');
+    expect(parsed).toEqual(original);
+    expect(parsed.decisions[0]!.validatedAt).toBe('2026-10-21T12:00:00.000Z');
+    expect(JSON.parse(text).decisions[1]).not.toHaveProperty('validatedAt');
+  });
+
+  it('validatedAt non strictement ISO 8601 → invalid_structure (même si Date.parse l’accepte)', () => {
+    const withDate = (validatedAt: unknown): unknown => {
+      const raw = JSON.parse(serializeProjectBriefFile(v2Brief()));
+      raw.decisions[1].validatedAt = validatedAt;
+      return raw;
+    };
+    for (const bad of [
+      'October 21, 2026',
+      '2026-10-21',
+      '2026-10-21T12:00:00Z',
+      '2026-02-31T12:00:00.000Z',
+      '',
+      42,
+    ]) {
+      expect(reasonOf(withDate(bad))).toBe('invalid_structure');
+    }
+    expect(Number.isNaN(Date.parse('October 21, 2026'))).toBe(false);
+    expect(reasonOf(withDate('2026-10-21T12:00:00.000Z'))).toBeUndefined();
   });
 
   it('v2 sans `sources` → invalid_structure ; version inconnue → unknown_version', () => {

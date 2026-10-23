@@ -112,6 +112,22 @@ function renderNextQuestion(brief: ProjectBrief): string {
         "(sélection par règle fixe — première question ouverte, ordre d'ajout ; pas un raisonnement)";
 }
 
+/**
+ * Section des besoins : rendue uniquement s'il y en a au moins un, afin
+ * qu'une fiche sans besoin garde exactement son rendu antérieur.
+ */
+function renderNeedsSection(brief: ProjectBrief): string[] {
+  if (brief.needs.length === 0) return [];
+  return [
+    '## Besoins déclarés (non vérifiés)',
+    '',
+    "(exprimés par l'utilisateur — jamais vérifiés ; une source reliée n'est pas une preuve)",
+    '',
+    ...renderSourcedItemList(brief.needs, '(aucun)'),
+    '',
+  ];
+}
+
 export function renderProjectBriefMarkdown(brief: ProjectBrief): string {
   const lines: string[] = [
     `# Export — ${escapeMarkdownText(brief.id)}`,
@@ -139,6 +155,7 @@ export function renderProjectBriefMarkdown(brief: ProjectBrief): string {
     '',
     ...renderSourcedItemList(brief.hypotheses, '(aucune)'),
     '',
+    ...renderNeedsSection(brief),
     '## Décisions',
     '',
     '(une justification relie une décision à des éléments déclarés — elle ne prouve pas sa validité)',

@@ -23,9 +23,15 @@ export type ProjectInput =
   | { readonly op: 'obsolete-decision'; readonly id: string; readonly decisionId: string }
   | { readonly op: 'add-source'; readonly id: string; readonly text: string }
   | {
+      readonly op: 'add-need';
+      readonly id: string;
+      readonly text: string;
+      readonly sourceIds: readonly string[];
+    }
+  | {
       readonly op: 'link-source';
       readonly id: string;
-      readonly item: ProjectItemRef;
+      readonly item: ProjectSourceableRef;
       readonly sourceId: string;
     }
   | {
@@ -43,6 +49,12 @@ export interface ProjectItemRef {
   readonly id: string;
 }
 
+/** Miroir local de `SourceableRef` — réservé à `link-source` (un besoin ne justifie jamais une décision). */
+export interface ProjectSourceableRef {
+  readonly kind: 'fact' | 'hypothesis' | 'need';
+  readonly id: string;
+}
+
 /**
  * Côté CLI seulement, le type est déduit du préfixe produit par le store
  * (`fact-…` / `hyp-…`) ; le modèle stocke ensuite une référence typée
@@ -55,6 +67,43 @@ function parseItemRef(value: string | undefined): ProjectItemRef {
   throw new Error(
     `project : élément « ${id} » invalide — attendu un fait (fact-…) ou une hypothèse (hyp-…).`,
   );
+}
+
+/**
+ * Parseur DISTINCT de `parseItemRef` : accepte en plus `need-…`, pour
+ * `link-source` uniquement. `justify-decision` garde `parseItemRef`, qui
+ * refuse `need-…`.
+ */
+function parseSourceableRef(value: string | undefined): ProjectSourceableRef {
+  const id = requireArg(value, 'élément');
+  if (id.startsWith('need-')) return { kind: 'need', id };
+  if (id.startsWith('fact-')) return { kind: 'fact', id };
+  if (id.startsWith('hyp-')) return { kind: 'hypothesis', id };
+  throw new Error(
+    `project : élément « ${id} » invalide — attendu un fait (fact-…), une hypothèse (hyp-…) ou un besoin (need-…).`,
+  );
+}
+
+const ADD_NEED_USAGE = 'usage : project add-need <id> "texte" [--source <source-id> ...]';
+
+/** `<id> "texte" [--source src-n]...` — 0..n `--source`, rien d'autre toléré. */
+function parseAddNeed(rest: readonly string[]): ProjectInput {
+  if (rest.length < 2 || (rest.length - 2) % 2 !== 0) {
+    throw new Error(`project : ${ADD_NEED_USAGE}`);
+  }
+  const sourceIds: string[] = [];
+  for (let i = 2; i < rest.length; i += 2) {
+    if (rest[i] !== '--source') {
+      throw new Error(`project : ${ADD_NEED_USAGE}`);
+    }
+    sourceIds.push(requireArg(rest[i + 1], 'source-id'));
+  }
+  return {
+    op: 'add-need',
+    id: requireArg(rest[0], 'id'),
+    text: requireArg(rest[1], 'texte'),
+    sourceIds,
+  };
 }
 
 function requireArg(value: string | undefined, label: string): string {
@@ -144,12 +193,14 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
         text: requireArg(rest[1], 'texte'),
       };
     }
+    case 'add-need':
+      return parseAddNeed(rest);
     case 'link-source': {
-      requireArity(rest, 3, 'usage : project link-source <id> <fact-n|hyp-n> <source-id>');
+      requireArity(rest, 3, 'usage : project link-source <id> <fact-n|hyp-n|need-n> <source-id>');
       return {
         op: 'link-source',
         id: requireArg(rest[0], 'id'),
-        item: parseItemRef(rest[1]),
+        item: parseSourceableRef(rest[1]),
         sourceId: requireArg(rest[2], 'source-id'),
       };
     }
@@ -184,7 +235,7 @@ export function parseProjectArgs(argv: readonly string[]): ProjectInput {
       throw new Error(
         `project : sous-commande inconnue « ${sub ?? ''} » — attendu l'une de : create, show, ` +
           'add-fact, add-hypothesis, add-question, answer-question, add-decision, ' +
-          'validate-decision, obsolete-decision, add-source, link-source, justify-decision, ' +
+          'validate-decision, obsolete-decision, add-source, add-need, link-source, justify-decision, ' +
           'next-question, export-markdown, interview.',
       );
   }

@@ -1,6 +1,7 @@
 import {
-  CURRENT_PROJECT_BRIEF_FILE_VERSION,
   LEGACY_PROJECT_BRIEF_FILE_VERSION,
+  NEEDS_PROJECT_BRIEF_FILE_VERSION,
+  SOURCES_PROJECT_BRIEF_FILE_VERSION,
   MAX_LINKS_PER_ITEM,
   type Decision,
   type DecisionStatus,
@@ -31,6 +32,7 @@ const V1_BRIEF_KEYS: ReadonlySet<string> = new Set([
   'updatedAt',
 ]);
 const V2_BRIEF_KEYS: ReadonlySet<string> = new Set([...V1_BRIEF_KEYS, 'sources']);
+const V3_BRIEF_KEYS: ReadonlySet<string> = new Set([...V2_BRIEF_KEYS, 'needs']);
 const TEXT_ITEM_KEYS: ReadonlySet<string> = new Set(['id', 'text']);
 const V2_SOURCED_ITEM_KEYS: ReadonlySet<string> = new Set(['id', 'text', 'sourceIds']);
 const V1_DECISION_KEYS: ReadonlySet<string> = new Set(['id', 'text', 'status']);
@@ -220,7 +222,7 @@ function itemRefKey(ref: ItemRef): string {
 /** Toute référence pointe vers un élément existant de la bonne catégorie. */
 function requireResolvedReferences(brief: ProjectBrief, filePath: string): void {
   const sourceIds = new Set(brief.sources.map((s) => s.id));
-  for (const item of [...brief.facts, ...brief.hypotheses]) {
+  for (const item of [...brief.facts, ...brief.hypotheses, ...brief.needs]) {
     if (item.sourceIds?.some((id) => !sourceIds.has(id))) {
       fail('dangling_reference', filePath);
     }
@@ -237,6 +239,11 @@ function requireResolvedReferences(brief: ProjectBrief, filePath: string): void 
   }
 }
 
+/** Vrai si la fiche utilise une notion v3 (au moins un besoin). */
+export function usesV3Features(brief: ProjectBrief): boolean {
+  return brief.needs.length > 0;
+}
+
 /** Vrai si la fiche utilise une notion v2 (source, lien ou justification). */
 export function usesV2Features(brief: ProjectBrief): boolean {
   return (
@@ -250,12 +257,14 @@ export function usesV2Features(brief: ProjectBrief): boolean {
  * Valide et convertit le contenu **déjà `JSON.parse`'d** d'un fichier de
  * fiche projet. Fonction **pure**, sans I/O.
  *
- * Accepte v1 (format historique, strict : aucune clé v2 tolérée) et v2
- * (`sources`, `sourceIds`, `basis`). Un fichier v1 est restitué avec
- * `sources` vide et `formatVersion: 1` — jamais réécrit par la lecture.
+ * Accepte v1 (format historique, strict : aucune clé v2 tolérée), v2
+ * (`sources`, `sourceIds`, `basis`) et v3 (v2 + `needs`). La clé `needs` est
+ * interdite en v1/v2. Un fichier v1 est restitué avec `sources` et `needs`
+ * vides et `formatVersion: 1` ; un v2 avec `needs` vide — jamais réécrit
+ * par la lecture.
  *
  * @throws {ProjectBriefFileError}
- *   - `unknown_version` si `formatVersion` n'est ni 1 ni 2 ;
+ *   - `unknown_version` si `formatVersion` n'est ni 1, ni 2, ni 3 ;
  *   - `invalid_structure` si une clé est inconnue (dont une clé v2 dans un
  *     fichier v1) ou un champ mal formé ;
  *   - `duplicate_id` si deux éléments d'une même catégorie partagent un id ;
@@ -269,12 +278,18 @@ export function parseProjectBriefFile(parsed: unknown, filePath: string): Projec
   const version = parsed.formatVersion;
   if (
     version !== LEGACY_PROJECT_BRIEF_FILE_VERSION &&
-    version !== CURRENT_PROJECT_BRIEF_FILE_VERSION
+    version !== SOURCES_PROJECT_BRIEF_FILE_VERSION &&
+    version !== NEEDS_PROJECT_BRIEF_FILE_VERSION
   ) {
     fail('unknown_version', filePath);
   }
   const isLegacy = version === LEGACY_PROJECT_BRIEF_FILE_VERSION;
-  requireKnownKeys(parsed, isLegacy ? V1_BRIEF_KEYS : V2_BRIEF_KEYS, filePath);
+  const hasNeeds = version === NEEDS_PROJECT_BRIEF_FILE_VERSION;
+  requireKnownKeys(
+    parsed,
+    isLegacy ? V1_BRIEF_KEYS : hasNeeds ? V3_BRIEF_KEYS : V2_BRIEF_KEYS,
+    filePath,
+  );
   if (
     typeof parsed.revision !== 'number' ||
     !Number.isInteger(parsed.revision) ||
@@ -287,6 +302,10 @@ export function parseProjectBriefFile(parsed: unknown, filePath: string): Projec
   const sources = isLegacy ? [] : parseArray(parsed.sources, filePath, parseTextItem);
   const facts = parseArray(parsed.facts, filePath, parseItem);
   const hypotheses = parseArray(parsed.hypotheses, filePath, parseItem);
+  const needs =
+    hasNeeds && parsed.needs !== undefined
+      ? parseArray(parsed.needs, filePath, parseSourcedItem)
+      : [];
   const decisions = parseArray(parsed.decisions, filePath, (raw, path) =>
     parseDecision(raw, path, version),
   );
@@ -294,6 +313,7 @@ export function parseProjectBriefFile(parsed: unknown, filePath: string): Projec
   requireDuplicateFree(sources, filePath);
   requireDuplicateFree(facts, filePath);
   requireDuplicateFree(hypotheses, filePath);
+  requireDuplicateFree(needs, filePath);
   requireDuplicateFree(decisions, filePath);
   requireDuplicateFree(questions, filePath);
 
@@ -305,6 +325,7 @@ export function parseProjectBriefFile(parsed: unknown, filePath: string): Projec
     sources,
     facts,
     hypotheses,
+    needs,
     decisions,
     questions,
     createdAt: requireNonEmptyString(parsed.createdAt, filePath),
@@ -336,6 +357,9 @@ export function serializeProjectBriefFile(brief: ProjectBrief): string {
   if (isLegacy && usesV2Features(brief)) {
     throw new Error('serializeProjectBriefFile : fiche v1 portant des sources ou des liens (v2).');
   }
+  if (brief.formatVersion < NEEDS_PROJECT_BRIEF_FILE_VERSION && usesV3Features(brief)) {
+    throw new Error('serializeProjectBriefFile : fiche v1/v2 portant des besoins (v3).');
+  }
   const payload = {
     id: brief.id,
     name: brief.name,
@@ -344,6 +368,7 @@ export function serializeProjectBriefFile(brief: ProjectBrief): string {
     ...(isLegacy ? {} : { sources: brief.sources.map((s) => ({ id: s.id, text: s.text })) }),
     facts: brief.facts.map(serializeSourcedItem),
     hypotheses: brief.hypotheses.map(serializeSourcedItem),
+    ...(brief.needs.length > 0 ? { needs: brief.needs.map(serializeSourcedItem) } : {}),
     decisions: brief.decisions.map((d) => ({
       id: d.id,
       text: d.text,

@@ -40,6 +40,7 @@ function v2Brief(overrides: Partial<ProjectBrief> = {}): ProjectBrief {
       { id: 'fact-2', text: 'nu' },
     ],
     hypotheses: [{ id: 'hyp-1', text: 'une hypothèse' }],
+    needs: [],
     decisions: [
       {
         id: 'dec-1',
@@ -166,7 +167,7 @@ describe('format v2 — sources, liens et justifications', () => {
     delete raw.sources;
     expect(reasonOf(raw)).toBe('invalid_structure');
     expect(
-      reasonOf({ ...JSON.parse(serializeProjectBriefFile(v2Brief())), formatVersion: 3 }),
+      reasonOf({ ...JSON.parse(serializeProjectBriefFile(v2Brief())), formatVersion: 4 }),
     ).toBe('unknown_version');
   });
 

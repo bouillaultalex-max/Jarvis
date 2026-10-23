@@ -12,7 +12,6 @@ import {
 import { dirname, join } from 'node:path';
 
 import {
-  CURRENT_PROJECT_BRIEF_FILE_VERSION,
   LEGACY_PROJECT_BRIEF_FILE_VERSION,
   MAX_ANSWER_CHARS,
   MAX_ID_CHARS,
@@ -20,17 +19,21 @@ import {
   MAX_LINKS_PER_ITEM,
   MAX_LIST_ITEMS,
   MAX_NAME_CHARS,
+  SOURCES_PROJECT_BRIEF_FILE_VERSION,
   type Decision,
   type ItemRef,
   type ProjectBrief,
   type Question,
+  type SourceableRef,
   type SourcedItem,
   isBoundedNonEmptyText,
   isValidProjectId,
   nextStableId,
+  withMinimumVersion,
 } from './project-brief.js';
 import { ProjectBriefFileError, ProjectBriefStoreError } from './project-brief-errors.js';
 import { parseProjectBriefFile, serializeProjectBriefFile } from './project-brief-file-format.js';
+import { withNeedAdded, withNeedSourceLinked } from './project-brief-needs.js';
 import { ProjectBriefLockError, acquireProjectBriefLock } from './project-brief-lock.js';
 
 export interface FileProjectBriefStoreOptions {
@@ -83,6 +86,7 @@ export class FileProjectBriefStore {
         sources: [],
         facts: [],
         hypotheses: [],
+        needs: [],
         decisions: [],
         questions: [],
         createdAt: now,
@@ -211,13 +215,29 @@ export class FileProjectBriefStore {
   }
 
   /**
-   * Relie un fait ou une hypothèse à une source existante. Reste permis
+   * Besoin **déclaré** par l'utilisateur (« je veux … »), jamais vérifié,
+   * avec 0..n sources existantes. Première notion v3 : la fiche passe en
+   * `formatVersion: 3` et n'en redescend jamais. Tout refus (source inconnue,
+   * doublon, limites) lève avant l'écriture : fichier et révision inchangés.
+   */
+  addNeed(id: string, text: string, sourceIds: readonly string[] = []): ProjectBrief {
+    this.assertBoundedText(text, MAX_ITEM_CHARS, 'text');
+    return this.mutate(id, (current) =>
+      this.touch(withNeedAdded(this.requireExisting(id, current), text, sourceIds)),
+    );
+  }
+
+  /**
+   * Relie un fait, une hypothèse ou un besoin à une source existante. Reste permis
    * après validation d'une décision qui s'appuie sur cet élément : ce lien
    * enrichit la fiche, il ne constitue pas un instantané de justification.
    */
-  linkSource(id: string, ref: ItemRef, sourceId: string): ProjectBrief {
+  linkSource(id: string, ref: SourceableRef, sourceId: string): ProjectBrief {
     return this.mutate(id, (current) => {
       const brief = this.requireExisting(id, current);
+      if (ref.kind === 'need') {
+        return this.touch(withNeedSourceLinked(brief, ref.id, sourceId));
+      }
       const item = this.requireItem(brief, ref);
       if (!brief.sources.some((s) => s.id === sourceId)) {
         throw new ProjectBriefStoreError('unknown_source', `Source « ${sourceId} » introuvable.`);
@@ -250,6 +270,13 @@ export class FileProjectBriefStore {
    * décision : justifier n'est pas valider.
    */
   justifyDecision(id: string, decisionId: string, ref: ItemRef): ProjectBrief {
+    // Défense à l'exécution : un besoin ne justifie jamais une décision (le type l'interdit déjà).
+    if (ref.kind !== 'fact' && ref.kind !== 'hypothesis') {
+      throw new ProjectBriefStoreError(
+        'invalid_input',
+        'Seuls un fait ou une hypothèse peuvent justifier une décision (pas un besoin).',
+      );
+    }
     return this.mutate(id, (current) => {
       const brief = this.requireExisting(id, current);
       const decision = this.requireDecision(brief, decisionId);
@@ -452,7 +479,7 @@ function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
 }
 
-/** Passage v1 → v2 à la première notion v2 ; idempotent, jamais l'inverse. */
+/** Passage v1 → v2 à la première notion v2 ; idempotent, jamais de rétrogradation (v3 reste v3). */
 function asV2(brief: ProjectBrief): ProjectBrief {
-  return { ...brief, formatVersion: CURRENT_PROJECT_BRIEF_FILE_VERSION };
+  return withMinimumVersion(brief, SOURCES_PROJECT_BRIEF_FILE_VERSION);
 }

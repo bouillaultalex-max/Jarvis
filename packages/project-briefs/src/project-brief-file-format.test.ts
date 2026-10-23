@@ -13,6 +13,7 @@ function brief(overrides: Partial<ProjectBrief> = {}): ProjectBrief {
     sources: [],
     facts: [{ id: 'fact-1', text: 'un fait' }],
     hypotheses: [],
+    needs: [],
     decisions: [{ id: 'dec-1', text: 'une décision', status: 'proposed' }],
     questions: [{ id: 'q-1', text: 'une question', status: 'resolved', answer: 'une réponse' }],
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -30,7 +31,7 @@ describe('parseProjectBriefFile / serializeProjectBriefFile', () => {
 
   it('formatVersion inconnu → unknown_version', () => {
     const raw = JSON.parse(serializeProjectBriefFile(brief()));
-    raw.formatVersion = 3;
+    raw.formatVersion = 4;
     expect(() => parseProjectBriefFile(raw, 'f.json')).toThrow(ProjectBriefFileError);
     try {
       parseProjectBriefFile(raw, 'f.json');

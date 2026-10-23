@@ -84,6 +84,12 @@ export function runProjectFlow(
         };
       case 'add-source':
         return { status: 'ok', op: input.op, brief: deps.store.addSource(input.id, input.text) };
+      case 'add-need':
+        return {
+          status: 'ok',
+          op: input.op,
+          brief: deps.store.addNeed(input.id, input.text, input.sourceIds),
+        };
       case 'link-source':
         return {
           status: 'ok',
@@ -129,6 +135,9 @@ function briefSummaryLines(brief: ProjectBrief): string[] {
     `Faits (${brief.facts.length}) : ${brief.facts.map(sourcedItemLabel).join(' | ') || '(aucun)'}`,
     `Hypothèses (${brief.hypotheses.length}) : ${
       brief.hypotheses.map(sourcedItemLabel).join(' | ') || '(aucune)'
+    }`,
+    `Besoins déclarés, non vérifiés (${brief.needs.length}) : ${
+      brief.needs.map(sourcedItemLabel).join(' | ') || '(aucun)'
     }`,
     `Décisions (${brief.decisions.length}) : ${
       brief.decisions

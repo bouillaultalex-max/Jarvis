@@ -111,7 +111,8 @@ apps/desktop project add-decision boutique-asiatique "texte"
 apps/desktop project validate-decision boutique-asiatique <decision-id>
 apps/desktop project obsolete-decision boutique-asiatique <decision-id>
 apps/desktop project add-source boutique-asiatique "texte"
-apps/desktop project link-source boutique-asiatique <fact-n|hyp-n> <source-id>
+apps/desktop project add-need boutique-asiatique "texte" [--source <source-id> ...]
+apps/desktop project link-source boutique-asiatique <fact-n|hyp-n|need-n> <source-id>
 apps/desktop project justify-decision boutique-asiatique <decision-id> <fact-n|hyp-n>
 apps/desktop project next-question boutique-asiatique
 apps/desktop project export-markdown boutique-asiatique --output chemin.md
@@ -172,11 +173,31 @@ plutôt que de rien déduire. Une justification relie une décision à des
 éléments déclarés : elle ne prouve pas sa validité. Les sources d'un fait
 restent enrichissables après validation d'une décision qui s'y appuie : ce
 n'est ni un instantané historique de justification, ni une preuve immuable de
-ce qui a été validé. Pas d'entités « besoin » ni « exigence », pas de
+ce qui a été validé. Pas d'entité « exigence », pas de
 suppression de lien, pas d'historique. `interview` est inchangé : ses
 réponses ne sont pas sourcées automatiquement.
 
+**Besoins déclarés (PB-01, tranche « besoin → sources »).** `add-need <id>
+"texte" [--source src-n ...]` enregistre un besoin **déclaré** par l'utilisateur
+(`need-n`, ex. « Je veux suivre mon stock sans ressaisir mes commandes. »),
+avec zéro, une ou plusieurs sources existantes ; sans source, `show` et l'export
+affichent « source non renseignée ». `link-source <id> need-n src-n` ajoute une
+source après coup (jamais de retrait). Mêmes garanties que pour les faits :
+`unknown_source`, `already_linked`, au plus 20 sources par besoin et 50 besoins,
+un refus n'écrit rien ni n'incrémente la révision. `justify-decision` reste
+limité aux faits et hypothèses (un `need-n` est refusé). `show` et l'export
+ont une section « Besoins déclarés (non vérifiés) », affichée seulement s'il y
+a au moins un besoin : l'export d'une fiche sans besoin est inchangé. Un besoin n'est
+ni vérifié, ni relié à une décision ou une exigence : le chantier PB-01 n'est
+pas terminé.
+
 Compatibilité : un fichier **v1** (format historique) est lu tel quel et
+jamais réécrit par une lecture ; la première création d'un **besoin** fait
+passer la fiche en **v3** (la clé `needs` n'existe qu'en v3 et est refusée
+en v1/v2 ; une fiche v3 ne redescend jamais). Un ancien binaire ne connaissant
+que v1/v2 refuse proprement une fiche v3 (`unknown_version`).
+
+Compatibilité v1/v2 : un fichier **v1** (format historique) est lu tel quel et
 jamais réécrit par une lecture ; une mutation du modèle historique le laisse
 en v1. La première source ou justification le fait passer en **v2**, qui ne
 redescend jamais en v1. Aucune provenance n'est attribuée aux éléments

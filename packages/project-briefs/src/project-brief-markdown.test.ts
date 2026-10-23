@@ -13,6 +13,7 @@ function brief(overrides: Partial<ProjectBrief> = {}): ProjectBrief {
     sources: [],
     facts: [],
     hypotheses: [],
+    needs: [],
     decisions: [],
     questions: [],
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -57,7 +58,7 @@ describe('renderProjectBriefMarkdown', () => {
 
   it('absence d’éléments : chaque section annonce explicitement "aucun(e)"', () => {
     const md = renderProjectBriefMarkdown(brief());
-    expect(md).toContain('(aucun)'); // faits
+    expect(md).toMatch(/## Faits déclarés[^#]*\(aucun\)/); // faits
     expect(md).toContain('(aucune)'); // hypothèses/décisions/questions
     expect(md).toContain('Aucune question ouverte restante');
   });

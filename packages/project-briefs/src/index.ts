@@ -16,10 +16,13 @@ export {
   MAX_LINKS_PER_ITEM,
   MAX_LIST_ITEMS,
   MAX_NAME_CHARS,
+  NEEDS_PROJECT_BRIEF_FILE_VERSION,
   PROJECT_ID_PATTERN,
+  SOURCES_PROJECT_BRIEF_FILE_VERSION,
   isBoundedNonEmptyText,
   isValidProjectId,
   nextStableId,
+  withMinimumVersion,
 } from './project-brief.js';
 export type {
   Decision,
@@ -30,6 +33,7 @@ export type {
   Question,
   QuestionStatus,
   Source,
+  SourceableRef,
   SourcedItem,
   TextItem,
 } from './project-brief.js';
@@ -39,6 +43,8 @@ export type {
   ProjectBriefFileErrorReason,
   ProjectBriefStoreErrorReason,
 } from './project-brief-errors.js';
+
+export { withNeedAdded, withNeedSourceLinked } from './project-brief-needs.js';
 
 export { parseProjectBriefFile, serializeProjectBriefFile } from './project-brief-file-format.js';
 

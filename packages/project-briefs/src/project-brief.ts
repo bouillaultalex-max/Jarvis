@@ -24,9 +24,16 @@
 
 /** Format historique (sans sources ni liens) — toujours lu, conservé tant qu'aucune notion v2 n'est utilisée. */
 export const LEGACY_PROJECT_BRIEF_FILE_VERSION = 1;
-export const CURRENT_PROJECT_BRIEF_FILE_VERSION = 2;
+/** Format v2 : sources déclarées, liens et justifications. */
+export const SOURCES_PROJECT_BRIEF_FILE_VERSION = 2;
+/** Format v3 : v2 + besoins déclarés (`needs`), déclenché à la première création d'un besoin. */
+export const NEEDS_PROJECT_BRIEF_FILE_VERSION = 3;
+/** Version la plus récente que ce code sait lire et écrire. */
+export const CURRENT_PROJECT_BRIEF_FILE_VERSION = NEEDS_PROJECT_BRIEF_FILE_VERSION;
 export type ProjectBriefFileVersion =
-  typeof LEGACY_PROJECT_BRIEF_FILE_VERSION | typeof CURRENT_PROJECT_BRIEF_FILE_VERSION;
+  | typeof LEGACY_PROJECT_BRIEF_FILE_VERSION
+  | typeof SOURCES_PROJECT_BRIEF_FILE_VERSION
+  | typeof NEEDS_PROJECT_BRIEF_FILE_VERSION;
 
 export const MAX_ID_CHARS = 64;
 export const MAX_NAME_CHARS = 200;
@@ -63,6 +70,13 @@ export interface ItemRef {
   readonly id: string;
 }
 
+/**
+ * Référence acceptée par `linkSource` uniquement : un besoin peut être relié
+ * à des sources, mais ne peut JAMAIS justifier une décision (`ItemRef` reste
+ * fait|hypothèse). Le type n'est jamais déduit du préfixe de l'id côté modèle.
+ */
+export type SourceableRef = ItemRef | { readonly kind: 'need'; readonly id: string };
+
 export interface Decision extends TextItem {
   readonly status: DecisionStatus;
   /** Absent = aucune justification enregistrée. Modifiable seulement tant que `proposed`. */
@@ -82,7 +96,8 @@ export interface ProjectBrief {
   readonly name: string;
   /**
    * Version du fichier lu ou à écrire. Passe à 2 dès qu'une notion v2 est
-   * utilisée (source, lien, justification) ; ne redescend jamais à 1.
+   * utilisée (source, lien, justification), à 3 à la création d'un besoin ;
+   * ne redescend jamais.
    */
   readonly formatVersion: ProjectBriefFileVersion;
   /**
@@ -98,6 +113,11 @@ export interface ProjectBrief {
   /** Rapportés par l'utilisateur — jamais présentés comme vérifiés de l'extérieur. */
   readonly facts: readonly SourcedItem[];
   readonly hypotheses: readonly SourcedItem[];
+  /**
+   * Besoins déclarés par l'utilisateur (« je veux … ») — jamais vérifiés.
+   * Toujours vide pour un fichier v1/v2 ; `sourceIds` absent = source non renseignée.
+   */
+  readonly needs: readonly SourcedItem[];
   readonly decisions: readonly Decision[];
   readonly questions: readonly Question[];
   readonly createdAt: string;
@@ -113,6 +133,14 @@ export function nextStableId(items: readonly TextItem[], prefix: string): string
     return n > acc ? n : acc;
   }, 0);
   return `${prefix}-${max + 1}`;
+}
+
+/** Monte la version au minimum demandée ; idempotent, ne rétrograde jamais (une fiche v3 reste v3). */
+export function withMinimumVersion(
+  brief: ProjectBrief,
+  minimum: ProjectBriefFileVersion,
+): ProjectBrief {
+  return brief.formatVersion >= minimum ? brief : { ...brief, formatVersion: minimum };
 }
 
 export function isValidProjectId(id: string): boolean {

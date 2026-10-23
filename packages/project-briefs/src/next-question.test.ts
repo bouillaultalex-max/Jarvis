@@ -12,6 +12,7 @@ function brief(questions: ProjectBrief['questions']): ProjectBrief {
     sources: [],
     facts: [],
     hypotheses: [],
+    needs: [],
     decisions: [],
     questions,
     createdAt: '2026-01-01T00:00:00.000Z',

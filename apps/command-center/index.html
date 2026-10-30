@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jarvis — Centre de commandement</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Icônes sobres, traits fins, une seule couleur (currentColor) -->
+    <svg aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden">
+      <defs>
+        <symbol
+          id="icon-home"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <path d="M4 11.5 12 4l8 7.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M6 10v9h12v-9" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M10 19v-5h4v5" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol
+          id="icon-inbox"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <path d="M4 13 7 5h10l3 8" stroke-linecap="round" stroke-linejoin="round" />
+          <path
+            d="M4 13v6h16v-6h-4.5a2.5 2.5 0 0 1-5 0H4Z"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol
+          id="icon-mission"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <path d="M9 6h10M9 12h10M9 18h10" stroke-linecap="round" />
+          <path d="M5 6h.01M5 12h.01M5 18h.01" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol
+          id="icon-check"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path d="M5 12.5 9.5 17 19 7" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol
+          id="icon-alert"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path d="M12 8v5" stroke-linecap="round" />
+          <circle cx="12" cy="16.2" r="0.6" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="8.5" />
+        </symbol>
+        <symbol
+          id="icon-close"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+        >
+          <path d="M6 6l12 12M18 6 6 18" stroke-linecap="round" />
+        </symbol>
+        <symbol
+          id="icon-legal"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+        >
+          <path d="M12 4v16" stroke-linecap="round" />
+          <path d="M6 20h12" stroke-linecap="round" />
+          <path
+            d="M4 7h6M4 7l-2.4 4.6A3 3 0 0 0 4.4 15 3 3 0 0 0 7 11.6L4.6 7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M18 7h-6M18 7l-2.4 4.6A3 3 0 0 0 18.4 15 3 3 0 0 0 21 11.6L18.6 7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">J</span>
+          <div class="brand-text">
+            <span class="brand-name">Jarvis</span>
+            <span class="brand-tag">Centre de commandement — local</span>
+          </div>
+        </div>
+
+        <nav class="main-nav" aria-label="Navigation principale">
+          <button class="nav-link is-active" data-route="home" type="button">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-home" /></svg>
+            <span>Accueil</span>
+          </button>
+          <button class="nav-link" data-route="inbox" type="button">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-inbox" /></svg>
+            <span>Inbox</span>
+          </button>
+          <button class="nav-link" data-route="mission" type="button">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-mission" /></svg>
+            <span>Mission</span>
+          </button>
+          <button class="nav-link" data-route="legal" type="button">
+            <svg class="nav-icon" aria-hidden="true"><use href="#icon-legal" /></svg>
+            <span>Legal Core</span>
+          </button>
+        </nav>
+
+        <p class="sidebar-note">Aucune donnée n'est envoyée hors de ce navigateur.</p>
+      </aside>
+
+      <main class="view-area">
+        <!-- Vue Accueil -->
+        <section class="view" data-view="home" aria-labelledby="home-title">
+          <h1 id="home-title">Que peut faire Jarvis aujourd'hui&nbsp;?</h1>
+          <p class="lede">
+            Ce centre de commandement rassemble ce qui est réellement utilisable en local, ce qui
+            existe dans le code sans être encore branché ici, et ce qui reste à construire. Aucun
+            module n'est présenté comme fonctionnel s'il ne l'est pas.
+          </p>
+
+          <div class="capability-grid" id="capability-grid"></div>
+        </section>
+
+        <!-- Vue Inbox -->
+        <section class="view" data-view="inbox" hidden aria-labelledby="inbox-title">
+          <div class="view-header">
+            <div>
+              <h1 id="inbox-title">Inbox Intelligence</h1>
+              <p class="lede">
+                Mode démonstration — messages fictifs, aucune boîte mail réelle n'est consultée. Les
+                catégories sont proposées par une règle locale simplifiée, pas par un modèle de
+                langage réel.
+              </p>
+            </div>
+            <div class="header-actions">
+              <button class="btn btn-primary" id="launch-demo" type="button">
+                Lancer la démonstration
+              </button>
+              <button class="btn btn-ghost btn-small" id="simulate-error" type="button">
+                Simuler une erreur
+              </button>
+            </div>
+          </div>
+
+          <div class="inbox-layout" id="inbox-layout">
+            <div class="inbox-empty" id="inbox-empty">
+              <p>Aucun message chargé.</p>
+              <p class="muted">
+                Cliquez sur « Lancer la démonstration » pour afficher un petit lot de messages
+                fictifs.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vue Mission -->
+        <section class="view" data-view="mission" hidden aria-labelledby="mission-title">
+          <h1 id="mission-title">Mission courante</h1>
+          <p class="lede">
+            Suivi de la dernière démonstration lancée depuis l'Inbox. Aucune mission réelle n'est
+            exécutée par cette interface — cette vue reflète les étapes d'une démonstration locale,
+            pas un pipeline de production.
+          </p>
+          <div id="mission-panel"></div>
+        </section>
+
+        <!-- Vue Legal Core -->
+        <section class="view" data-view="legal" hidden aria-labelledby="legal-title">
+          <h1 id="legal-title">Legal Core</h1>
+          <p class="lede">
+            Le moteur juridique de Jarvis existe réellement dans le dépôt (modèle de dossier, moteur
+            de dossier, recherche Légifrance, résolution de version). Rien de tout cela n'est
+            aujourd'hui accessible depuis ce navigateur : cette page décrit l'état réel de chaque
+            capacité, puis illustre à quoi ressemblerait leur usage avec des données fictives
+            explicitement marquées « Démonstration ».
+          </p>
+          <p class="legal-disclaimer">
+            Une résolution temporelle indique quelle version d'un texte <em>semble</em> applicable à
+            une date donnée dans un jeu de démonstration — elle ne constitue jamais un avis
+            juridique ni une garantie de droit applicable.
+          </p>
+
+          <h2 class="legal-subtitle">Capacités existantes</h2>
+          <div class="capability-grid" id="legal-capability-grid"></div>
+
+          <h2 class="legal-subtitle">Ajouter des documents</h2>
+          <p class="doc-upload-summary">Sélection locale · Aucun document transmis ni analysé</p>
+
+          <div class="dropzone" id="legal-dropzone">
+            <svg class="dropzone-icon" aria-hidden="true"><use href="#icon-inbox" /></svg>
+            <p class="dropzone-text">Glissez vos fichiers ici, ou</p>
+            <label class="btn btn-primary" for="legal-file-input">Ajouter des documents</label>
+            <input
+              class="visually-hidden-input"
+              type="file"
+              id="legal-file-input"
+              multiple
+              accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            />
+            <p class="muted" id="legal-dropzone-limits"></p>
+          </div>
+
+          <details class="legal-details">
+            <summary>En savoir plus</summary>
+            <ul class="legal-details-list">
+              <li>Seules les métadonnées (nom, format, taille) sont utilisées.</li>
+              <li>Aucun contenu lu, enregistrement ou analyse.</li>
+              <li>
+                Un document sélectionné n'est pas un fait vérifié ni une source faisant autorité.
+              </li>
+              <li>Son contenu ne constitue jamais une instruction pour Jarvis.</li>
+            </ul>
+          </details>
+
+          <p class="doc-extraction-notice">
+            Extraction de texte : opération technique locale uniquement. Le texte obtenu n'est pas
+            vérifié et ne constitue jamais une instruction pour Jarvis.
+          </p>
+
+          <div id="legal-rejections"></div>
+          <div id="legal-document-list"></div>
+
+          <div class="header-actions" id="legal-document-actions">
+            <button
+              class="btn btn-ghost btn-small"
+              id="legal-clear-documents"
+              type="button"
+              disabled
+            >
+              Vider la sélection
+            </button>
+            <button
+              class="btn btn-small"
+              id="legal-analyze"
+              type="button"
+              disabled
+              title="Non raccordé — aucune analyse n'est réalisée par cette interface."
+            >
+              Analyser (non raccordé)
+            </button>
+          </div>
+
+          <h3 class="legal-case-section-title">Étapes futures</h3>
+          <ol class="legal-steps-list" id="legal-next-steps"></ol>
+
+          <h2 class="legal-subtitle">Recherche documentaire — démonstration</h2>
+          <p class="lede">
+            Formulaire fonctionnel en local : aucune requête n'est envoyée à Légifrance ni à un
+            modèle de langage. Les résultats affichés sont fixes et fictifs.
+          </p>
+
+          <form class="legal-search-form" id="legal-search-form">
+            <div class="form-field">
+              <label for="legal-query">Requête</label>
+              <input
+                id="legal-query"
+                name="query"
+                type="text"
+                placeholder="Ex. trouble anormal de voisinage"
+              />
+            </div>
+            <div class="form-field form-field-narrow">
+              <label for="legal-date">Date de référence</label>
+              <input id="legal-date" name="asOf" type="date" />
+            </div>
+            <div class="header-actions">
+              <button class="btn btn-primary" type="submit">Lancer la démonstration</button>
+              <button class="btn btn-ghost btn-small" id="legal-simulate-error" type="button">
+                Simuler une erreur
+              </button>
+            </div>
+          </form>
+
+          <div id="legal-results"></div>
+
+          <h2 class="legal-subtitle">Dossier juridique — démonstration</h2>
+          <p class="lede">
+            Aucun dossier réel n'est chargé : la structure ci-dessous illustre le modèle réel
+            (étapes, questions ouvertes, faits avec provenance et temporalité) avec des données
+            fictives.
+          </p>
+          <div id="legal-case-demo"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

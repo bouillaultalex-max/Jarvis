@@ -146,17 +146,32 @@ const KNOWN_ERROR_MESSAGES: ReadonlySet<string> = new Set(
   Object.values(OBSIDIAN_READ_ERROR_MESSAGES),
 );
 
-/** Lignes d'affichage : contenu en cas de succès, messages maîtrisés sinon. */
+/**
+ * Texte exact reçu du connecteur pour une note lue — à écrire tel quel sur
+ * stdout, sans ajout ni retrait de saut de ligne. `undefined` si aucune note
+ * n'a été lue (voir alors {@link describeObsidianReadResult}).
+ */
+export function obsidianReadContent(result: ToolExecutionResult): string | undefined {
+  if (result.status !== 'executed') {
+    return undefined;
+  }
+  const output = result.output as { readonly status?: unknown; readonly content?: unknown };
+  return output?.status === 'found' && typeof output.content === 'string'
+    ? output.content
+    : undefined;
+}
+
+/**
+ * Lignes de message lorsqu'aucune note n'a été lue (messages maîtrisés).
+ * Vide si une note a été lue : son contenu passe par {@link obsidianReadContent}.
+ */
 export function describeObsidianReadResult(result: ToolExecutionResult): readonly string[] {
+  if (obsidianReadContent(result) !== undefined) {
+    return [];
+  }
   switch (result.status) {
     case 'executed': {
-      const output = result.output as {
-        readonly status?: unknown;
-        readonly content?: unknown;
-      };
-      if (output?.status === 'found' && typeof output.content === 'string') {
-        return [output.content.replace(/\r?\n$/, '')];
-      }
+      const output = result.output as { readonly status?: unknown };
       if (output?.status === 'not_found') {
         return ['Note introuvable dans le vault configuré.'];
       }

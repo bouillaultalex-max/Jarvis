@@ -156,6 +156,35 @@ describe('dispatch — obsidian-read', () => {
     expect(exitCode).toBe(0);
   });
 
+  it.each([
+    ['sans saut de ligne final', '# Titre\nDernière ligne — sans fin'],
+    ['avec fins de ligne CRLF', '# Titre\r\nLigne 1\r\nLigne 2\r\n'],
+    ['vide', ''],
+  ])('note %s : stdout est exactement le texte reçu, octet pour octet', async (_label, note) => {
+    const chunks: Buffer[] = [];
+    const output = new Writable({
+      write(chunk: Buffer | string, _enc, cb): void {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, 'utf8'));
+        cb();
+      },
+    });
+    const client = fakeClient({ readNote: async () => note });
+
+    await dispatch(
+      ['obsidian-read', ...ARGS],
+      INERT_DESKTOP_DEPS,
+      { output },
+      undefined,
+      undefined,
+      {
+        client,
+      },
+    );
+
+    expect(Buffer.concat(chunks).equals(Buffer.from(note, 'utf8'))).toBe(true);
+    expect(process.exitCode).toBe(0);
+  });
+
   it('permission refusée : aucun appel au client, code 1', async () => {
     const client = fakeClient();
     const { text, exitCode } = await runCli(ARGS, {

@@ -73,6 +73,7 @@ import {
 import {
   defaultObsidianReadDeps,
   describeObsidianReadResult,
+  obsidianReadContent,
   obsidianReadExitCode,
   parseObsidianReadArgs,
   runObsidianReadFlow,
@@ -980,8 +981,14 @@ export async function dispatch(
     // configuration ou tout processus : un argument invalide ne lance rien.
     const input = parseObsidianReadArgs(argv.slice(1));
     const result = await runObsidianReadFlow(input, obsidianReadDeps ?? defaultObsidianReadDeps());
-    for (const line of describeObsidianReadResult(result)) {
-      write(line);
+    // Note lue : texte exact du connecteur, sans saut de ligne ajouté ni retiré.
+    const content = obsidianReadContent(result);
+    if (content !== undefined) {
+      output.write(content);
+    } else {
+      for (const line of describeObsidianReadResult(result)) {
+        write(line);
+      }
     }
     process.exitCode = obsidianReadExitCode(result);
     return;

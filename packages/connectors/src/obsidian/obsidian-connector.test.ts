@@ -13,6 +13,7 @@ interface FakeClientOptions {
   readonly vaultPath?: string | ObsidianReadError;
   readonly inspections?: readonly (ObsidianNoteInspection | ObsidianReadError)[];
   readonly readOutput?: string | ObsidianReadError;
+  readonly searchOutput?: string | ObsidianReadError;
 }
 
 /** Double de client : réponses programmées, journal des appels. */
@@ -43,6 +44,10 @@ function fakeClient(options: FakeClientOptions = {}): ObsidianVaultClient & {
       calls.push(`read:${path}`);
       return answer(options.readOutput ?? '# Note\n');
     },
+    async searchNotes(query) {
+      calls.push(`search:${query}`);
+      return answer(options.searchOutput ?? 'No matches found.\n');
+    },
   };
 }
 
@@ -60,10 +65,13 @@ function executorFor(
 const request = (input: unknown) => ({ tool: 'obsidian.read', input });
 
 describe('obsidianConnector — déclaration', () => {
-  it('ne déclare que obsidian.read, en lecture', () => {
+  it('ne déclare que obsidian.read et obsidian.search, tous deux en lecture', () => {
     const tools = obsidianConnector.createTools(fakeClient());
-    expect(obsidianConnector.capabilities).toEqual(['obsidian.read']);
-    expect(tools.map((tool) => [tool.name, tool.action])).toEqual([['obsidian.read', 'read']]);
+    expect(obsidianConnector.capabilities).toEqual(['obsidian.read', 'obsidian.search']);
+    expect(tools.map((tool) => [tool.name, tool.action])).toEqual([
+      ['obsidian.read', 'read'],
+      ['obsidian.search', 'read'],
+    ]);
   });
 });
 
@@ -236,5 +244,140 @@ describe('obsidian.read — exécution', () => {
       status: 'error',
       reason: OBSIDIAN_READ_ERROR_MESSAGES.process_failed,
     });
+  });
+});
+
+describe('obsidian.search', () => {
+  const allowSearch = () => new PermissionManager({ rules: { 'obsidian.search': 'allow' } });
+  const search = (input: unknown) => ({ tool: 'obsidian.search', input });
+  const QUERY = 'JARVIS';
+
+  async function runSearch(
+    options: FakeClientOptions,
+    input: unknown = { vault: VAULT_ID, query: QUERY },
+  ) {
+    const client = fakeClient(options);
+    const result = await executorFor(client, allowSearch()).run(search(input));
+    return { client, result };
+  }
+
+  it('permission refusée : aucun appel au client', async () => {
+    const client = fakeClient();
+    const result = await executorFor(client, new PermissionManager()).run(
+      search({ vault: VAULT_ID, query: QUERY }),
+    );
+    expect(result.status).toBe('denied');
+    expect(client.calls).toEqual([]);
+  });
+
+  it('la permission de obsidian.read ne vaut pas pour obsidian.search', async () => {
+    const client = fakeClient();
+    const result = await executorFor(client).run(search({ vault: VAULT_ID, query: QUERY }));
+    expect(result.status).toBe('denied');
+    expect(client.calls).toEqual([]);
+  });
+
+  it.each([
+    ['vault non configuré', { vault: 'Autre', query: QUERY }],
+    ['requête vide', { vault: VAULT_ID, query: '' }],
+    ['requête blanche', { vault: VAULT_ID, query: '   ' }],
+    ['saut de ligne', { vault: VAULT_ID, query: 'a\nb' }],
+    ['caractère de contrôle', { vault: VAULT_ID, query: 'a\u0000b' }],
+    ['requête trop longue', { vault: VAULT_ID, query: 'x'.repeat(201) }],
+    ['clé inconnue', { vault: VAULT_ID, query: QUERY, limit: 50 }],
+    ['requête non chaîne', { vault: VAULT_ID, query: 5 }],
+  ])('entrée refusée avant tout appel : %s', async (_label, input) => {
+    const { client, result } = await runSearch({}, input);
+    expect(result.status).toBe('invalid_input');
+    expect(client.calls).toEqual([]);
+  });
+
+  it.each([
+    ['« No matches found. » exact', 'No matches found.\n'],
+    ['tableau JSON vide', '[]'],
+    ['tableau JSON vide avec saut de ligne', '[]\n'],
+  ])('recherche réussie sans résultat : %s', async (_label, out) => {
+    const { client, result } = await runSearch({ searchOutput: out });
+    expect(result).toEqual({
+      status: 'executed',
+      decision: 'allow',
+      output: { paths: [], ignoredNonMarkdown: 0 },
+    });
+    expect(client.calls).toEqual(['vaultPath', `search:${QUERY}`]);
+  });
+
+  it('résultats : ordre d’Obsidian conservé, racine vérifiée d’abord, aucune lecture', async () => {
+    const out = '["Z/derniere.md","A/premiere.md","M/milieu — é.md"]\n';
+    const { client, result } = await runSearch({ searchOutput: out });
+    expect(result).toEqual({
+      status: 'executed',
+      decision: 'allow',
+      output: {
+        paths: ['Z/derniere.md', 'A/premiere.md', 'M/milieu — é.md'],
+        ignoredNonMarkdown: 0,
+      },
+    });
+    expect(client.calls).toEqual(['vaultPath', `search:${QUERY}`]);
+    expect(
+      client.calls.some((call) => call.startsWith('read:') || call.startsWith('inspect:')),
+    ).toBe(false);
+  });
+
+  it('fichiers non Markdown valides : écartés et comptés, ordre conservé', async () => {
+    const out = '["B/plan.canvas","A/note.md","C/doc.pdf","D/autre.md","E/sans-extension"]';
+    const { result } = await runSearch({ searchOutput: out });
+    expect(result).toMatchObject({
+      status: 'executed',
+      output: { paths: ['A/note.md', 'D/autre.md'], ignoredNonMarkdown: 3 },
+    });
+  });
+
+  it.each([
+    ['chemin remontant', '["A/note.md","../hors.md"]'],
+    ['chemin absolu', '["/abs/note.md"]'],
+    ['lecteur Windows', '["C:/note.md"]'],
+    ['antislash', '["A\\\\note.md"]'],
+    ['segment vide', '["A//note.md"]'],
+    ['nom réservé', '["NUL.md"]'],
+    ['caractère de contrôle', '["A/no\\u0001te.md"]'],
+    ['chemin invalide non Markdown (validé avant filtrage)', '["A/note.md","../plan.canvas"]'],
+    ['doublon', '["A/note.md","A/note.md"]'],
+    ['six entrées', JSON.stringify(['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md'])],
+    ['élément non chaîne', '["A/note.md",3]'],
+    ['objet au lieu d’un tableau', '{"paths":["A/note.md"]}'],
+    ['texte d’erreur', 'Error: Vault not found.\n'],
+    ['« No matches » approché', 'No matches found\n'],
+    ['sortie vide', ''],
+  ])('sortie rejetée (%s) : erreur claire, aucun chemin retenu', async (_label, out) => {
+    const { result } = await runSearch({ searchOutput: out });
+    expect(result).toEqual({
+      status: 'error',
+      reason: OBSIDIAN_READ_ERROR_MESSAGES.search_output_invalid,
+    });
+  });
+
+  it('vault rapporté différent : erreur, aucune recherche', async () => {
+    const { client, result } = await runSearch({ vaultPath: 'C:\\Users\\test\\Vaults\\Autre\n' });
+    expect(result).toEqual({
+      status: 'error',
+      reason: OBSIDIAN_READ_ERROR_MESSAGES.vault_mismatch,
+    });
+    expect(client.calls).toEqual(['vaultPath']);
+  });
+
+  it('Obsidian fermé : erreur explicite, aucune recherche', async () => {
+    const { client, result } = await runSearch({
+      vaultPath: new ObsidianReadError('obsidian_not_running'),
+    });
+    expect(result).toEqual({
+      status: 'error',
+      reason: OBSIDIAN_READ_ERROR_MESSAGES.obsidian_not_running,
+    });
+    expect(client.calls).toEqual(['vaultPath']);
+  });
+
+  it('erreur du lanceur pendant la recherche : message fixe', async () => {
+    const { result } = await runSearch({ searchOutput: new ObsidianReadError('timeout') });
+    expect(result).toEqual({ status: 'error', reason: OBSIDIAN_READ_ERROR_MESSAGES.timeout });
   });
 });

@@ -115,6 +115,44 @@ describe('createPowerShellObsidianVaultClient — construction des scripts', () 
   });
 });
 
+describe('createPowerShellObsidianVaultClient — searchNotes', () => {
+  const QUERY = 'l’O\'Neil $(Remove-Item x); "JARVIS"';
+
+  it('appelle search avec limit=5 et format=json, sans total, sans valeur brute', async () => {
+    const runner = fakeRunner([exited(0, '[]\n')]);
+    await createPowerShellObsidianVaultClient(CONFIG, { runner }).searchNotes(QUERY);
+    const script = runner.calls[0]?.script ?? '';
+    for (const arg of ['search', `query=${QUERY}`, 'limit=5', 'format=json']) {
+      expect(script).toContain(b64(arg));
+    }
+    expect(script).not.toContain(b64('total'));
+    expect(script).not.toContain(b64('read'));
+    expect(script).not.toContain(QUERY);
+    expect(script).not.toContain('$(Remove-Item');
+    expect(script.indexOf("Get-Process -Name 'Obsidian'")).toBeLessThan(
+      script.indexOf('& $jarvisLauncher'),
+    );
+  });
+
+  it('renvoie stdout tel quel (texte « No matches found. » compris)', async () => {
+    const runner = fakeRunner([exited(0, 'No matches found.\n')]);
+    await expect(
+      createPowerShellObsidianVaultClient(CONFIG, { runner }).searchNotes(QUERY),
+    ).resolves.toBe('No matches found.\n');
+  });
+
+  it.each([
+    [10, 'obsidian_not_running'],
+    [11, 'launcher_not_found'],
+    [20, 'process_failed'],
+  ] as const)('code %i → %s', async (code, error) => {
+    const runner = fakeRunner([exited(code)]);
+    await expect(
+      createPowerShellObsidianVaultClient(CONFIG, { runner }).searchNotes(QUERY),
+    ).rejects.toThrow(OBSIDIAN_READ_ERROR_MESSAGES[error]);
+  });
+});
+
 describe('createPowerShellObsidianVaultClient — issues', () => {
   it('lecture réussie : stdout UTF-8 rendu tel quel, malgré un diagnostic de progression sur stderr', async () => {
     const progress = '#< CLIXML\n<Objs Version="1.1.0.1"><Obj S="progress"></Obj></Objs>';

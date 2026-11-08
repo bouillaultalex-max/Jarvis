@@ -80,6 +80,12 @@ import {
   type ObsidianReadDeps,
 } from './obsidian-read.js';
 import {
+  describeObsidianSearchResult,
+  obsidianSearchExitCode,
+  parseObsidianSearchArgs,
+  runObsidianSearchFlow,
+} from './obsidian-search.js';
+import {
   VERIFY_DEMO_NOTICE,
   describeVerifyDemoResult,
   runVerifyDemo,
@@ -861,7 +867,7 @@ function parseReadNaturalArgs(argv: readonly string[]): string {
   return text;
 }
 
-/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat` | `project` | `verify-demo` | `obsidian-read`. */
+/** Dispatch : `connect` (défaut) | `read` | `read-natural` | `inbox` | `prepare-reply` | `send` | `disconnect` | `legal-search` | `chat` | `project` | `verify-demo` | `obsidian-read` | `obsidian-search`. */
 export async function dispatch(
   argv: readonly string[],
   deps: DesktopDeps,
@@ -878,9 +884,10 @@ export async function dispatch(
    */
   legalSearchDeps?: LegalSearchDeps,
   /**
-   * Injecté par les tests uniquement (flux `obsidian-read`). Absent en
-   * production ⇒ {@link defaultObsidianReadDeps}, construite seulement dans
-   * la branche `obsidian-read`, après le découpage des arguments.
+   * Injecté par les tests uniquement (flux `obsidian-read` et
+   * `obsidian-search`, même vault configuré). Absent en production ⇒
+   * {@link defaultObsidianReadDeps}, construite seulement dans ces branches,
+   * après le découpage des arguments.
    */
   obsidianReadDeps?: ObsidianReadDeps,
 ): Promise<void> {
@@ -994,6 +1001,22 @@ export async function dispatch(
     return;
   }
 
+  if (command === 'obsidian-search') {
+    // Aucune dépendance Gmail lue ici. Découpage AVANT toute lecture de
+    // configuration ou tout processus : un argument invalide ne lance rien.
+    // N'affiche que des chemins (ou un message) : aucune note n'est ouverte.
+    const input = parseObsidianSearchArgs(argv.slice(1));
+    const result = await runObsidianSearchFlow(
+      input,
+      obsidianReadDeps ?? defaultObsidianReadDeps(),
+    );
+    for (const line of describeObsidianSearchResult(result)) {
+      write(line);
+    }
+    process.exitCode = obsidianSearchExitCode(result);
+    return;
+  }
+
   if (command === 'send') {
     const input = parseGmailSendArgs(argv.slice(1));
     const confirm = createTerminalConfirm({
@@ -1046,7 +1069,7 @@ export async function dispatch(
   }
 
   throw new Error(
-    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat | project | verify-demo | obsidian-read).',
+    'Commande inconnue (attendu : connect | read | read-natural | inbox | prepare-reply | send | disconnect | legal-search | chat | project | verify-demo | obsidian-read | obsidian-search).',
   );
 }
 
@@ -1073,6 +1096,7 @@ const NO_GMAIL_DEPS_COMMANDS = new Set([
   'project',
   'verify-demo',
   'obsidian-read',
+  'obsidian-search',
 ]);
 
 async function main(): Promise<void> {

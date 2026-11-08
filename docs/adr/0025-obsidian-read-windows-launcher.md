@@ -97,3 +97,56 @@ Comportements observés le 2026-11-08 (Obsidian ouvert) :
   message JARVIS pour une note absente (code `1`), inventaire et empreintes SHA-256 du
   vault identiques à une sauvegarde avant et après chacune des deux commandes. Le
   diagnostic ambigu et Obsidian fermé ne sont couverts que par des tests avec doubles.
+
+## Avenant (2026-11-08) : `obsidian.search`
+
+Statut : `Proposed`, comme le reste de cet ADR.
+
+### Décision
+
+- **Second outil.** `obsidian.search` (`action: 'read'`) rejoint `obsidian.read` dans le
+  connecteur `obsidian`, avec une permission distincte (règle explicite `allow` côté
+  desktop, défaut `deny` inchangé). Commande `apps/desktop` :
+  `obsidian-search --vault … --query …`, sans dépendance Gmail.
+- **Réutilisation.** Même configuration de vault unique, même contrôle de la racine par
+  `vault info=path` avant la recherche, même passage par PowerShell (valeurs en base64,
+  contrôle d'Obsidian ouvert et du lanceur avant l'appel), mêmes limites de durée et de
+  sortie.
+- **Appel.** `vault=<id> search query=<texte> limit=5 format=json`, sans `total`. La
+  limite est fixée dans le code. La requête est un texte d'une ligne, non vide, d'au plus
+  200 caractères.
+- **Aucune note ouverte.** La recherche renvoie des chemins relatifs, utilisables avec
+  `obsidian-read` ; elle n'appelle ni `read`, ni `search:context`, ni l'inspection de
+  fichiers, et n'affiche aucun contenu.
+
+### Formats observés (2026-11-08, Obsidian ouvert)
+
+- **Avec résultats** : tableau JSON compact de chaînes sur une seule ligne, suivi d'un
+  saut de ligne, code `0`. Chaque chaîne est un chemin relatif au vault, séparateur `/`.
+  L'ordre n'est pas alphabétique ; il est conservé tel quel.
+- **Sans résultat** : le texte exact `No matches found.\n`, code `0`, **bien que**
+  `format=json` soit demandé.
+
+### Interprétation
+
+1. Sortie exactement égale à `No matches found.\n`, ou tableau JSON vide `[]` (accepté
+   au cas où une version future l'adopterait) : recherche réussie sans résultat.
+2. Sinon, la sortie doit être un tableau JSON d'au plus cinq chaînes. Chaque chemin est
+   validé **avant tout filtrage**, avec les règles lexicales de `obsidian.read` hors
+   extension ; un chemin invalide ou un doublon rejette toute la sortie.
+3. Les chemins valides qui ne sont pas des notes `.md` sont ensuite écartés et comptés.
+4. Toute autre sortie (autre texte, autre forme JSON, plus de cinq entrées) est l'erreur
+   `search_output_invalid`, avec un message fixe ; la sortie brute n'est jamais
+   affichée.
+
+La CLI affiche un chemin Markdown par ligne, dans l'ordre d'Obsidian, puis le nombre de
+résultats non Markdown écartés s'il y en a. Code de sortie `0` pour une recherche
+réussie, avec ou sans résultat ; `1` sinon.
+
+### Conséquences
+
+- Un `limit=5` atteint ne dit pas s'il existe d'autres résultats ; `total` n'est pas
+  appelé.
+- La recherche n'inspecte pas chaque chemin sur le disque : l'existence, le type et
+  l'absence de lien sont vérifiés au moment de la lecture par `obsidian-read`.
+- Une requête coûteuse est interrompue par le délai maximal de 10 s.

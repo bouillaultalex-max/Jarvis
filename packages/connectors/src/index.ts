@@ -193,5 +193,10 @@ export type {
 } from './obsidian/obsidian-powershell-client.js';
 export { createPowerShellObsidianVaultClient } from './obsidian/obsidian-powershell-client.js';
 
-export type { ObsidianReadInput, ObsidianReadOutput } from './obsidian/obsidian-connector.js';
+export type {
+  ObsidianReadInput,
+  ObsidianReadOutput,
+  ObsidianSearchInput,
+  ObsidianSearchOutput,
+} from './obsidian/obsidian-connector.js';
 export { obsidianConnector } from './obsidian/obsidian-connector.js';

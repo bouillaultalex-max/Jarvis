@@ -1,7 +1,7 @@
 # ADR-0025 : Appel du lanceur Obsidian Windows depuis WSL (`obsidian.read`)
 
 Date: 2026-11-08
-Status: Proposed
+Status: Accepted (implémenté dans `@jarvis/connectors` et `apps/desktop`, avenant `obsidian.search` compris ; essais réels du 2026-11-08) — comportement réel avec Obsidian fermé, erreurs réelles de `search`, résultats non Markdown réels et courses entre les contrôles et l'appel NON établis
 
 ## Context
 
@@ -82,25 +82,12 @@ Comportements observés le 2026-11-08 (Obsidian ouvert) :
   d'analyse), sans en lire le contenu ; c'est ce qui lève l'ambiguïté de `not_found`.
 - Jusqu'à quatre processus PowerShell par lecture (contrôle de la racine, inspection,
   lecture, seconde inspection éventuelle), de l'ordre de 0,3 à 0,5 s chacun mesurés.
-- **Courses résiduelles**, réduites mais non éliminées :
-  - Obsidian fermé entre deux scripts : chaque script qui appelle le lanceur refait le
-    contrôle de processus ; s'il se ferme entre ce contrôle et l'appel, le lanceur peut
-    échouer ou rouvrir l'application ; le délai maximal borne l'attente ;
-  - fichier supprimé entre l'inspection et la lecture : diagnostic exact, seconde
-    inspection → `not_found` ;
-  - fichier créé, modifié ou remplacé par un lien entre l'inspection et la lecture :
-    la lecture peut renvoyer un contenu postérieur à l'inspection, ou suivre un lien
-    créé dans cet intervalle ; aucun verrou n'est pris sur le vault.
+- Des courses restent possibles entre les contrôles et l'appel du lanceur : voir
+  « Validation (2026-11-08) » en fin de document.
 - La vérification d'intégrité par empreintes reste une procédure du pilote, pas de
   l'application.
-- Test réel du 2026-11-08 : contrôle de la racine accepté, lecture exacte (code `0`),
-  message JARVIS pour une note absente (code `1`), inventaire et empreintes SHA-256 du
-  vault identiques à une sauvegarde avant et après chacune des deux commandes. Le
-  diagnostic ambigu et Obsidian fermé ne sont couverts que par des tests avec doubles.
 
 ## Avenant (2026-11-08) : `obsidian.search`
-
-Statut : `Proposed`, comme le reste de cet ADR.
 
 ### Décision
 
@@ -150,3 +137,59 @@ réussie, avec ou sans résultat ; `1` sinon.
 - La recherche n'inspecte pas chaque chemin sur le disque : l'existence, le type et
   l'absence de lien sont vérifiés au moment de la lecture par `obsidian-read`.
 - Une requête coûteuse est interrompue par le délai maximal de 10 s.
+
+## Validation (2026-11-08)
+
+S'applique à `obsidian.read` et à `obsidian.search`.
+
+### Tests réels
+
+T3 Code sous Ubuntu WSL → `powershell.exe` → lanceur Windows, Obsidian ouvert, CLI
+JARVIS native, variables `OBSIDIAN_*` définies pour le seul processus de test. Avant et
+après chaque commande, l'inventaire et les empreintes SHA-256 du vault, entrées cachées
+comprises, sont restés identiques à ceux d'une sauvegarde vérifiée.
+
+- `obsidian-read` : contrôle de la racine accepté ; lecture d'une note identique octet
+  pour octet au fichier sauvegardé, code `0` ; note absente → message JARVIS « Note
+  introuvable dans le vault configuré. », code `1`, aucun diagnostic brut.
+- `obsidian-search` : recherche avec résultats → cinq chemins Markdown relatifs,
+  distincts et présents dans l'inventaire, code `0` ; recherche sans résultat →
+  « Aucune note trouvée. », code `0`, aucun texte brut d'Obsidian.
+- Formats de `search … limit=5 format=json` (appels directs au lanceur, mêmes
+  comparaisons d'empreintes) : voir « Formats observés » dans l'avenant.
+
+### Cas testés avec des doubles uniquement
+
+Aucun processus lancé ; non observés en réel.
+
+- Communs : Obsidian fermé, lanceur absent, racine rapportée différente ou
+  inexploitable, délai dépassé, sortie trop volumineuse, échec du processus, progression
+  PowerShell sur stderr, permission refusée, entrées invalides, configuration absente,
+  aucune valeur brute dans le script PowerShell.
+- `obsidian.read` : lien ou jonction dans le chemin, dossier à la place d'une note,
+  diagnostic « fichier introuvable » avec fichier toujours présent (erreur d'ambiguïté)
+  ou disparu entre-temps (`not_found`), note commençant par `Error:`, sortie exacte pour
+  une note sans saut de ligne final, en CRLF ou vide.
+- `obsidian.search` : les deux formes de résultat vide, ordre conservé, fichiers non
+  Markdown écartés et comptés, chemins invalides et doublons (validés avant filtrage),
+  plus de cinq entrées, éléments non textuels, sorties mal formées, permission de
+  `obsidian.read` insuffisante, absence de dépendance Gmail, aucun appel à `read` ni à
+  l'inspection.
+
+### Courses possibles entre les contrôles et l'appel
+
+Réduites, non éliminées ; aucun verrou n'est pris sur le vault.
+
+- Obsidian fermé après le contrôle de processus d'un script : le lanceur peut échouer
+  ou rouvrir l'application ; le délai maximal borne l'attente. Chaque script qui appelle
+  le lanceur refait ce contrôle.
+- Vault changé dans Obsidian entre `vault info=path` et l'appel suivant : non détecté
+  dans cet intervalle.
+- Fichier supprimé entre l'inspection et `read` : diagnostic exact, seconde inspection →
+  `not_found`.
+- Fichier créé, modifié ou remplacé par un lien entre l'inspection et `read` : la
+  lecture peut renvoyer un contenu postérieur à l'inspection, ou suivre un lien créé
+  dans cet intervalle.
+- Chemins renvoyés par `obsidian-search` et lus plus tard par `obsidian-read` : ils
+  peuvent avoir changé entre-temps ; `obsidian-read` refait le contrôle de la racine et
+  l'inspection au moment de la lecture.

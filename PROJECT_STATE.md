@@ -1,6 +1,15 @@
 # État du projet JARVIS
 
-_Dernière mise à jour : 2026-10-21 — **vérification de postcondition opt-in**
+_Dernière mise à jour : 2026-11-08 — **Obsidian en lecture seule** : skill Claude
+Code `obsidian-cli` (pilote de session, [PR #9](https://github.com/bouillaultalex-max/Jarvis/pull/9))
+et commandes natives `obsidian-read` ([PR #10](https://github.com/bouillaultalex-max/Jarvis/pull/10))
+et `obsidian-search` ([PR #11](https://github.com/bouillaultalex-max/Jarvis/pull/11)) dans
+`apps/desktop`, connecteur `obsidian` dans `@jarvis/connectors`. ADR-0025, avenant
+`obsidian.search` compris, passe à `Accepted`. Code publié sur `origin/main` (`5bdcae3`).
+Essais réels du 2026-11-08 sous WSL, encadrés par des comparaisons d'empreintes SHA-256
+du vault — voir « Composants livrés depuis 2026-09-30 ». Aucune écriture dans le vault ; aucun lien avec `AgentLoop` ni `apps/api`._
+
+_Mise à jour précédente (2026-10-21) — **vérification de postcondition opt-in**
 ajoutée : `runWithVerification` (`@jarvis/core`), vérificateur `inmemory.send`
 (`@jarvis/connectors`) et démonstration CLI `verify-demo` (`apps/desktop`) —
 voir « Vérification de postcondition (opt-in) » ci-dessous et la section
@@ -210,7 +219,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/memory` | Mémoire contrôlée : `MemoryEntry`/`MemoryCandidate`, provenance à 5 niveaux, `MemoryPromoter`/`MemoryPromotionPolicy`, `InMemoryMemoryStore`/`FileMemoryStore` | package feuille, disponible et testé ; **aucune promotion n'est câblée en production** (ni `apps/api` ni `apps/desktop` ne fournissent d'option mémoire à `AgentLoop`) ; policy de référence pour toute future intégration : `ADR-0007` |
 | `@jarvis/core` | `AgentLoop`, `Tool`, `ToolRegistry`, `PermissionManager`, `ToolExecutor` (+ `ToolExecutor.runTracked`, 2026-09-25 : renvoie `{ invocationId, result }` — origine traçable des `ToolProvenance` juridiques ; ajout non invasif, `run` et `ToolExecutionResult` inchangés, **pas** une refonte) | Tools + Permissions branchés dans `AgentLoop` (inchangé depuis M4) ; intègre désormais en option `@jarvis/memory` (lecture contextuelle, extraction et promotion post-tour) — voir section dédiée « Mémoire contrôlée » |
 | `@jarvis/tools` | Outils locaux ; `echoTool` de démonstration | 1 outil de démo, sans réseau ni effet de bord |
-| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) + `gmail.send` (`action: 'execute'`, M8) ; + `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` ; + `OsCredentialSecretStore` (M8-B3, production) ; + `GmailOAuthFlow` PKCE (M8-B2) ; + `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute` (M8) ; + `legifranceConnector` (LEGAL-02B.2/03B, **lecture seule**, dépend de `@jarvis/legifrance-client`) : `legifrance.ping`, `legifrance.get_article`, `legifrance.search` (`action: 'read'`) | `gmail.modify`/`gmail.delete` toujours inexistants ; `gmailConnector` utilise `ConnectorRegistry`/`AccountStore`/`SecretStore` via `resolveGmailApiClient` (M8) |
+| `@jarvis/connectors` | Contrat `Connector` + `InMemoryConnector` (fake) + `obsidianConnector` (`obsidian.read`/`obsidian.search`, `action: 'read'`, ADR-0025) + `gmailConnector` (**réel**) : `gmail.read` (`action: 'read'`) + `gmail.prepare_reply` (`action: 'prepare'`, M7.3) + `gmail.send` (`action: 'execute'`, M8) ; + `ConnectorRegistry`/`AccountStore`/`SecretStore`/`Capability` ; + `OsCredentialSecretStore` (M8-B3, production) ; + `GmailOAuthFlow` PKCE (M8-B2) ; + `ConfirmationService`/`proposeConfirmation`/`confirmAndExecute` (M8) ; + `legifranceConnector` (LEGAL-02B.2/03B, **lecture seule**, dépend de `@jarvis/legifrance-client`) : `legifrance.ping`, `legifrance.get_article`, `legifrance.search` (`action: 'read'`) | `gmail.modify`/`gmail.delete` toujours inexistants ; `gmailConnector` utilise `ConnectorRegistry`/`AccountStore`/`SecretStore` via `resolveGmailApiClient` (M8) |
 | `@jarvis/classification` | `ClassificationEngine`, `PreferenceStore`, `EmailLlmClassifier` | inchangé depuis M4.5 ; toujours aucun connecteur ni LLM réel branché en interne |
 | `@jarvis/inbox` | `fetchEmailsViaTool`, `classifyEmails`, `fetchAndClassifyEmails`, `recordFeedbackForEmail`, `applyUserRule`, `needsAttention`/`filterEmailsNeedingAttention` (M7.1), `createSummarizeEmailTool`/`EmailSummarizer` (M7.2), `summarizeEmailsNeedingAttention` (M7.4) | flux complet Gmail → classification → attention → résumé validé par tests (Gmail/LLM mockés) ; **non branché dans `apps/api`** |
 | `@jarvis/legal-core` | Modèle juridique pur : **LegalCase v3** (2026-09-25) — `LegalFact` immuable sans état stocké, provenance `human`/`tool`/`deterministic`/`llm`, références d'entrée typées, temporalité `point`/`interval`/`unknown`, `LegalDocument`/`LegalEvidence`, relations `fact_question`/`fact_correction`, `LegalFactValidation`, conflits/résolutions/règles, `deriveFactEpistemicState` (R1 → R7), empreintes, append-only, lecteur/validateur/écrivain v3 **strict** et lecteur/validateur **legacy v2** ; plus `LegalSource` (versionnée, temporelle), `LegalCitation` (ADR-0020), `LegalResearchItem`…, `attachSourcesAndCitations` (sur dossier v3) | versionné (`85e7e6e`, présent sur `origin/main`) ; feuille (aucune dépendance interne) ; aucun réseau ; aucun chiffrement ; **aucun contenu textuel** ; aucune migration v2 → v3 ; consommé par aucune application |
@@ -220,7 +229,7 @@ d'intégration qui démontre le flux avec le `gmailConnector` réel.
 | `@jarvis/project-briefs` | Fiches projet persistantes (faits / hypothèses / décisions / questions / sources / besoins déclarés `need-n` liables à des sources, format v3 à la première création d'un besoin, identifiants stables), verrou coopératif par fichier, `pickNextQuestion` (règle fixe), rendu Markdown pur | `fc92fab`, `be0d670`, `a92cca3` ; feuille ; aucun LLM ; consommé par `apps/desktop` (`project`) |
 | `apps/whatsapp-channel` | Canal conversationnel WhatsApp local (ADR-0022/0023, `Proposed`) : simulé par défaut, réception durable SQLite, transport Graph API, mode réel opt-in borné | `70a4c3b` → `adca17b` ; `SimulatedLlmProvider`, `AgentLoop` sans `ToolExecutor` ; **activation reportée** |
 | `apps/api` | Serveur HTTP Fastify, `POST /chat` | fonctionnel ; `AgentLoop` sans `ToolExecutor` (le provider réel n'émet pas de `toolCall`) ; connecteurs/inbox **non branchés** |
-| `apps/desktop` | Client CLI (`connect`, `read`, `read-natural`, `inbox`, `prepare-reply`, `send`, `disconnect`, `legal-search`, `chat`, `project`) — `chat` et `project` : voir « Composants livrés depuis 2026-09-30 » | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`). **`legal-search`** (premier parcours Légifrance, lecture seule) : `--asOf <YYYY-MM-DD> "<texte>"` → `legifranceConnector` (`legifrance.search`/`legifrance.get_article`, seuls Tools autorisés, `default: 'deny'`) → `ToolExecutor` → `LegifranceSearchAdapter`/`LegifranceRetrievalAdapter` → `ResearchEngine` (budget fixe : 1 page, 5 candidats, 5 récupérations) ; présente candidats/rejets/lacunes, jamais le contenu transitoire (ADR-0021), jamais une conclusion de droit applicable ; aucun Tool `execute`, aucun `AgentLoop`, aucune écriture de dossier (`projectCitations`/`attachSourcesAndCitations`/`@jarvis/legal-case-store` non appelés). Prérequis : `SecretStore` peuplé (`legifrance.<sandbox\|production>.clientId`/`clientSecret` ; script de provisionnement interactif fourni depuis `682455c`, erreurs assainies par `adca17b`) ; `LEGIFRANCE_ENVIRONMENT` optionnelle (défaut `sandbox`, valeur reconnue sinon rejet). N'exige ni configuration Gmail ni `ANTHROPIC_API_KEY`. Testé exclusivement avec doubles (`fetchFn` mocké) — **aucun test automatisé contre la Sandbox PISTE réelle n'a été exécuté** ; un essai manuel en Sandbox (2026-10-02) est rapporté hors dépôt (voir « Composants livrés depuis 2026-09-30 »). |
+| `apps/desktop` | Client CLI (`connect`, `read`, `read-natural`, `inbox`, `prepare-reply`, `send`, `disconnect`, `legal-search`, `chat`, `project`, `obsidian-read`, `obsidian-search`) — `chat`, `project` et `obsidian-*` : voir « Composants livrés depuis 2026-09-30 » | fonctionnel — connexion OAuth PKCE + persistance trousseau OS + envoi Gmail confirmé (M8-B2→B6) ; + lecture (`read`), lecture&classification (`inbox`, s'arrête à la classification), préparation de réponse (`prepare-reply`, câblage du Tool `gmail.prepare_reply`) et déconnexion/révocation (`disconnect`) — surface CLI desktop post-M8 (`cc2e8a4`/`9c24cb7`/`996d716`/`753f4d0`). **`legal-search`** (premier parcours Légifrance, lecture seule) : `--asOf <YYYY-MM-DD> "<texte>"` → `legifranceConnector` (`legifrance.search`/`legifrance.get_article`, seuls Tools autorisés, `default: 'deny'`) → `ToolExecutor` → `LegifranceSearchAdapter`/`LegifranceRetrievalAdapter` → `ResearchEngine` (budget fixe : 1 page, 5 candidats, 5 récupérations) ; présente candidats/rejets/lacunes, jamais le contenu transitoire (ADR-0021), jamais une conclusion de droit applicable ; aucun Tool `execute`, aucun `AgentLoop`, aucune écriture de dossier (`projectCitations`/`attachSourcesAndCitations`/`@jarvis/legal-case-store` non appelés). Prérequis : `SecretStore` peuplé (`legifrance.<sandbox\|production>.clientId`/`clientSecret` ; script de provisionnement interactif fourni depuis `682455c`, erreurs assainies par `adca17b`) ; `LEGIFRANCE_ENVIRONMENT` optionnelle (défaut `sandbox`, valeur reconnue sinon rejet). N'exige ni configuration Gmail ni `ANTHROPIC_API_KEY`. Testé exclusivement avec doubles (`fetchFn` mocké) — **aucun test automatisé contre la Sandbox PISTE réelle n'a été exécuté** ; un essai manuel en Sandbox (2026-10-02) est rapporté hors dépôt (voir « Composants livrés depuis 2026-09-30 »). |
 
 ## Ce qui fonctionne
 
@@ -811,6 +820,53 @@ restant ouvert.
   vérification hors démonstration reste une décision ouverte (voir
   « Vérification de postcondition (opt-in) » ci-dessous et
   `docs/verified-result-boundaries.md` §9).
+- **Obsidian en lecture seule** — trois composants, tous publiés sur `origin/main` :
+  - skill Claude Code `obsidian-cli` (`.claude/skills/obsidian-cli/SKILL.md`,
+    [PR #9](https://github.com/bouillaultalex-max/Jarvis/pull/9), `2adc699`) :
+    consigne de session, invocation manuelle, vault explicite, trois commandes
+    (`vault info=files`, `search … limit=5 total`, `read path=…`), comparaison de
+    l'inventaire et des empreintes SHA-256 du vault à une sauvegarde vérifiée avant et
+    après chaque commande. Aucun contrôle d'accès au binaire, aucune intégration à
+    l'application ;
+  - `apps/desktop obsidian-read --vault … --path …`
+    ([PR #10](https://github.com/bouillaultalex-max/Jarvis/pull/10), `7758b79`,
+    `256f37e`) : outil `obsidian.read` ; contrôle de la racine par `vault info=path`,
+    inspection du chemin sous la racine (liens et jonctions refusés), `not_found` sans
+    appeler le lanceur, levée de l'ambiguïté du diagnostic « fichier introuvable »,
+    contenu écrit tel quel sur stdout ;
+  - `apps/desktop obsidian-search --vault … --query …`
+    ([PR #11](https://github.com/bouillaultalex-max/Jarvis/pull/11), `796597a`) :
+    outil `obsidian.search`, permission distincte ; `search … limit=5 format=json`
+    sans `total` ; au plus cinq chemins Markdown, validés avant filtrage, sans ouvrir
+    aucune note ; `No matches found.` ou `[]` → « Aucune note trouvée. », code `0`.
+
+  Les deux commandes passent par `ToolRegistry` → `PermissionManager` (règles `allow`
+  explicites, défaut `deny`) → `ToolExecutor`, sans dépendance Gmail, et n'affichent
+  jamais la sortie brute du lanceur. Décision : ADR-0025, avenant `obsidian.search`
+  compris, `Accepted` (limites non établies nommées dans sa ligne de statut).
+
+  **Configuration requise (WSL)** : JARVIS lancé sous Ubuntu WSL avec l'interopérabilité
+  Windows active, dans la session Windows interactive de l'utilisateur, Obsidian Desktop
+  ouvert. Variables : `OBSIDIAN_VAULT_ID` (nom ou identifiant du vault),
+  `OBSIDIAN_VAULT_ROOT` (racine Windows absolue), `OBSIDIAN_CLI_PATH` (chemin Windows
+  absolu de `Obsidian.com`), `OBSIDIAN_POWERSHELL_PATH` optionnelle (défaut
+  `powershell.exe`). Un seul vault ; aucune valeur par défaut ni chemin dans le dépôt.
+  Appel par `execFile` sans shell, `powershell.exe -EncodedCommand`, 10 s et 1 Mio par
+  processus. Hors de ces conditions (CI, service sans session) : erreur explicite.
+
+  Validation simulée : tests avec doubles uniquement, aucun processus lancé (Obsidian
+  fermé, diagnostic ambigu, fichiers non Markdown, sorties de recherche mal formées,
+  permissions, absence de dépendance Gmail). Usage réel (2026-11-08, T3 Code sous WSL,
+  Obsidian ouvert) : pilote — comptage, recherche (`total`) et lecture d'une note ;
+  `obsidian-read` — lecture exacte octet pour octet (code `0`), message JARVIS pour une
+  note absente (code `1`) ; `obsidian-search` — cinq chemins Markdown distincts (code
+  `0`), puis « Aucune note trouvée. » (code `0`). Avant et après chacune de ces
+  commandes, inventaire et empreintes SHA-256 du vault identiques à une sauvegarde
+  vérifiée, à une exception près : l'essai de comptage du pilote dans T3 Code n'avait
+  pas de comparaison SHA-256 dédiée ; un essai séparé depuis Ubuntu, rapporté hors du
+  dépôt (preuve non archivée), a confirmé des empreintes identiques avant et après. Non observé en réel : Obsidian fermé, erreur réelle de `search`, résultat non
+  Markdown. Chantier : aucune
+  suite décidée (pas d'écriture, pas de branchement à `AgentLoop`).
 
 ## Domaine juridique (LEGAL-00 → LegalCase v3)
 
@@ -1710,6 +1766,14 @@ document) :
 - `8506792` **Connector Architecture Foundation** — `ConnectorRegistry`,
   `AccountStore`, `SecretStore`/`InMemorySecretStore`, `Capability`. Ne
   remplace pas et ne renumérote pas le M5 fonctionnel (`fd13ffa`).
+
+Obsidian en lecture seule (hors numérotation fonctionnelle, publiés sur
+`origin/main`) :
+
+- `2adc699` skill Claude Code `obsidian-cli` — PR #9 (fusion `1696eba`)
+- `7758b79` commande `obsidian-read` et ADR-0025 — PR #10
+- `256f37e` `obsidian-read` écrit le texte de la note tel quel — PR #10 (fusion `dccdb2a`)
+- `796597a` commande `obsidian-search` et avenant à l'ADR-0025 — PR #11 (fusion `5bdcae3`)
 
 Domaine juridique (état au 2026-09-26) :
 

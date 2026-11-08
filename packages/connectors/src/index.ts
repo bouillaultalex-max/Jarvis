@@ -181,3 +181,17 @@ export type {
 export { legifranceConnector } from './legifrance/legifrance-connector.js';
 
 export { resolveLegifranceCredentials } from './legifrance/legifrance-credentials.js';
+
+export type { ObsidianReadErrorCode } from './obsidian/obsidian-errors.js';
+export { ObsidianReadError, OBSIDIAN_READ_ERROR_MESSAGES } from './obsidian/obsidian-errors.js';
+
+export type {
+  ObsidianVaultConfig,
+  ObsidianVaultClient,
+  ObsidianNoteInspection,
+  PowerShellObsidianClientOptions,
+} from './obsidian/obsidian-powershell-client.js';
+export { createPowerShellObsidianVaultClient } from './obsidian/obsidian-powershell-client.js';
+
+export type { ObsidianReadInput, ObsidianReadOutput } from './obsidian/obsidian-connector.js';
+export { obsidianConnector } from './obsidian/obsidian-connector.js';

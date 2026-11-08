@@ -22,30 +22,31 @@ import {
  * `obsidian.read.validateInput`, jamais refaite ici.
  */
 
-const KNOWN_FLAGS = ['vault', 'path'] as const;
-type KnownFlag = (typeof KNOWN_FLAGS)[number];
-
-function isKnownFlag(name: string): name is KnownFlag {
-  return (KNOWN_FLAGS as readonly string[]).includes(name);
-}
-
 /**
- * Découpe les arguments ; ne valide pas le fond. Les messages ne citent que
- * des noms d'options, jamais une valeur fournie.
+ * Découpe des options nommées obligatoires (`--nom valeur` ou `--nom=valeur`),
+ * chacune exactement une fois ; ne valide pas le fond. Partagé par
+ * `obsidian-read` et `obsidian-search`. Les messages ne citent que des noms
+ * d'options, jamais une valeur fournie.
  */
-export function parseObsidianReadArgs(argv: readonly string[]): ObsidianReadInput {
-  const values: Partial<Record<KnownFlag, string>> = {};
+export function parseObsidianOptions<K extends string>(
+  command: string,
+  flags: readonly K[],
+  argv: readonly string[],
+): Record<K, string> {
+  const listed = flags.map((flag) => `--${flag}`);
+  const isKnownFlag = (name: string): name is K => (flags as readonly string[]).includes(name);
+  const values: Partial<Record<K, string>> = {};
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]!;
     if (!token.startsWith('--')) {
       throw new Error(
-        'obsidian-read : argument positionnel inattendu (attendu : --vault, --path).',
+        `${command} : argument positionnel inattendu (attendu : ${listed.join(', ')}).`,
       );
     }
     const eq = token.indexOf('=');
     const name = eq !== -1 ? token.slice(2, eq) : token.slice(2);
     if (!isKnownFlag(name)) {
-      throw new Error('obsidian-read : option inconnue (connues : --vault, --path).');
+      throw new Error(`${command} : option inconnue (connues : ${listed.join(', ')}).`);
     }
     let value: string;
     if (eq !== -1) {
@@ -53,20 +54,25 @@ export function parseObsidianReadArgs(argv: readonly string[]): ObsidianReadInpu
     } else {
       const next = argv[i + 1];
       if (next === undefined || next.startsWith('--')) {
-        throw new Error(`obsidian-read : valeur manquante pour l’option --${name}.`);
+        throw new Error(`${command} : valeur manquante pour l’option --${name}.`);
       }
       value = next;
       i += 1;
     }
     if (values[name] !== undefined) {
-      throw new Error(`obsidian-read : option --${name} fournie plusieurs fois.`);
+      throw new Error(`${command} : option --${name} fournie plusieurs fois.`);
     }
     values[name] = value;
   }
-  if (values.vault === undefined || values.path === undefined) {
-    throw new Error('obsidian-read : --vault et --path sont obligatoires.');
+  if (flags.some((flag) => values[flag] === undefined)) {
+    throw new Error(`${command} : ${listed.join(' et ')} sont obligatoires.`);
   }
-  return { vault: values.vault, path: values.path };
+  return values as Record<K, string>;
+}
+
+export function parseObsidianReadArgs(argv: readonly string[]): ObsidianReadInput {
+  const { vault, path } = parseObsidianOptions('obsidian-read', ['vault', 'path'], argv);
+  return { vault, path };
 }
 
 export const OBSIDIAN_ENV = {

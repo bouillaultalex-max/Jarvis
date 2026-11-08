@@ -48,6 +48,11 @@ export interface ObsidianVaultClient {
   inspectNote(relativePath: string): Promise<ObsidianNoteInspection>;
   /** Sortie brute de `vault=<id> read path=<relativePath>` (Obsidian ouvert vérifié avant l'appel). */
   readNote(relativePath: string): Promise<string>;
+  /**
+   * Sortie brute de `vault=<id> search query=<query> limit=5 format=json`
+   * (Obsidian ouvert vérifié avant l'appel). N'ouvre aucune note.
+   */
+  searchNotes(query: string): Promise<string>;
 }
 
 /** Issue d'un processus, sans jamais lever. */
@@ -92,6 +97,8 @@ const defaultExecFile: ExecFileLike = (file, args, options, callback) =>
 
 export const OBSIDIAN_PROCESS_TIMEOUT_MS = 10_000;
 export const OBSIDIAN_MAX_OUTPUT_BYTES = 1024 * 1024;
+/** Nombre maximal de chemins demandés à `search` — fixé ici, jamais fourni par l'appelant. */
+export const OBSIDIAN_SEARCH_LIMIT = 5;
 
 /** Runner de production : `execFile` sans shell, délai et sortie bornés. */
 export function createExecFileRunner(execFileFn: ExecFileLike = defaultExecFile): ProcessRunner {
@@ -281,6 +288,11 @@ export function createPowerShellObsidianVaultClient(
     vaultRoot: config.vaultRoot,
     vaultPath: () => runLauncher(['vault', 'info=path'], 'vault_check_failed'),
     readNote: (relativePath) => runLauncher(['read', `path=${relativePath}`], 'process_failed'),
+    searchNotes: (query) =>
+      runLauncher(
+        ['search', `query=${query}`, `limit=${OBSIDIAN_SEARCH_LIMIT}`, 'format=json'],
+        'process_failed',
+      ),
     async inspectNote(relativePath) {
       const { exitCode } = await run(buildInspectScript(config, relativePath));
       switch (exitCode) {

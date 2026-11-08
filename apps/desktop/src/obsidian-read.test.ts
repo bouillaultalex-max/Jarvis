@@ -64,6 +64,10 @@ function fakeClient(overrides: Partial<ObsidianVaultClient> = {}): ObsidianVault
       calls.push('read');
       return '# Exemple\nTexte de la note\n';
     },
+    searchNotes: async () => {
+      calls.push('search');
+      return 'No matches found.\n';
+    },
     ...overrides,
   };
 }

@@ -17,8 +17,21 @@ let stubApi;
 // Chaque requête reçue par la fausse API : preuve de ce qui est relayé — et
 // de ce qui ne l'est pas.
 const stubApiRequests = [];
-// 'cut' : la fausse API coupe la connexion au milieu de sa réponse.
+// 'cut'   : la fausse API coupe la connexion au milieu de sa réponse.
+// 'hang'  : elle reçoit la requête et ne répond jamais.
+// 'stall' : elle envoie ses en-têtes et le début du corps, puis se bloque.
 let stubApiMode = 'ok';
+// Délai du relais pour ces tests (défaut réel : 10 s), et nombre de
+// connexions bloquées que le relais a fermées de son côté.
+const RELAY_TIMEOUT_MS = 400;
+let stubApiBlockedClosed = 0;
+
+async function waitForBlockedClosed(expected) {
+  for (let i = 0; i < 100 && stubApiBlockedClosed < expected; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return stubApiBlockedClosed;
+}
 
 /** Requête brute (node:http) : permet de fixer `Host`, ce que `fetch` interdit. */
 function rawRequest({ method = 'GET', route, headers = {}, body }) {
@@ -49,6 +62,14 @@ beforeAll(async () => {
         setTimeout(() => request.socket.destroy(), 50);
         return;
       }
+      if (stubApiMode === 'hang' || stubApiMode === 'stall') {
+        request.socket.once('close', () => (stubApiBlockedClosed += 1));
+        if (stubApiMode === 'stall') {
+          response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': '500' });
+          response.write('{"mailboxes":[');
+        }
+        return;
+      }
       const status = request.url === '/inbox/runs' ? 403 : 200;
       response
         .writeHead(status, { 'Content-Type': 'application/json' })
@@ -64,6 +85,7 @@ beforeAll(async () => {
       PORT: String(TEST_PORT),
       HOST: '127.0.0.1',
       JARVIS_API_PORT: String(STUB_API_PORT),
+      JARVIS_RELAY_TIMEOUT_MS: String(RELAY_TIMEOUT_MS),
     },
   });
   await new Promise((resolve, reject) => {
@@ -84,6 +106,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   serverProcess?.kill();
+  stubApi?.closeAllConnections();
   stubApi?.close();
 });
 
@@ -284,6 +307,95 @@ describe('serve.mjs — API coupée en cours de réponse', () => {
     }
     expect((await fetch(`${BASE_URL}/`)).status).toBe(200);
   });
+});
+
+describe('serve.mjs — délai maximal du relais', () => {
+  const RUN = JSON.stringify({ mailboxId: 'fixture', maxResults: 3 });
+  const postRun = () =>
+    fetch(`${BASE_URL}/api/inbox/runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: RUN,
+    });
+
+  async function expectTimeout(mode, send) {
+    const closedBefore = stubApiBlockedClosed;
+    const startedAt = Date.now();
+    stubApiMode = mode;
+    let res;
+    try {
+      res = await send();
+    } finally {
+      stubApiMode = 'ok';
+    }
+    const elapsed = Date.now() - startedAt;
+
+    expect(res.status).toBe(504);
+    const payload = await res.json();
+    expect(payload.error).toContain('délai');
+    expect(payload.runId).toBeUndefined();
+    // Ni avant le délai, ni très au-delà.
+    expect(elapsed).toBeGreaterThanOrEqual(RELAY_TIMEOUT_MS - 50);
+    expect(elapsed).toBeLessThan(RELAY_TIMEOUT_MS + 2000);
+    // Le relais a fermé sa requête vers l'API : elle ne reste pas en attente.
+    expect(await waitForBlockedClosed(closedBefore + 1)).toBe(closedBefore + 1);
+  }
+
+  test('API qui ne répond jamais : 504, requête vers l’API fermée', async () => {
+    await expectTimeout('hang', postRun);
+  });
+
+  test('réponse commencée puis bloquée : 504, requête vers l’API fermée', async () => {
+    await expectTimeout('stall', () => fetch(`${BASE_URL}/api/inbox/mailboxes`));
+  });
+
+  test('après expiration, une requête normale est relayée', async () => {
+    await expectTimeout('hang', postRun);
+
+    const list = await fetch(`${BASE_URL}/api/inbox/mailboxes`);
+    const run = await postRun();
+
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual({ relayed: 'GET /inbox/mailboxes' });
+    expect(await run.json()).toEqual({ relayed: 'POST /inbox/runs' });
+  });
+
+  test('le délai par défaut est de 10 s, réglable par JARVIS_RELAY_TIMEOUT_MS (source)', async () => {
+    const source = await (
+      await import('node:fs/promises')
+    ).readFile(path.join(here, 'serve.mjs'), 'utf8');
+    expect(source).toMatch(/const DEFAULT_RELAY_TIMEOUT_MS = 10_000;/);
+    expect(source).toMatch(/process\.env\.JARVIS_RELAY_TIMEOUT_MS/);
+  });
+
+  test.each(['abc', '0', '-5', ''])(
+    'valeur invalide (%j) : le relais garde le délai par défaut et fonctionne',
+    async (value) => {
+      const port = TEST_PORT + 4;
+      const child = spawn('node', ['serve.mjs'], {
+        cwd: here,
+        env: {
+          ...process.env,
+          PORT: String(port),
+          HOST: '127.0.0.1',
+          JARVIS_API_PORT: String(STUB_API_PORT),
+          JARVIS_RELAY_TIMEOUT_MS: value,
+        },
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          child.stdout.on('data', resolve);
+          child.on('error', reject);
+        });
+        const res = await fetch(`http://127.0.0.1:${port}/api/inbox/mailboxes`);
+
+        expect(res.status).toBe(200);
+      } finally {
+        child.kill();
+        await new Promise((resolve) => child.on('exit', resolve));
+      }
+    },
+  );
 });
 
 describe('serve.mjs — API arrêtée', () => {

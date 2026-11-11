@@ -41,6 +41,13 @@ const INBOX_RELAY = {
   'POST /api/inbox/runs': '/inbox/runs',
 };
 const MAX_RELAY_BODY_BYTES = 1024;
+// Délai maximal accordé à l'API pour une requête relayée, réponse complète
+// comprise : 10 s par défaut, réglable par JARVIS_RELAY_TIMEOUT_MS (entier
+// de millisecondes strictement positif ; toute autre valeur garde le défaut).
+const DEFAULT_RELAY_TIMEOUT_MS = 10_000;
+const RELAY_TIMEOUT_MS = /^[1-9]\d*$/.test(process.env.JARVIS_RELAY_TIMEOUT_MS ?? '')
+  ? Number(process.env.JARVIS_RELAY_TIMEOUT_MS)
+  : DEFAULT_RELAY_TIMEOUT_MS;
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
@@ -106,12 +113,21 @@ async function relayInbox(request, response) {
     const upstream = await fetch(`${API_ORIGIN}${target}`, {
       method: request.method,
       ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body } : {}),
+      // Couvre l'attente des en-têtes comme la lecture du corps ci-dessous.
+      // À l'expiration, la requête vers l'API est abandonnée et sa connexion fermée.
+      signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
     });
     status = upstream.status;
     // Lu ici : une API coupée en cours de réponse doit donner un 502, pas
     // une exception non gérée qui arrêterait ce serveur.
     text = await upstream.text();
-  } catch {
+  } catch (err) {
+    if (err?.name === 'TimeoutError') {
+      sendJson(response, 504, {
+        error: `API Jarvis sans réponse complète dans le délai de ${(RELAY_TIMEOUT_MS / 1000).toLocaleString('fr-FR')} s sur 127.0.0.1:${API_PORT}. Aucun lot n'a été reçu ; vous pouvez relancer.`,
+      });
+      return;
+    }
     sendJson(response, 502, {
       error: `API Jarvis injoignable ou interrompue sur 127.0.0.1:${API_PORT}. Démarrez-la, puis réessayez.`,
     });

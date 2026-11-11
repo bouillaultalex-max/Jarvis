@@ -168,6 +168,7 @@ describe('toRunView — refus, erreurs et réponses inexploitables', () => {
     [400, { error: 'Le champ « maxResults » doit être un entier entre 1 et 10.' }],
     [404, { error: 'Boîte inconnue.' }],
     [502, { error: 'API Jarvis injoignable.' }],
+    [504, { error: 'API Jarvis sans réponse dans le délai de 10 s.' }],
     [0, null],
     [200, { items: COMPLETED.items }],
     [200, 'pas du JSON'],

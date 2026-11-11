@@ -1,4 +1,10 @@
-import { DEMO_CATEGORIES, DEMO_MESSAGES, DEMO_SOURCES, buildDemoMissionSteps } from './data.js';
+import {
+  MAX_BATCH_SIZE,
+  describeMailboxOption,
+  parseBatchSize,
+  toMailboxList,
+  toRunView,
+} from './inbox-run.js';
 import {
   LEGAL_CAPABILITIES,
   LEGAL_DEMO_RESULTS,
@@ -18,23 +24,19 @@ import {
 } from './pdf-extraction.js';
 import { detectElements, hasDetectableText, renderDetectionBlock } from './pdf-detection.js';
 
-// Centre de commandement Jarvis — prototype statique, 100% local.
-// Aucun appel réseau n'est fait par ce script : tout ce qui est « démo »
-// vient de data.js et reste en mémoire du navigateur (jamais persisté).
+// Centre de commandement Jarvis — prototype 100% local.
+// Seuls appels réseau de ce script : les deux routes Inbox de l'API Jarvis de
+// ce poste, via le relais de serve.mjs. Rien n'est persisté : un lot ne vit
+// que dans la mémoire de cette page.
 
 const state = {
   route: 'home',
   inbox: {
-    status: 'empty', // empty | loading | ready | error
-    messages: [],
-    selectedId: null,
-    activeFilter: null,
-  },
-  corrections: {}, // { [messageId]: category } — correction locale, non apprise
-  mission: {
-    hasRun: false,
-    steps: [],
-    error: null,
+    status: 'empty', // empty | invalid | loading | ready | error
+    mailboxes: [], // boîtes renvoyées par l'API — jamais une liste locale
+    mailboxError: null,
+    run: null, // dernière exécution renvoyée par l'API (vue de inbox-run.js)
+    failure: null, // échec sans exécution (API arrêtée, entrée refusée…)
   },
   legal: {
     status: 'empty', // empty | invalid | loading | error | ready
@@ -58,16 +60,22 @@ const CAPABILITIES = [
       "Le serveur @jarvis/api expose déjà /chat (AgentLoop + outil factice). Cette interface web ne l'appelle pas encore.",
   },
   {
-    title: 'Inbox Intelligence — démonstration',
+    title: 'Inbox Intelligence — boîte fictive',
     status: 'fonctionnel',
     description:
-      "Parcours Inbox en mode démonstration : messages fictifs, catégories fixées à l'avance, interactions réelles (sélection, filtres, correction locale).",
+      "Lot manuel de 10 messages au plus, lu dans une boîte fictive puis classé par le vrai pipeline Inbox via l'API Jarvis locale. Les messages sont synthétiques ; le classement est calculé.",
   },
   {
-    title: 'Inbox Intelligence — analyse réelle',
+    title: 'Inbox Intelligence — classification et résumé par LLM',
+    status: 'non-raccorde',
+    description:
+      "Le classifieur et le résumeur existent dans le code, mais aucun LLM n'est branché sur ce parcours : sans règle connue, chaque message reste « incertain ».",
+  },
+  {
+    title: 'Inbox Intelligence — boîte Gmail réelle',
     status: 'prevu',
     description:
-      "Le pipeline existe dans packages/inbox et apps/desktop (CLI), mais aucun endpoint HTTP ne le relie à ce navigateur pour l'instant.",
+      "Aucune boîte réelle n'est proposée. Demande une autorisation d'accès en lecture seule, non accordée à ce stade.",
   },
   {
     title: 'Historique des exécutions',
@@ -146,274 +154,251 @@ function renderCapabilities() {
 
 // ---------- Inbox ----------
 
-function initInbox() {
-  qs('#launch-demo').addEventListener('click', launchDemo);
-  qs('#simulate-error').addEventListener('click', simulateInboxError);
-}
-
-function launchDemo() {
-  state.inbox.status = 'loading';
-  state.inbox.selectedId = null;
-  renderInbox();
-
-  // Délai volontaire pour rendre l'état de chargement observable — aucune
-  // opération réseau réelle n'a lieu ici.
-  window.setTimeout(() => {
-    state.inbox.messages = DEMO_MESSAGES.map((m) => ({ ...m }));
-    state.inbox.status = 'ready';
-    state.corrections = {};
-    state.mission.hasRun = true;
-    state.mission.error = null;
-    state.mission.steps = buildDemoMissionSteps();
-    renderInbox();
-    if (state.route === 'mission') {
-      renderMission();
-    }
-  }, 550);
-}
-
-function simulateInboxError() {
-  state.inbox.status = 'error';
-  state.inbox.messages = [];
-  state.inbox.selectedId = null;
-  state.mission.hasRun = true;
-  state.mission.error = "Erreur simulée à la demande — aucune panne réelle ne s'est produite.";
-  state.mission.steps = [
-    {
-      id: 'fetch',
-      title: 'Récupération simulée des messages',
-      status: 'error',
-      result: 'Échec provoqué volontairement pour vérifier le traitement des erreurs.',
-    },
-  ];
-  renderInbox();
-  if (state.route === 'mission') {
-    renderMission();
+// `status: 0` = l'appel n'a pas abouti ; un corps non JSON donne `payload: null`.
+async function callInboxApi(path, options) {
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch {
+    return { status: 0, payload: null };
   }
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    // Corps non JSON : traité plus loin comme une réponse inattendue.
+  }
+  return { status: response.status, payload };
 }
 
-function effectiveCategory(message) {
-  return state.corrections[message.id] ?? message.category;
+function initInbox() {
+  qs('#inbox-batch').max = String(MAX_BATCH_SIZE);
+  qs('#launch-run').addEventListener('click', launchRun);
+  qs('#reload-mailboxes').addEventListener('click', loadMailboxes);
+  loadMailboxes();
 }
 
-function visibleMessages() {
-  const { messages, activeFilter } = state.inbox;
-  if (!activeFilter) return messages;
-  return messages.filter((m) => effectiveCategory(m) === activeFilter);
+async function loadMailboxes() {
+  state.inbox.mailboxes = [];
+  state.inbox.mailboxError = null;
+  renderMailboxPicker('Chargement des boîtes…');
+
+  const { status, payload } = await callInboxApi('/api/inbox/mailboxes');
+  const view = toMailboxList(status, payload);
+  if (view.kind === 'failure') {
+    state.inbox.mailboxError = view.message;
+  } else {
+    state.inbox.mailboxes = view.mailboxes;
+  }
+  renderMailboxPicker();
+  renderInbox();
+}
+
+function renderMailboxPicker(placeholder = 'Aucune boîte disponible') {
+  const { mailboxes, mailboxError } = state.inbox;
+  const select = qs('#inbox-mailbox');
+  select.innerHTML =
+    mailboxes.length === 0
+      ? `<option value="">${escapeHtml(placeholder)}</option>`
+      : mailboxes
+          .map(
+            (m) =>
+              `<option value="${escapeHtml(m.id)}">${escapeHtml(describeMailboxOption(m))}</option>`,
+          )
+          .join('');
+  select.disabled = mailboxes.length === 0;
+  qs('#launch-run').disabled = mailboxes.length === 0;
+  qs('#reload-mailboxes').hidden = mailboxError === null;
+}
+
+async function launchRun() {
+  // Un seul lot à la fois. Le bouton reste actif pendant le lot : le
+  // désactiver ferait perdre le focus à qui navigue au clavier.
+  if (state.inbox.status === 'loading') return;
+
+  const size = parseBatchSize(qs('#inbox-batch').value);
+  // Le résultat précédent est effacé avant toute tentative : un lot refusé
+  // ou en échec ne laisse jamais l'ancien à l'écran.
+  state.inbox.run = null;
+  state.inbox.failure = null;
+  if (size === null) {
+    state.inbox.status = 'invalid';
+    state.inbox.failure = `Taille de lot invalide : entier attendu entre 1 et ${MAX_BATCH_SIZE}.`;
+    renderInbox();
+    renderMission();
+    return;
+  }
+
+  state.inbox.status = 'loading';
+  renderInbox();
+  renderMission();
+
+  // Le navigateur n'envoie que l'identifiant de boîte et la taille du lot.
+  const { status, payload } = await callInboxApi('/api/inbox/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mailboxId: qs('#inbox-mailbox').value, maxResults: size }),
+  });
+  const view = toRunView(status, payload);
+  if (view.kind === 'failure') {
+    state.inbox.failure = view.message;
+    state.inbox.status = 'error';
+  } else {
+    state.inbox.run = view;
+    state.inbox.status = view.failed ? 'error' : 'ready';
+  }
+
+  renderInbox();
+  renderMission();
+}
+
+function renderRunItem(item) {
+  return `
+    <li class="message-item run-item">
+      <div class="msg-top">
+        <span>${escapeHtml(item.sender)}</span>
+        <span class="category-tag">${escapeHtml(formatDate(item.receivedAt))}</span>
+      </div>
+      <span class="msg-subject">${escapeHtml(item.subject)}</span>
+      <span class="run-label" data-label="${escapeHtml(item.label)}">${escapeHtml(item.labelText)}</span>
+      <span class="msg-preview">Raison : ${escapeHtml(item.reason)}</span>
+      <span class="msg-preview">Provenance : ${escapeHtml(item.sourceText)}</span>
+      ${item.summary ? `<span class="msg-preview">Résumé : ${escapeHtml(item.summary)}</span>` : ''}
+    </li>`;
 }
 
 function renderInbox() {
   const layout = qs('#inbox-layout');
-  const { status } = state.inbox;
+  const { status, run, failure, mailboxError } = state.inbox;
+
+  if (mailboxError !== null) {
+    layout.innerHTML = `
+      <div class="inbox-error" role="alert">
+        <p>Impossible de charger les boîtes : ${escapeHtml(mailboxError)}</p>
+        <p class="muted">Aucun lot ne peut être lancé tant que l'API Jarvis locale ne répond pas.</p>
+      </div>`;
+    return;
+  }
 
   if (status === 'empty') {
     layout.innerHTML = `
       <div class="inbox-empty">
-        <p>Aucun message chargé.</p>
-        <p class="muted">Cliquez sur « Lancer la démonstration » pour afficher un petit lot de messages fictifs.</p>
+        <p>Aucun lot lancé.</p>
+        <p class="muted">Choisissez une boîte et une taille de lot, puis cliquez sur « Lancer le lot ».</p>
+      </div>`;
+    return;
+  }
+
+  if (status === 'invalid') {
+    layout.innerHTML = `
+      <div class="inbox-error" role="alert">
+        <p>Taille de lot invalide : saisissez un entier entre 1 et ${MAX_BATCH_SIZE}.</p>
+        <p class="muted">Aucun lot n'a été lancé.</p>
       </div>`;
     return;
   }
 
   if (status === 'loading') {
     layout.innerHTML = `
-      <div class="inbox-loading">
-        <p>Chargement de la démonstration…</p>
-        <p class="muted">Simulation locale, aucun appel réseau.</p>
+      <div class="inbox-loading" role="status">
+        <p>Lot en cours…</p>
+        <p class="muted">Lecture puis classification par l'API Jarvis locale.</p>
       </div>`;
     return;
   }
 
   if (status === 'error') {
     layout.innerHTML = `
-      <div class="inbox-error">
-        <p>La démonstration n'a pas pu charger de messages.</p>
-        <p class="muted">${escapeHtml(state.mission.error ?? '')} Consultez l'onglet Mission pour le détail.</p>
+      <div class="inbox-error" role="alert">
+        <p>Le lot n'a produit aucun résultat.</p>
+        <p>${escapeHtml(run ? run.error : failure)}</p>
+        ${
+          run
+            ? `<p class="muted">Exécution <span class="run-id">${escapeHtml(run.runId)}</span> — le détail des étapes est dans l'onglet Mission.</p>`
+            : `<p class="muted">Aucune exécution n'a été créée.</p>`
+        }
       </div>`;
     return;
   }
 
   layout.innerHTML = `
-    <div class="inbox-list-pane">
-      <div class="inbox-filters" id="inbox-filters"></div>
-      <ul class="message-list" id="message-list"></ul>
-    </div>
-    <div class="message-detail" id="message-detail"></div>
-  `;
-
-  renderFilters();
-  renderMessageList();
-  renderDetail();
-}
-
-function renderFilters() {
-  const container = qs('#inbox-filters');
-  const chips = ['Toutes', ...DEMO_CATEGORIES];
-  container.innerHTML = chips
-    .map((label) => {
-      const value = label === 'Toutes' ? '' : label;
-      const isActive = (state.inbox.activeFilter ?? '') === value;
-      return `<button class="filter-chip${isActive ? ' is-active' : ''}" data-filter="${escapeHtml(value)}" type="button">${escapeHtml(label)}</button>`;
-    })
-    .join('');
-
-  qsa('.filter-chip', container).forEach((chip) => {
-    chip.addEventListener('click', () => {
-      state.inbox.activeFilter = chip.dataset.filter || null;
-      renderFilters();
-      renderMessageList();
-    });
-  });
-}
-
-function renderMessageList() {
-  const list = qs('#message-list');
-  const messages = visibleMessages();
-
-  if (messages.length === 0) {
-    list.innerHTML = `<li class="inbox-empty" style="border:none;">Aucun message pour ce filtre.</li>`;
-    return;
-  }
-
-  list.innerHTML = messages
-    .map((m) => {
-      const isSelected = m.id === state.inbox.selectedId;
-      return `
-        <li class="message-item${isSelected ? ' is-selected' : ''}" data-id="${m.id}" tabindex="0" role="button">
-          <div class="msg-top">
-            <span>${escapeHtml(m.from)}</span>
-            <span class="category-tag">${escapeHtml(effectiveCategory(m))}</span>
-          </div>
-          <span class="msg-subject">${escapeHtml(m.subject)}</span>
-          <span class="msg-preview">${escapeHtml(m.preview)}</span>
-        </li>`;
-    })
-    .join('');
-
-  qsa('.message-item', list).forEach((item) => {
-    const open = () => {
-      state.inbox.selectedId = item.dataset.id;
-      renderMessageList();
-      renderDetail();
-    };
-    item.addEventListener('click', open);
-    item.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        open();
+    <div class="inbox-run">
+      <p class="muted">
+        ${escapeHtml(run.mailboxLabel)} — ${run.items.length} message(s) —
+        exécution <span class="run-id">${escapeHtml(run.runId)}</span>
+      </p>
+      ${
+        run.items.length === 0
+          ? `<div class="inbox-empty"><p>La boîte n'a renvoyé aucun message.</p></div>`
+          : `<ul class="message-list">${run.items.map(renderRunItem).join('')}</ul>`
       }
-    });
-  });
-}
-
-function renderDetail() {
-  const pane = qs('#message-detail');
-  const message = state.inbox.messages.find((m) => m.id === state.inbox.selectedId);
-
-  if (!message) {
-    pane.innerHTML = `<p class="detail-placeholder">Sélectionnez un message dans la liste.</p>`;
-    return;
-  }
-
-  const correction = state.corrections[message.id];
-
-  pane.innerHTML = `
-    <button class="btn btn-ghost btn-small detail-close" id="detail-close" type="button">Fermer</button>
-    <div class="detail-header">
-      <div>
-        <h2 class="detail-subject">${escapeHtml(message.subject)}</h2>
-        <div class="detail-meta">${escapeHtml(message.from)} · ${escapeHtml(message.fromEmail)} · ${formatDate(message.date)}</div>
-      </div>
-    </div>
-    <div class="detail-body">${escapeHtml(message.body)}</div>
-    <div class="category-picker">
-      <span class="category-picker-label">Catégorie proposée (démonstration) — correction locale uniquement, non apprise :</span>
-      <div class="category-options" id="category-options"></div>
-      ${correction ? `<p class="correction-note">Corrigé localement en « ${escapeHtml(correction)} ». Cette correction reste dans cette page, elle ne modifie aucun modèle.</p>` : ''}
-    </div>
-  `;
-
-  qs('#detail-close').addEventListener('click', () => {
-    state.inbox.selectedId = null;
-    renderMessageList();
-    renderDetail();
-  });
-
-  const optionsContainer = qs('#category-options');
-  optionsContainer.innerHTML = DEMO_CATEGORIES.map((cat) => {
-    const isActive = effectiveCategory(message) === cat;
-    return `<button class="filter-chip${isActive ? ' is-active' : ''}" data-category="${escapeHtml(cat)}" type="button">${escapeHtml(cat)}</button>`;
-  }).join('');
-
-  qsa('.filter-chip', optionsContainer).forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.corrections[message.id] = btn.dataset.category;
-      renderMessageList();
-      renderDetail();
-    });
-  });
+    </div>`;
 }
 
 // ---------- Mission ----------
 
+const STEP_DISPLAY = {
+  executed: { status: 'ok', icon: '✓' },
+  refused: { status: 'error', icon: '!' },
+  failed: { status: 'error', icon: '!' },
+};
+
 function renderMission() {
   const panel = qs('#mission-panel');
+  const { run, failure, status } = state.inbox;
 
-  if (!state.mission.hasRun) {
-    panel.innerHTML = `
-      <div class="mission-empty">
-        Aucune démonstration lancée pour l'instant. Rendez-vous dans l'onglet Inbox pour en
-        démarrer une.
-      </div>`;
+  if (!run) {
+    const message =
+      status === 'loading'
+        ? 'Lot en cours…'
+        : failure
+          ? `Dernière tentative sans exécution : ${failure}`
+          : "Aucun lot lancé pour l'instant. Rendez-vous dans l'onglet Inbox pour en démarrer un.";
+    panel.innerHTML = `<div class="mission-empty">${escapeHtml(message)}</div>`;
     return;
   }
 
-  const stepsHtml = state.mission.steps
+  const stepsHtml = run.steps
     .map((step) => {
-      const icon = step.status === 'ok' ? '✓' : step.status === 'error' ? '!' : '…';
+      const display = STEP_DISPLAY[step.status] ?? { status: 'idle', icon: '–' };
       return `
-        <li class="mission-step" data-status="${step.status}">
-          <span class="step-icon">${icon}</span>
+        <li class="mission-step" data-status="${display.status}">
+          <span class="step-icon">${display.icon}</span>
           <div>
-            <div class="step-title">${escapeHtml(step.title)}</div>
-            <div class="step-result">${escapeHtml(step.result)}</div>
+            <div class="step-title">${escapeHtml(step.title)} — ${escapeHtml(step.statusLabel)}</div>
+            <div class="step-result">${escapeHtml(step.detail)}</div>
           </div>
         </li>`;
     })
     .join('');
-
-  const sourcesHtml =
-    state.inbox.status === 'error'
-      ? ''
-      : `
-        <div class="mission-section-title">Sources disponibles</div>
-        <ul class="source-list">
-          ${DEMO_SOURCES.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}
-        </ul>`;
-
-  const errorsHtml = state.mission.error
-    ? `
-        <div class="mission-section-title">Erreurs</div>
-        <ul class="error-list"><li>${escapeHtml(state.mission.error)}</li></ul>`
-    : `
-        <div class="mission-section-title">Erreurs</div>
-        <p class="muted">Aucune erreur sur cette exécution.</p>`;
 
   panel.innerHTML = `
     <div class="mission-meta-row">
       <div class="mission-meta-item">
         <span class="label">Type de mission</span>
-        Démonstration Inbox (locale)
+        Lot Inbox — ${escapeHtml(run.mailboxLabel)}
       </div>
       <div class="mission-meta-item">
         <span class="label">Statut</span>
-        ${state.mission.error ? 'Terminée avec erreur' : 'Terminée'}
+        ${escapeHtml(run.statusLabel)}
+      </div>
+      <div class="mission-meta-item">
+        <span class="label">Identifiant d'exécution</span>
+        <span class="run-id">${escapeHtml(run.runId)}</span>
       </div>
     </div>
     <div class="mission-section-title">Étapes</div>
     <ul class="mission-steps">${stepsHtml}</ul>
-    ${sourcesHtml}
-    ${errorsHtml}
+    <div class="mission-section-title">Sources</div>
+    <ul class="source-list">
+      ${run.sourceLines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}
+    </ul>
+    <div class="mission-section-title">Erreurs</div>
+    ${
+      run.error
+        ? `<ul class="error-list"><li>${escapeHtml(run.error)}</li></ul>`
+        : `<p class="muted">Aucune erreur sur cette exécution.</p>`
+    }
   `;
 }
 

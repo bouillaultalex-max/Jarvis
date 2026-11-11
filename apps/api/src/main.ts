@@ -2,6 +2,7 @@ import { AnthropicProvider } from '@jarvis/llm';
 import { PermissionManager, ToolExecutor, ToolRegistry } from '@jarvis/core';
 import { ConfirmationService } from '@jarvis/connectors';
 
+import { registerInboxRoutes } from './inbox/inbox-routes.js';
 import { internalFakeExecuteTool } from './tools/internal-fake-tool.js';
 import { PendingConfirmations } from './pending-confirmations.js';
 import { buildServer } from './server.js';
@@ -27,6 +28,11 @@ const confirmationService = new ConfirmationService();
 const pendingConfirmations = new PendingConfirmations();
 
 const app = buildServer(llm, { toolExecutor, confirmationService, pendingConfirmations });
+
+// Parcours Inbox du centre de commandement (boîte fictive) : registre et
+// politique propres, sans LLM — volontairement séparé du chat ci-dessus,
+// dont l'exécuteur ne connaît que l'outil factice.
+registerInboxRoutes(app);
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '127.0.0.1';

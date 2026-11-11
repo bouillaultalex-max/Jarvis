@@ -8,8 +8,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@jarvis/classification": "0.1.0",
     "@jarvis/connectors": "0.1.0",
     "@jarvis/core": "0.1.0",
+    "@jarvis/inbox": "0.1.0",
     "@jarvis/llm": "0.1.0",
     "@jarvis/tools": "0.1.0",
     "@jarvis/types": "0.1.0",

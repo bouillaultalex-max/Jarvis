@@ -1,6 +1,7 @@
 // Serveur statique minimal pour le centre de commandement Jarvis.
 // Modules natifs Node uniquement (http/fs/path/url) — aucune dépendance
-// ajoutée, aucun accès réseau sortant, écoute en local uniquement.
+// ajoutée, écoute en local uniquement. Seul accès réseau : le relais des deux
+// routes Inbox vers l'API Jarvis de ce poste (127.0.0.1), jamais ailleurs.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -30,6 +31,95 @@ const VENDOR_ASSETS = {
   '/vendor/pdfjs/pdf.worker.min.mjs': join(PDFJS_BUILD_DIR, 'pdf.worker.min.mjs'),
 };
 
+// Relais Inbox : correspondance exacte « méthode + chemin » (une chaîne de
+// requête ou un autre chemin ne correspond à rien). Ce n'est pas un proxy :
+// la cible est fixée ici, sur 127.0.0.1, et rien d'autre n'est relayé.
+const API_PORT = Number.parseInt(process.env.JARVIS_API_PORT ?? '3000', 10);
+const API_ORIGIN = `http://127.0.0.1:${API_PORT}`;
+const INBOX_RELAY = {
+  'GET /api/inbox/mailboxes': '/inbox/mailboxes',
+  'POST /api/inbox/runs': '/inbox/runs',
+};
+const MAX_RELAY_BODY_BYTES = 1024;
+const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+function hostnameOf(hostHeader) {
+  try {
+    return new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function sendJson(response, status, payload) {
+  response.writeHead(status, { 'Content-Type': MIME_TYPES['.json'] }).end(JSON.stringify(payload));
+}
+
+async function readBoundedBody(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > MAX_RELAY_BODY_BYTES) return null;
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function relayInbox(request, response) {
+  const target = INBOX_RELAY[`${request.method} ${request.url}`];
+  if (target === undefined) {
+    sendJson(response, 404, { error: 'Route non relayée.' });
+    return;
+  }
+  // Réservé à la page servie ici : adresse locale, nom d'hôte local (une
+  // page tierce liée par rebinding DNS garde son propre `Host`) et, si le
+  // navigateur l'indique, origine identique à cet hôte.
+  const { host, origin } = request.headers;
+  if (
+    !LOOPBACK_ADDRESSES.has(request.socket.remoteAddress) ||
+    !LOOPBACK_HOSTNAMES.has(hostnameOf(host)) ||
+    (origin !== undefined && origin !== `http://${host}`)
+  ) {
+    sendJson(response, 403, { error: 'Relais Inbox accessible uniquement depuis ce poste.' });
+    return;
+  }
+  // JSON exigé : un formulaire ou un `fetch` « simple » venu d'un autre site
+  // ne peut pas produire ce type de contenu sans contrôle préalable du navigateur.
+  if (
+    request.method === 'POST' &&
+    !/^application\/json\b/i.test(request.headers['content-type'] ?? '')
+  ) {
+    sendJson(response, 415, { error: 'Type de contenu attendu : application/json.' });
+    return;
+  }
+  const body = request.method === 'POST' ? await readBoundedBody(request) : undefined;
+  if (body === null) {
+    sendJson(response, 413, { error: 'Corps de requête trop volumineux.' });
+    return;
+  }
+
+  let status;
+  let text;
+  try {
+    const upstream = await fetch(`${API_ORIGIN}${target}`, {
+      method: request.method,
+      ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body } : {}),
+    });
+    status = upstream.status;
+    // Lu ici : une API coupée en cours de réponse doit donner un 502, pas
+    // une exception non gérée qui arrêterait ce serveur.
+    text = await upstream.text();
+  } catch {
+    sendJson(response, 502, {
+      error: `API Jarvis injoignable ou interrompue sur 127.0.0.1:${API_PORT}. Démarrez-la, puis réessayez.`,
+    });
+    return;
+  }
+  response.writeHead(status, { 'Content-Type': MIME_TYPES['.json'] }).end(text);
+}
+
 function resolveRequestPath(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
   const safePath = normalize(decoded).replace(/^(\.\.[/\\])+/, '');
@@ -39,6 +129,10 @@ function resolveRequestPath(urlPath) {
 
 const server = createServer(async (request, response) => {
   const urlPath = (request.url ?? '/').split('?')[0];
+  if (urlPath.startsWith('/api/')) {
+    await relayInbox(request, response);
+    return;
+  }
   const vendorPath = VENDOR_ASSETS[urlPath];
   const filePath = vendorPath ?? resolveRequestPath(request.url ?? '/');
 

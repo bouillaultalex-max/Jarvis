@@ -35,6 +35,79 @@ const KINDS = { fixture: 'fictive' };
 
 const SUMMARY_PREFIX = 'Résumé généré par le modèle (texte non vérifié, ne confirme aucune action)';
 
+/** Libellé de la raison selon sa provenance : un texte du modèle n'est jamais présenté comme vérifié. */
+function reasonPrefix(source) {
+  return source === 'llm'
+    ? 'Raison générée par le modèle · non vérifiée'
+    : `Raison · ${SOURCES[source] ?? source}`;
+}
+
+const INBOX_MODE_LABEL = 'Boîte fictive';
+
+const MODEL_STEPS = [
+  ['llm_classification', 'Classement par modèle'],
+  ['summary', 'Résumé par modèle'],
+];
+
+const MODEL_USE = {
+  executed: 'utilisé',
+  not_enabled: 'désactivé',
+  skipped: 'non utilisé pour ce lot',
+  failed: 'en erreur',
+  refused: 'refusé',
+};
+
+// Provenances hors modèle, dans l'ordre d'affichage.
+const CLASSIFIED_OTHERWISE = [
+  ['explicit_rule', 'par règle'],
+  ['user_correction', 'par correction utilisateur'],
+  ['default', 'par défaut (repli, cause non transmise par l’API)'],
+];
+
+/**
+ * Classement par modèle exécuté : chaque message est compté selon sa
+ * provenance (modèle, règle, correction, défaut), pour que le total soit
+ * entièrement expliqué. L'API ne transmet pas la cause d'un repli (erreur du
+ * modèle ou réponse inexploitable) : on le dit, sans afficher d'échec supposé.
+ */
+function describeClassificationRun(items) {
+  const count = (source) => items.filter((item) => item.source === source).length;
+  const known = new Set(['llm', ...CLASSIFIED_OTHERWISE.map(([source]) => source)]);
+  const byModel = count('llm');
+  const parts = [
+    `${byModel === 0 ? 'aucun' : byModel} sur ${items.length} message(s)`,
+    ...CLASSIFIED_OTHERWISE.filter(([source]) => count(source) > 0).map(
+      ([source, label]) => `${count(source)} ${label}`,
+    ),
+    ...[...new Set(items.map((item) => item.source))]
+      .filter((source) => !known.has(source))
+      .map((source) => `${count(source)} de provenance « ${source} »`),
+  ];
+  return { text: parts.join(' · '), status: count('default') > 0 ? 'fallback' : 'executed' };
+}
+
+/**
+ * Mode de l'Inbox : « Boîte fictive », puis, après un lot, l'usage du modèle
+ * tel que l'indiquent les étapes et les provenances renvoyées par l'API.
+ * `run` vaut `null` avant le premier lot et pendant un nouveau lot.
+ */
+export function describeInboxMode(run) {
+  const base = { text: INBOX_MODE_LABEL, status: null };
+  if (!run) return [base];
+  return [
+    base,
+    ...MODEL_STEPS.flatMap(([id, title]) => {
+      const step = run.steps.find((s) => s.id === id);
+      if (!step) return [];
+      const use =
+        id === 'llm_classification' && step.status === 'executed'
+          ? describeClassificationRun(run.items)
+          : { text: MODEL_USE[step.status] ?? step.status, status: step.status };
+      return [{ text: `${title} : ${use.text}`, status: use.status }];
+    }),
+  ];
+}
+
 /** Taille de lot saisie → entier entre 1 et MAX_BATCH_SIZE, sinon `null`. */
 export function parseBatchSize(raw) {
   const text = String(raw ?? '').trim();
@@ -106,7 +179,13 @@ export function toRunView(status, payload) {
           label: item.label,
           labelText: LABELS[item.label] ?? item.label,
           reason: item.reason,
+          reasonText: `${reasonPrefix(item.source)} : ${item.reason}`,
+          source: item.source,
           sourceText: SOURCES[item.source] ?? item.source,
+          // Ligne « Provenance » omise quand le libellé de la raison la répète déjà.
+          provenanceText: reasonPrefix(item.source).endsWith(SOURCES[item.source] ?? item.source)
+            ? null
+            : `Provenance : ${SOURCES[item.source] ?? item.source}`,
           summary: item.summary ?? null,
           // Le résumé est un texte libre du modèle, nourri par le corps du mail :
           // il peut dire « Réponse envoyée » sans qu'aucune action n'ait eu lieu.

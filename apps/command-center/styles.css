@@ -211,6 +211,31 @@ h3 {
   margin: 0 0 var(--space-lg);
 }
 
+.inbox-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  margin: calc(-1 * var(--space-sm)) 0 var(--space-lg);
+  font-size: 0.875rem;
+  color: var(--color-text-dim);
+}
+
+.inbox-mode-item:not(:last-child)::after {
+  content: '·';
+  margin-left: var(--space-sm);
+}
+
+.inbox-mode-item[data-status='failed'],
+.inbox-mode-item[data-status='refused'] {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+.inbox-mode-item[data-status='fallback'] {
+  color: var(--color-warn);
+  font-weight: 600;
+}
+
 .view-header {
   display: flex;
   justify-content: space-between;

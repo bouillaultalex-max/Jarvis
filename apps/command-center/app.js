@@ -1,5 +1,6 @@
 import {
   MAX_BATCH_SIZE,
+  describeInboxMode,
   describeMailboxOption,
   parseBatchSize,
   toMailboxList,
@@ -261,15 +262,27 @@ function renderRunItem(item) {
       </div>
       <span class="msg-subject">${escapeHtml(item.subject)}</span>
       <span class="run-label" data-label="${escapeHtml(item.label)}">${escapeHtml(item.labelText)}</span>
-      <span class="msg-preview">Raison : ${escapeHtml(item.reason)}</span>
-      <span class="msg-preview">Provenance : ${escapeHtml(item.sourceText)}</span>
+      <span class="msg-preview">${escapeHtml(item.reasonText)}</span>
+      ${item.provenanceText ? `<span class="msg-preview">${escapeHtml(item.provenanceText)}</span>` : ''}
       ${item.summaryText ? `<span class="msg-preview">${escapeHtml(item.summaryText)}</span>` : ''}
     </li>`;
+}
+
+function renderInboxMode(run) {
+  qs('#inbox-mode').innerHTML = describeInboxMode(run)
+    .map(
+      ({ text, status }) =>
+        `<span class="inbox-mode-item"${status ? ` data-status="${escapeHtml(status)}"` : ''}>${escapeHtml(text)}</span>`,
+    )
+    .join('');
 }
 
 function renderInbox() {
   const layout = qs('#inbox-layout');
   const { status, run, failure, mailboxError } = state.inbox;
+  // `run` est remis à `null` au lancement d'un lot : l'indication du lot
+  // précédent disparaît avant toute nouvelle réponse.
+  renderInboxMode(run);
 
   if (mailboxError !== null) {
     layout.innerHTML = `

@@ -263,7 +263,7 @@ function renderRunItem(item) {
       <span class="run-label" data-label="${escapeHtml(item.label)}">${escapeHtml(item.labelText)}</span>
       <span class="msg-preview">Raison : ${escapeHtml(item.reason)}</span>
       <span class="msg-preview">Provenance : ${escapeHtml(item.sourceText)}</span>
-      ${item.summary ? `<span class="msg-preview">Résumé : ${escapeHtml(item.summary)}</span>` : ''}
+      ${item.summaryText ? `<span class="msg-preview">${escapeHtml(item.summaryText)}</span>` : ''}
     </li>`;
 }
 

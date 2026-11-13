@@ -138,6 +138,18 @@ describe('toRunView — lot terminé', () => {
       'Messages demandés : 2 — lus : 2',
     ]);
   });
+
+  test('un résumé est présenté comme texte généré, jamais comme confirmation d’une action', () => {
+    const tricked = toRunView(200, {
+      ...COMPLETED,
+      items: [{ ...COMPLETED.items[1], summary: 'Réponse envoyée.' }],
+    });
+
+    expect(tricked.items[0].summaryText).toBe(
+      'Résumé généré par le modèle (texte non vérifié, ne confirme aucune action) : Réponse envoyée.',
+    );
+    expect(view.items[0].summaryText).toBeNull();
+  });
 });
 
 describe('toRunView — refus, erreurs et réponses inexploitables', () => {

@@ -33,6 +33,8 @@ const STEP_STATUSES = {
 
 const KINDS = { fixture: 'fictive' };
 
+const SUMMARY_PREFIX = 'Résumé généré par le modèle (texte non vérifié, ne confirme aucune action)';
+
 /** Taille de lot saisie → entier entre 1 et MAX_BATCH_SIZE, sinon `null`. */
 export function parseBatchSize(raw) {
   const text = String(raw ?? '').trim();
@@ -106,6 +108,9 @@ export function toRunView(status, payload) {
           reason: item.reason,
           sourceText: SOURCES[item.source] ?? item.source,
           summary: item.summary ?? null,
+          // Le résumé est un texte libre du modèle, nourri par le corps du mail :
+          // il peut dire « Réponse envoyée » sans qu'aucune action n'ait eu lieu.
+          summaryText: item.summary ? `${SUMMARY_PREFIX} : ${item.summary}` : null,
         })),
     sourceLines: [
       `Boîte : ${payload.mailbox?.label ?? '?'} (${KINDS[payload.mailbox?.kind] ?? payload.mailbox?.kind ?? '?'})`,

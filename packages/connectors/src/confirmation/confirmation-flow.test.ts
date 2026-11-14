@@ -201,6 +201,40 @@ describe('confirmation-flow — intégrité du ticket (ConfirmationService.verif
     expect(client.listSent()).toHaveLength(0);
   });
 
+  it('seul le destinataire `to` modifié entre propose et confirm → payload_mismatch, ToolExecutor.run jamais appelé', async () => {
+    const client = new InMemoryMailClient();
+    const executor = buildExecutor(client, 'require_confirmation');
+    const confirmationService = new ConfirmationService();
+    const account = makeAccount('acc-1');
+
+    const proposed = await proposeConfirmation({
+      executor,
+      confirmationService,
+      request: { tool: 'inmemory.send', input: SEND_INPUT },
+      account,
+      summary: SUMMARY,
+    });
+    const originalPayload = payloadFrom(proposed.result, account.id);
+
+    const runSpy = vi.spyOn(executor, 'run');
+    const tamperedPayload: ConfirmationPayload = {
+      ...originalPayload,
+      input: { ...SEND_INPUT, to: 'mallory@example.test' },
+    };
+
+    const confirmed = await confirmAndExecute({
+      executor,
+      confirmationService,
+      confirmationId: proposed.confirmationRequest!.confirmationId,
+      payload: tamperedPayload,
+    });
+
+    expect(confirmed.status).toBe('confirmation_failed');
+    expect((confirmed as ConfirmationFailed).failureReason).toBe('payload_mismatch');
+    expect(runSpy).not.toHaveBeenCalled();
+    expect(client.listSent()).toHaveLength(0);
+  });
+
   it('ticket déjà consommé → confirmation_failed already_consumed, aucune seconde exécution', async () => {
     const client = new InMemoryMailClient();
     const executor = buildExecutor(client, 'require_confirmation');

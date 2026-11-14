@@ -211,6 +211,31 @@ h3 {
   margin: 0 0 var(--space-lg);
 }
 
+.inbox-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  margin: calc(-1 * var(--space-sm)) 0 var(--space-lg);
+  font-size: 0.875rem;
+  color: var(--color-text-dim);
+}
+
+.inbox-mode-item:not(:last-child)::after {
+  content: '·';
+  margin-left: var(--space-sm);
+}
+
+.inbox-mode-item[data-status='failed'],
+.inbox-mode-item[data-status='refused'] {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+.inbox-mode-item[data-status='fallback'] {
+  color: var(--color-warn);
+  font-weight: 600;
+}
+
 .view-header {
   display: flex;
   justify-content: space-between;
@@ -1446,4 +1471,69 @@ h3 {
     transition-duration: 0.001ms !important;
     animation-duration: 0.001ms !important;
   }
+}
+
+/* ---------- Inbox : lot calculé par l'API ---------- */
+
+.inbox-controls {
+  align-items: flex-end;
+}
+
+.inbox-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+}
+
+.inbox-controls select,
+.inbox-controls input {
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.inbox-controls input {
+  width: 6rem;
+}
+
+.inbox-run {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.run-item,
+.run-item:hover {
+  cursor: default;
+  background: transparent;
+}
+
+.run-item .msg-preview {
+  white-space: normal;
+}
+
+.run-label {
+  align-self: flex-start;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-dim);
+}
+
+.run-label[data-label='important'] {
+  color: var(--color-ok);
+  border-color: color-mix(in srgb, var(--color-ok) 45%, transparent);
+  background: var(--color-ok-tint);
+}
+
+.run-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
 }

@@ -126,7 +126,10 @@
           </button>
         </nav>
 
-        <p class="sidebar-note">Aucune donnée n'est envoyée hors de ce navigateur.</p>
+        <p class="sidebar-note">
+          Aucune donnée ne quitte ce poste. Seuls l'identifiant de boîte et la taille du lot sont
+          envoyés à l'API Jarvis locale.
+        </p>
       </aside>
 
       <main class="view-area">
@@ -148,39 +151,45 @@
             <div>
               <h1 id="inbox-title">Inbox Intelligence</h1>
               <p class="lede">
-                Mode démonstration — messages fictifs, aucune boîte mail réelle n'est consultée. Les
-                catégories sont proposées par une règle locale simplifiée, pas par un modèle de
-                langage réel.
+                Lot manuel sur une boîte fictive : les messages sont synthétiques, leur classement
+                est calculé par le pipeline Inbox de l'API Jarvis locale. Aucune boîte mail réelle
+                n'est consultée. L'usage d'un modèle est indiqué après chaque lot, d'après ses
+                étapes.
+              </p>
+              <p class="inbox-mode" id="inbox-mode" aria-live="polite">
+                <span class="inbox-mode-item">Boîte fictive</span>
               </p>
             </div>
-            <div class="header-actions">
-              <button class="btn btn-primary" id="launch-demo" type="button">
-                Lancer la démonstration
+            <div class="header-actions inbox-controls">
+              <label>
+                Boîte
+                <select id="inbox-mailbox" disabled>
+                  <option value="">Chargement des boîtes…</option>
+                </select>
+              </label>
+              <label>
+                Taille du lot (1 à 10)
+                <input id="inbox-batch" type="number" min="1" max="10" step="1" value="5" />
+              </label>
+              <button class="btn btn-primary" id="launch-run" type="button" disabled>
+                Lancer le lot
               </button>
-              <button class="btn btn-ghost btn-small" id="simulate-error" type="button">
-                Simuler une erreur
+              <button class="btn btn-ghost btn-small" id="reload-mailboxes" type="button" hidden>
+                Recharger les boîtes
               </button>
             </div>
           </div>
 
-          <div class="inbox-layout" id="inbox-layout">
-            <div class="inbox-empty" id="inbox-empty">
-              <p>Aucun message chargé.</p>
-              <p class="muted">
-                Cliquez sur « Lancer la démonstration » pour afficher un petit lot de messages
-                fictifs.
-              </p>
-            </div>
-          </div>
+          <div class="inbox-layout" id="inbox-layout" aria-live="polite"></div>
         </section>
 
         <!-- Vue Mission -->
         <section class="view" data-view="mission" hidden aria-labelledby="mission-title">
           <h1 id="mission-title">Mission courante</h1>
           <p class="lede">
-            Suivi de la dernière démonstration lancée depuis l'Inbox. Aucune mission réelle n'est
-            exécutée par cette interface — cette vue reflète les étapes d'une démonstration locale,
-            pas un pipeline de production.
+            Suivi du dernier lot lancé depuis l'Inbox : identifiant d'exécution, étapes réellement
+            exécutées, étapes non activées, sources et erreurs. Rien n'est conservé après le
+            rechargement de la page.
           </p>
           <div id="mission-panel"></div>
         </section>

@@ -7,6 +7,14 @@ import {
   toRunView,
 } from './inbox-run.js';
 import {
+  applyDraftResponse,
+  describeDraftOption,
+  initialDraftState,
+  resetDraftState,
+  startDraftRequest,
+  toDraftView,
+} from './inbox-draft.js';
+import {
   LEGAL_CAPABILITIES,
   LEGAL_DEMO_RESULTS,
   LEGAL_DEMO_CASE,
@@ -38,6 +46,10 @@ const state = {
     mailboxError: null,
     run: null, // dernière exécution renvoyée par l'API (vue de inbox-run.js)
     failure: null, // échec sans exécution (API arrêtée, entrée refusée…)
+    // État du brouillon (vue de inbox-draft.js) — `token` protège contre une
+    // réponse tardive affichée sous le mauvais message ou le mauvais lot
+    // (voir `resetDraftState`/`startDraftRequest`/`applyDraftResponse`).
+    draft: initialDraftState(),
   },
   legal: {
     status: 'empty', // empty | invalid | loading | error | ready
@@ -219,9 +231,11 @@ async function launchRun() {
 
   const size = parseBatchSize(qs('#inbox-batch').value);
   // Le résultat précédent est effacé avant toute tentative : un lot refusé
-  // ou en échec ne laisse jamais l'ancien à l'écran.
+  // ou en échec ne laisse jamais l'ancien à l'écran. Un brouillon demandé sur
+  // le lot précédent disparaît avec lui — jamais affiché à côté d'un lot différent.
   state.inbox.run = null;
   state.inbox.failure = null;
+  state.inbox.draft = resetDraftState(state.inbox.draft);
   if (size === null) {
     state.inbox.status = 'invalid';
     state.inbox.failure = `Taille de lot invalide : entier attendu entre 1 et ${MAX_BATCH_SIZE}.`;
@@ -266,6 +280,95 @@ function renderRunItem(item) {
       ${item.provenanceText ? `<span class="msg-preview">${escapeHtml(item.provenanceText)}</span>` : ''}
       ${item.summaryText ? `<span class="msg-preview">${escapeHtml(item.summaryText)}</span>` : ''}
     </li>`;
+}
+
+/**
+ * Changement de message sélectionné : efface tout brouillon ou question
+ * affichés pour le message précédent et rend périmée toute demande encore en
+ * vol (voir `resetDraftState`) — une réponse tardive pour l'ancien message ne
+ * doit jamais apparaître sous le nouveau.
+ */
+function selectDraftMessage() {
+  state.inbox.draft = resetDraftState(state.inbox.draft);
+  renderDraftPanel();
+}
+
+/**
+ * Demande un brouillon pour le message choisi dans `#draft-message`. Rien
+ * n'est envoyé : la réponse est soit une question à poser (information
+ * manquante), soit un brouillon bloqué (affirmation non confirmée), soit un
+ * brouillon modifiable localement — jamais transmis au-delà de cette page.
+ *
+ * Le jeton capturé avant l'appel (`requestToken`) protège contre une réponse
+ * tardive : si entre-temps une autre demande a démarré, ou que la sélection
+ * ou le lot ont été réinitialisés, `applyDraftResponse` l'ignore — jamais
+ * affichée sous le mauvais message.
+ */
+async function requestDraft() {
+  const messageId = qs('#draft-message')?.value;
+  if (!messageId) return;
+
+  state.inbox.draft = startDraftRequest(state.inbox.draft, messageId);
+  const requestToken = state.inbox.draft.token;
+  renderDraftPanel();
+
+  const { status, payload } = await callInboxApi('/api/inbox/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mailboxId: qs('#inbox-mailbox').value, messageId }),
+  });
+  const view = toDraftView(status, payload);
+  const next = applyDraftResponse(state.inbox.draft, requestToken, view);
+  if (next === null) return; // réponse périmée : une demande plus récente a déjà pris le relais
+  state.inbox.draft = next;
+  renderDraftPanel();
+}
+
+function renderDraftPanel() {
+  const panel = qs('#draft-panel');
+  if (!panel) return; // Pas de lot affiché actuellement : rien à montrer.
+  const { status, view, editedBody } = state.inbox.draft;
+
+  if (status === 'idle') {
+    panel.innerHTML = '';
+    return;
+  }
+  if (status === 'loading') {
+    panel.innerHTML = `<p class="muted">Génération du brouillon…</p>`;
+    return;
+  }
+  if (view.kind === 'failure') {
+    panel.innerHTML = `<div class="inbox-error" role="alert"><p>${escapeHtml(view.message)}</p></div>`;
+    return;
+  }
+  if (view.kind === 'needs_clarification') {
+    panel.innerHTML = `
+      <div class="inbox-empty" role="alert">
+        <p><strong>Information à demander à Alexandre avant de proposer un brouillon :</strong></p>
+        <ul>${view.questions.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+        <p class="muted">En attente de réponse — redemandez un brouillon une fois la question résolue.</p>
+      </div>`;
+    return;
+  }
+  if (view.kind === 'blocked') {
+    panel.innerHTML = `
+      <div class="inbox-error" role="alert">
+        <p><strong>Brouillon non proposé pour relecture.</strong></p>
+        <p>${escapeHtml(view.reason)}</p>
+      </div>`;
+    return;
+  }
+
+  // view.kind === 'draft'
+  panel.innerHTML = `
+    <div class="draft-panel">
+      ${view.subject ? `<p class="muted">Objet proposé : ${escapeHtml(view.subject)}</p>` : ''}
+      <textarea id="draft-body" rows="8" aria-label="Brouillon modifiable">${escapeHtml(editedBody)}</textarea>
+      <p class="muted">Brouillon modifiable — rien n'est envoyé ni enregistré.</p>
+    </div>`;
+  qs('#draft-body').addEventListener('input', (event) => {
+    state.inbox.draft.editedBody = event.target.value;
+  });
 }
 
 function renderInboxMode(run) {
@@ -343,9 +446,32 @@ function renderInbox() {
       ${
         run.items.length === 0
           ? `<div class="inbox-empty"><p>La boîte n'a renvoyé aucun message.</p></div>`
-          : `<ul class="message-list">${run.items.map(renderRunItem).join('')}</ul>`
+          : `<ul class="message-list">${run.items.map(renderRunItem).join('')}</ul>
+             <div class="header-actions inbox-controls draft-controls">
+               <label>
+                 Message pour le brouillon
+                 <select id="draft-message">
+                   ${run.items
+                     .map(
+                       (item) =>
+                         `<option value="${escapeHtml(item.id)}">${escapeHtml(describeDraftOption(item))}</option>`,
+                     )
+                     .join('')}
+                 </select>
+               </label>
+               <button class="btn btn-ghost btn-small" id="request-draft" type="button">
+                 Demander un brouillon
+               </button>
+             </div>
+             <div id="draft-panel" aria-live="polite"></div>`
       }
     </div>`;
+
+  if (run.items.length > 0) {
+    qs('#request-draft').addEventListener('click', requestDraft);
+    qs('#draft-message').addEventListener('change', selectDraftMessage);
+    renderDraftPanel();
+  }
 }
 
 // ---------- Mission ----------

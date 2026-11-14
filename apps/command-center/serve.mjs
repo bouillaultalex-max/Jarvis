@@ -39,6 +39,7 @@ const API_ORIGIN = `http://127.0.0.1:${API_PORT}`;
 const INBOX_RELAY = {
   'GET /api/inbox/mailboxes': '/inbox/mailboxes',
   'POST /api/inbox/runs': '/inbox/runs',
+  'POST /api/inbox/draft': '/inbox/draft',
 };
 const MAX_RELAY_BODY_BYTES = 1024;
 // Délai maximal accordé à l'API pour une requête relayée, réponse complète

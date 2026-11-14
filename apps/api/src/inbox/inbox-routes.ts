@@ -68,7 +68,8 @@ const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 const RUN_INPUT_KEYS = ['mailboxId', 'maxResults'];
 
-async function requireLoopback(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+/** Exporté pour être réutilisé tel quel par les autres routes Inbox (ex. `inbox-draft-routes.ts`) — jamais dupliqué. */
+export async function requireLoopback(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!LOOPBACK_ADDRESSES.has(request.ip) || !LOOPBACK_HOSTNAMES.has(request.hostname)) {
     await reply.code(403).send({ error: 'Routes Inbox accessibles uniquement depuis ce poste.' });
   }

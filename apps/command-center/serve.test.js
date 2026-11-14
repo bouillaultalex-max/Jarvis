@@ -177,7 +177,7 @@ describe('serve.mjs — loopback par défaut (source)', () => {
   });
 });
 
-describe('serve.mjs — relais Inbox (deux routes exactes, jamais un proxy générique)', () => {
+describe('serve.mjs — relais Inbox (trois routes exactes, jamais un proxy générique)', () => {
   test('relaie GET /api/inbox/mailboxes vers l’API locale', async () => {
     const res = await fetch(`${BASE_URL}/api/inbox/mailboxes`);
 
@@ -196,6 +196,19 @@ describe('serve.mjs — relais Inbox (deux routes exactes, jamais un proxy gén�
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ relayed: 'POST /inbox/runs' });
     expect(stubApiRequests.at(-1)).toEqual({ method: 'POST', url: '/inbox/runs', body: payload });
+  });
+
+  test('relaie POST /api/inbox/draft avec son corps et le statut de l’API', async () => {
+    const payload = JSON.stringify({ mailboxId: 'fixture', messageId: 'fictif-01' });
+    const res = await fetch(`${BASE_URL}/api/inbox/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ relayed: 'POST /inbox/draft' });
+    expect(stubApiRequests.at(-1)).toEqual({ method: 'POST', url: '/inbox/draft', body: payload });
   });
 
   test('aucune autre route ni méthode n’atteint l’API', async () => {

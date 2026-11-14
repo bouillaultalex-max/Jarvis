@@ -1506,6 +1506,25 @@ h3 {
   min-width: 0;
 }
 
+.draft-controls {
+  margin-top: var(--space-md);
+}
+
+.draft-panel {
+  margin-top: var(--space-sm);
+}
+
+.draft-panel textarea {
+  width: 100%;
+  font: inherit;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+}
+
 .run-item,
 .run-item:hover {
   cursor: default;
